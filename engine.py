@@ -120,6 +120,72 @@ PHASE2_GOODS = ["cloth", "wine", "machinery"]
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  PHASE 3+ FIRMS / MNCs
+# ═══════════════════════════════════════════════════════════════════
+# Each firm has: industry, variety, default host, productivity multiplier,
+# unit cost (per unit of output produced, paid to host as factor income),
+# max_scale (production cap per round),
+# fixed_export_cost (Phase 4: cost in numeraire to access foreign markets).
+#
+# Productivity tiers map roughly to HIGH=1.3, MED=1.0, LOW=0.7.
+# Pre-set so no single country is over-rewarded or over-punished.
+
+PHASE3_FIRMS = {
+    # Cloth
+    "F1":  {"industry": "cloth",     "variety": "Cloth-A", "default_host": "Brevia",
+            "productivity": 1.3, "unit_cost": 0.6, "max_scale": 40,
+            "fixed_export_cost": 8.0},
+    "F2":  {"industry": "cloth",     "variety": "Cloth-B", "default_host": "Calida",
+            "productivity": 1.0, "unit_cost": 0.6, "max_scale": 40,
+            "fixed_export_cost": 8.0},
+    "F3":  {"industry": "cloth",     "variety": "Cloth-C", "default_host": "Fortuna",
+            "productivity": 0.7, "unit_cost": 0.6, "max_scale": 40,
+            "fixed_export_cost": 8.0},
+    # Wine
+    "F4":  {"industry": "wine",      "variety": "Wine-A",  "default_host": "Calida",
+            "productivity": 1.3, "unit_cost": 0.6, "max_scale": 40,
+            "fixed_export_cost": 8.0},
+    "F5":  {"industry": "wine",      "variety": "Wine-B",  "default_host": "Fortuna",
+            "productivity": 1.0, "unit_cost": 0.6, "max_scale": 40,
+            "fixed_export_cost": 8.0},
+    "F6":  {"industry": "wine",      "variety": "Wine-C",  "default_host": "Altera",
+            "productivity": 1.0, "unit_cost": 0.6, "max_scale": 40,
+            "fixed_export_cost": 8.0},
+    # Machinery
+    "F7":  {"industry": "machinery", "variety": "Mach-A",  "default_host": "Deltia",
+            "productivity": 1.3, "unit_cost": 1.0, "max_scale": 40,
+            "fixed_export_cost": 12.0},
+    "F8":  {"industry": "machinery", "variety": "Mach-B",  "default_host": "Eridia",
+            "productivity": 1.0, "unit_cost": 1.0, "max_scale": 40,
+            "fixed_export_cost": 12.0},
+    "F9":  {"industry": "machinery", "variety": "Mach-C",  "default_host": "Altera",
+            "productivity": 0.7, "unit_cost": 1.0, "max_scale": 40,
+            "fixed_export_cost": 12.0},
+    "F10": {"industry": "machinery", "variety": "Mach-D",  "default_host": "Deltia",
+            "productivity": 1.0, "unit_cost": 1.0, "max_scale": 40,
+            "fixed_export_cost": 12.0},
+    # Slack firms (use only for class > 10 students)
+    "F11": {"industry": "cloth",     "variety": "Cloth-D", "default_host": "Deltia",
+            "productivity": 0.7, "unit_cost": 0.6, "max_scale": 40,
+            "fixed_export_cost": 8.0},
+    "F12": {"industry": "wine",      "variety": "Wine-D",  "default_host": "Brevia",
+            "productivity": 0.7, "unit_cost": 0.6, "max_scale": 40,
+            "fixed_export_cost": 8.0},
+    "F13": {"industry": "machinery", "variety": "Mach-E",  "default_host": "Fortuna",
+            "productivity": 0.7, "unit_cost": 1.0, "max_scale": 40,
+            "fixed_export_cost": 12.0},
+}
+
+# Reference per-unit prices firms receive (numeraire welfare units).
+# Used only for firm profit accounting; inter-country goods trade is still barter.
+WORLD_PRICES = {"cloth": 1.0, "wine": 1.0, "machinery": 1.5}
+
+# CES elasticity within each industry (love-of-variety).
+# rho closer to 0 = stronger variety preference; rho=1 = perfect substitutes.
+VARIETY_RHO = 0.6
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  SIMULATION ENGINE
 # ═══════════════════════════════════════════════════════════════════
 
@@ -141,9 +207,16 @@ class IPESimulation:
         self.history = []
         self.round_num = 0
 
+        # Phase 3+ state (empty until upgrade_to_phase3 is called)
+        self.firm_config = {}   # static firm parameters (immutable post-upgrade)
+        self.firms = {}         # mutable per-firm state: host, cumulative_profit
+        self.world_prices = dict(WORLD_PRICES)
+        self.variety_rho = VARIETY_RHO
+
     # ── Core round logic ──────────────────────────────────────────
 
-    def run_round(self, decisions: dict, trades: list) -> dict:
+    def run_round(self, decisions: dict, trades: list,
+                  firm_decisions: dict = None) -> dict:
         """
         Execute one round of the simulation.
 
@@ -153,7 +226,7 @@ class IPESimulation:
             Phase 1 format:
                 {country: {"production": {"cloth": 60, "wine": 40},
                            "tariffs": {partner: {good: rate, ...}, ...}}}
-            Phase 2 format:
+            Phase 2+ format:
                 {country: {"production": {"labor": {"cloth": 40, ...},
                                           "capital": {"cloth": 20, ...}},
                            "tariffs": {partner: {good: rate, ...}, ...}}}
@@ -162,7 +235,14 @@ class IPESimulation:
 
         trades : list of tuples
             Each tuple: (exporter, importer, good_out, qty_out, good_in, qty_in)
-            These are the AGREED trades (instructor mediates matching).
+            Trades are at the GOOD level. In Phase 3+, varieties move with
+            their good proportionally (importer receives the exporter's
+            variety mix).
+
+        firm_decisions : dict, Phase 3+ only
+            {firm_id: {"scale": int, "relocate_to": None or country,
+                       "export": bool}}
+            scale clamped to [0, max_scale]. export only matters in Phase 4+.
 
         Returns
         -------
@@ -174,41 +254,90 @@ class IPESimulation:
             self.round_num -= 1
             raise ValueError("Decision validation failed:\n" + "\n".join(errors))
 
-        # Step 1: Production
+        if self.phase >= 3:
+            if firm_decisions is None:
+                firm_decisions = {
+                    fid: {"scale": 0, "relocate_to": None, "export": False}
+                    for fid in self.firms
+                }
+            fd_errors = self._validate_firm_decisions(firm_decisions)
+            if fd_errors:
+                self.round_num -= 1
+                raise ValueError(
+                    "Firm decision validation failed:\n" + "\n".join(fd_errors)
+                )
+
+        # Step 1: Country production (scalar totals)
         production = self._compute_production(decisions)
 
-        # Step 2: Initialize consumption = production
-        consumption = {c: dict(p) for c, p in production.items()}
+        # Step 1b: Firm production, added to host country's industry total
+        firm_output = {}
+        production_varieties = None
+        if self.phase >= 3:
+            firm_output = self._compute_firm_production(firm_decisions)
+            for fid, out in firm_output.items():
+                host = self.firms[fid]["host"]
+                industry = self.firm_config[fid]["industry"]
+                production[host][industry] = (
+                    production[host].get(industry, 0.0) + out
+                )
+            # Per-variety breakdown for CES utility
+            production_varieties = self._build_variety_bundles(
+                production, firm_output
+            )
 
-        # Step 3: Execute trades, apply tariffs
-        trade_log, tariff_revenue = self._execute_trades(
-            consumption, decisions, trades
+        # Step 2: Initialize consumption (scalar totals) and varieties
+        consumption = {c: dict(p) for c, p in production.items()}
+        varieties = (
+            deepcopy(production_varieties) if production_varieties else None
         )
 
-        # Step 4: Compute welfare and other metrics
+        # Step 3: Execute trades. Varieties move proportionally with their good.
+        trade_log, tariff_losses = self._execute_trades(
+            consumption, decisions, trades, varieties=varieties
+        )
+
+        # Step 4: Welfare. Phase 3+ uses variety-aware CES utility.
         results = {}
         for name in self.countries:
-            welfare = self._utility(consumption[name])
-            autarky_welfare = self._utility(production[name])
-            gains_pct = (
-                ((welfare - autarky_welfare) / autarky_welfare * 100)
-                if autarky_welfare > 0 else 0.0
-            )
+            if self.phase >= 3:
+                welfare = self._utility(varieties[name])
+                no_trade_welfare = self._utility(production_varieties[name])
+            else:
+                welfare = self._utility(consumption[name])
+                no_trade_welfare = self._utility(production[name])
+            if no_trade_welfare > 0:
+                gains_pct = (welfare - no_trade_welfare) / no_trade_welfare * 100
+            elif welfare > 0:
+                gains_pct = float("inf")
+            else:
+                gains_pct = 0.0
 
             results[name] = {
                 "production": production[name],
                 "consumption": consumption[name],
                 "welfare": welfare,
-                "autarky_welfare": autarky_welfare,
+                "no_trade_welfare": no_trade_welfare,
                 "gains_from_trade_pct": gains_pct,
-                "tariff_revenue": tariff_revenue[name],
+                "tariff_losses": tariff_losses[name],
             }
 
-            # Phase 2: factor prices
-            if self.phase == 2:
+            if self.phase >= 2:
                 results[name]["factor_prices"] = self._compute_factor_prices(
                     name, decisions[name], production[name]
                 )
+            if self.phase >= 3:
+                results[name]["consumption_varieties"] = varieties[name]
+                results[name]["production_varieties"] = (
+                    production_varieties[name]
+                )
+
+        # Step 5: Firm profits (Phase 3+)
+        firm_results = {}
+        if self.phase >= 3:
+            firm_results = self._compute_firm_profits(
+                firm_decisions, firm_output
+            )
 
         round_result = {
             "round": self.round_num,
@@ -216,6 +345,8 @@ class IPESimulation:
             "results": results,
             "trade_log": trade_log,
         }
+        if self.phase >= 3:
+            round_result["firms"] = firm_results
         self.history.append(round_result)
         return round_result
 
@@ -250,18 +381,119 @@ class IPESimulation:
 
         return production
 
+    # ── Firm production (Phase 3+) ────────────────────────────────
+
+    def _compute_firm_production(self, firm_decisions):
+        """
+        Return {firm_id: output_qty}. Relocating firms produce 0 this round
+        and update their host. Output = scale * productivity, scale clamped
+        to [0, max_scale].
+        """
+        output = {}
+        for fid, fcfg in self.firm_config.items():
+            dec = firm_decisions.get(fid, {})
+            relocate_to = dec.get("relocate_to")
+            if relocate_to is not None:
+                # Relocation: change host, produce nothing this round
+                self.firms[fid]["host"] = relocate_to
+                output[fid] = 0.0
+                continue
+            scale = max(0.0, min(dec.get("scale", 0), fcfg["max_scale"]))
+            output[fid] = scale * fcfg["productivity"]
+        return output
+
+    def _build_variety_bundles(self, production, firm_output):
+        """
+        Construct {country: {good: {variety_id: qty}}}.
+        Each country has a 'country-generic' variety per good carrying its
+        domestic (H-O) output; each hosted MNC adds its own variety.
+        """
+        bundles = {name: {g: {} for g in self.goods} for name in self.countries}
+
+        # MNC varieties first
+        firm_share = {}  # (host, good) -> total firm output
+        for fid, fcfg in self.firm_config.items():
+            host = self.firms[fid]["host"]
+            good = fcfg["industry"]
+            out = firm_output.get(fid, 0.0)
+            if out > 0:
+                bundles[host][good][fcfg["variety"]] = out
+                firm_share[(host, good)] = firm_share.get((host, good), 0.0) + out
+
+        # Country-generic = total production minus MNC contributions
+        for name in self.countries:
+            for good in self.goods:
+                total = production[name].get(good, 0.0)
+                mnc_total = firm_share.get((name, good), 0.0)
+                country_only = total - mnc_total
+                if country_only > 0.001:
+                    bundles[name][good][f"{good}-{name}"] = country_only
+
+        return bundles
+
+    def _compute_firm_profits(self, firm_decisions, firm_output):
+        """
+        Profit per firm = revenue - operating_cost - fixed_export_cost.
+        revenue   = output * world_price[industry]
+        op_cost   = scale * unit_cost
+        fixed     = fixed_export_cost iff dec.export and Phase >= 4
+        Cumulative profit ledger on self.firms[fid] is updated.
+        """
+        profits = {}
+        for fid, fcfg in self.firm_config.items():
+            dec = firm_decisions.get(fid, {})
+            relocating = dec.get("relocate_to") is not None
+            scale = (
+                0.0 if relocating
+                else max(0.0, min(dec.get("scale", 0), fcfg["max_scale"]))
+            )
+            output = firm_output.get(fid, 0.0)
+            revenue = output * self.world_prices[fcfg["industry"]]
+            op_cost = scale * fcfg["unit_cost"]
+            fixed_cost = 0.0
+            if self.phase >= 4 and dec.get("export", False):
+                fixed_cost = fcfg["fixed_export_cost"]
+            profit = revenue - op_cost - fixed_cost
+            self.firms[fid]["cumulative_profit"] += profit
+            profits[fid] = {
+                "host": self.firms[fid]["host"],
+                "industry": fcfg["industry"],
+                "variety": fcfg["variety"],
+                "scale": scale,
+                "output": output,
+                "revenue": revenue,
+                "operating_cost": op_cost,
+                "fixed_cost": fixed_cost,
+                "profit": profit,
+                "cumulative_profit": self.firms[fid]["cumulative_profit"],
+                "relocated": relocating,
+                "exported": dec.get("export", False),
+            }
+        return profits
+
     # ── Trade execution ───────────────────────────────────────────
 
-    def _execute_trades(self, consumption, decisions, trades):
+    def _execute_trades(self, consumption, decisions, trades, varieties=None):
         """
         Execute trades. Tariffs destroy a fraction of imports (deadweight loss).
-        Returns trade log and tariff revenue tracker.
+        Returns trade log and a tariff-loss tracker (goods destroyed at the border).
+
+        If `varieties` is provided (Phase 3+), per-variety inventories are
+        moved proportionally to the exporter's variety mix and updated in place.
         """
         trade_log = []
-        tariff_revenue = {c: {g: 0.0 for g in self.goods} for c in self.countries}
+        tariff_losses = {c: {g: 0.0 for g in self.goods} for c in self.countries}
 
         for trade in trades:
             exporter, importer, good_out, qty_out, good_in, qty_in = trade
+
+            # Reject self-trade: net effect is zero but tariffs would silently
+            # destroy goods. Catches typos in the trade list.
+            if exporter == importer:
+                trade_log.append(
+                    f"  FAILED: self-trade -- {exporter} cannot trade with itself"
+                )
+                continue
 
             # Validate quantities available
             if consumption[exporter].get(good_out, 0) < qty_out - 0.01:
@@ -297,17 +529,30 @@ class IPESimulation:
             destroyed_at_importer = qty_out * t_importer
             destroyed_at_exporter = qty_in * t_exporter
 
-            # Update consumption
+            # Update consumption (scalar totals)
             consumption[exporter][good_out] -= qty_out
             consumption[exporter][good_in] += received_by_exporter
             consumption[importer][good_in] -= qty_in
             consumption[importer][good_out] += received_by_importer
 
-            # Track tariff losses
-            tariff_revenue[importer][good_out] += destroyed_at_importer
-            tariff_revenue[exporter][good_in] += destroyed_at_exporter
+            # Update per-variety inventories (Phase 3+)
+            if varieties is not None:
+                self._transfer_varieties(
+                    varieties, exporter, importer, good_out, qty_out, t_importer
+                )
+                self._transfer_varieties(
+                    varieties, importer, exporter, good_in, qty_in, t_exporter
+                )
 
-            # Log
+            # Track tariff losses
+            tariff_losses[importer][good_out] += destroyed_at_importer
+            tariff_losses[exporter][good_in] += destroyed_at_exporter
+
+            # Log: include implicit terms of trade (price ratio)
+            tot_str = ""
+            if qty_out > 0:
+                tot = qty_in / qty_out
+                tot_str = f"  [ToT: 1 {good_out} = {tot:.2f} {good_in}]"
             tariff_str = ""
             if t_importer > 0 or t_exporter > 0:
                 tariff_str = (
@@ -317,23 +562,72 @@ class IPESimulation:
             trade_log.append(
                 f"  {exporter} -> {importer}: "
                 f"{qty_out:.0f} {good_out} for {qty_in:.0f} {good_in}"
-                f"{tariff_str}"
+                f"{tot_str}{tariff_str}"
             )
 
-        return trade_log, tariff_revenue
+        return trade_log, tariff_losses
+
+    def _transfer_varieties(self, varieties, src, dst, good, qty, tariff):
+        """
+        Move `qty` of `good` from src to dst, distributing across varieties
+        in proportion to src's current variety mix. A tariff fraction is
+        destroyed at the border; the remainder lands in dst's variety pool.
+        """
+        src_pool = varieties[src][good]
+        total_src = sum(src_pool.values())
+        if total_src <= 1e-9:
+            return
+        frac = min(qty / total_src, 1.0)
+        dst_pool = varieties[dst][good]
+        for variety, src_qty in list(src_pool.items()):
+            transferred = src_qty * frac
+            src_pool[variety] = src_qty - transferred
+            received = transferred * (1.0 - tariff)
+            if received > 0:
+                dst_pool[variety] = dst_pool.get(variety, 0.0) + received
 
     # ── Welfare ───────────────────────────────────────────────────
 
-    def _utility(self, consumption_bundle: dict) -> float:
-        """Cobb-Douglas utility with equal weights: U = prod(c_j)^(1/J)."""
+    def _utility(self, bundle) -> float:
+        """
+        Cobb-Douglas across goods with equal weights.
+        Phase 1-2: bundle is {good: scalar_qty}. U = prod(c_g)^(1/J).
+        Phase 3+:  bundle is {good: {variety: qty}}. CES nest within each
+                   good aggregates varieties, then Cobb-Douglas across goods.
+        """
+        if not bundle:
+            return 0.0
+        # Detect variety-bundle (Phase 3+) vs scalar (Phase 1-2)
+        sample = next(iter(bundle.values()))
+        if isinstance(sample, dict):
+            return self._utility_with_varieties(bundle)
+        # Scalar (legacy) path
         J = len(self.goods)
         u = 1.0
         for good in self.goods:
-            c = consumption_bundle.get(good, 0.0)
+            c = bundle.get(good, 0.0)
             if c > 0:
                 u *= c ** (1.0 / J)
             else:
                 return 0.0
+        return u
+
+    def _utility_with_varieties(self, bundle: dict) -> float:
+        """CES variety nest inside Cobb-Douglas across goods."""
+        J = len(self.goods)
+        rho = self.variety_rho
+        u = 1.0
+        for good in self.goods:
+            varieties = bundle.get(good, {})
+            if not varieties:
+                return 0.0
+            ces_sum = sum(
+                (qty ** rho) for qty in varieties.values() if qty > 0
+            )
+            if ces_sum <= 0:
+                return 0.0
+            c_good = ces_sum ** (1.0 / rho)
+            u *= c_good ** (1.0 / J)
         return u
 
     # ── Factor prices (Phase 2) ───────────────────────────────────
@@ -432,6 +726,27 @@ class IPESimulation:
                         )
         return errors
 
+    def _validate_firm_decisions(self, firm_decisions):
+        """Phase 3+ firm decisions: scale in [0, max_scale], relocate_to valid."""
+        errors = []
+        for fid in self.firms:
+            if fid not in firm_decisions:
+                errors.append(f"Missing firm decision for {fid}")
+                continue
+            dec = firm_decisions[fid]
+            fcfg = self.firm_config[fid]
+            scale = dec.get("scale", 0)
+            if not (0 <= scale <= fcfg["max_scale"] + 0.01):
+                errors.append(
+                    f"{fid}: scale {scale} outside [0, {fcfg['max_scale']}]"
+                )
+            relocate_to = dec.get("relocate_to")
+            if relocate_to is not None and relocate_to not in self.countries:
+                errors.append(
+                    f"{fid}: relocate_to '{relocate_to}' is not a country"
+                )
+        return errors
+
     # ── Phase transition ──────────────────────────────────────────
 
     def upgrade_to_phase2(self, new_countries: dict, new_goods: list):
@@ -448,6 +763,33 @@ class IPESimulation:
         print(f"  Goods: {', '.join(self.goods)}")
         print(f"  Countries now have labor + capital endowments.")
         print(f"  Factor prices (wages, returns to capital) tracked.\n")
+
+    def upgrade_to_phase3(self, firms_config: dict = None):
+        """
+        Transition to Phase 3: introduce MNCs with differentiated varieties.
+
+        Country endowments and tech carry over from Phase 2. Adds:
+          - Firms with industry, variety, host country, productivity.
+          - CES variety preference inside each industry.
+          - Per-firm profit accounting in numeraire welfare units.
+
+        firms_config defaults to PHASE3_FIRMS. Pass a subset (e.g., F1-F10)
+        to match class enrollment.
+        """
+        if firms_config is None:
+            firms_config = PHASE3_FIRMS
+        self.firm_config = deepcopy(firms_config)
+        self.firms = {
+            fid: {"host": cfg["default_host"], "cumulative_profit": 0.0}
+            for fid, cfg in firms_config.items()
+        }
+        self.phase = 3
+        print(f"{'':=<55}")
+        print(f"  Upgraded to Phase 3: MNCs and Varieties")
+        print(f"{'':=<55}")
+        print(f"  Firms: {len(self.firms)} MNCs across {len(self.countries)} countries")
+        print(f"  Variety preference: CES with rho={self.variety_rho}")
+        print(f"  World reference prices: {self.world_prices}\n")
 
     # ── Instructor shock injection ────────────────────────────────
 
@@ -525,7 +867,7 @@ class IPESimulation:
         header = (
             f"  {'':16s}"
             + "".join(f"{g:>12s}" for g in goods)
-            + f"{'Welfare':>12s}{'vs Autarky':>12s}"
+            + f"{'Welfare':>12s}{'vs No Trade':>12s}"
         )
         print(header)
         print(
@@ -538,13 +880,16 @@ class IPESimulation:
                 row += f"{res[name]['consumption'].get(g, 0):12.1f}"
             row += f"{res[name]['welfare']:12.1f}"
             gains = res[name]["gains_from_trade_pct"]
-            sign = "+" if gains >= 0 else ""
-            row += f"{sign}{gains:10.1f}%"
+            if gains == float("inf"):
+                row += f"{'n/a (0)':>11s}"
+            else:
+                sign = "+" if gains >= 0 else ""
+                row += f"{sign}{gains:10.1f}%"
             print(row)
 
         # Tariff losses
         any_tariffs = any(
-            any(v > 0 for v in res[n]["tariff_revenue"].values())
+            any(v > 0 for v in res[n]["tariff_losses"].values())
             for n in names
         )
         if any_tariffs:
@@ -552,15 +897,15 @@ class IPESimulation:
             header = f"  {'':16s}" + "".join(f"{g:>12s}" for g in goods)
             print(header)
             for name in names:
-                tr = res[name]["tariff_revenue"]
+                tr = res[name]["tariff_losses"]
                 if any(v > 0 for v in tr.values()):
                     row = f"  {name:16s}"
                     for g in goods:
                         row += f"{tr.get(g, 0):12.1f}"
                     print(row)
 
-        # Factor prices (Phase 2)
-        if phase == 2:
+        # Factor prices (Phase 2+)
+        if phase >= 2:
             print(f"\n  FACTOR PRICES (marginal products)")
             print(f"  {'':16s}{'Avg Wage':>12s}{'Avg Return':>12s}")
             print(f"  {'':16s}{'-----':>12s}{'-----':>12s}")
@@ -572,30 +917,68 @@ class IPESimulation:
                     f"{fp['avg_capital_return']:12.2f}"
                 )
 
+        # Firms (Phase 3+)
+        if phase >= 3 and "firms" in rd:
+            print(f"\n  FIRMS (MNCs)")
+            print(
+                f"  {'ID':4s}{'Variety':10s}{'Host':10s}"
+                f"{'Scale':>8s}{'Output':>10s}{'Profit':>10s}{'Cum.Prof':>10s}"
+            )
+            print(f"  {'-'*52}")
+            for fid, fr in rd["firms"].items():
+                tag = ""
+                if fr["relocated"]:
+                    tag = " (moved)"
+                elif fr["exported"]:
+                    tag = " (exp)"
+                print(
+                    f"  {fid:4s}{fr['variety']:10s}{fr['host']:10s}"
+                    f"{fr['scale']:8.1f}{fr['output']:10.1f}"
+                    f"{fr['profit']:10.1f}{fr['cumulative_profit']:10.1f}{tag}"
+                )
+
         print(f"\n{'':=<65}\n")
 
     # ── Visualization ─────────────────────────────────────────────
 
     def plot_welfare(self, figsize=(10, 5)):
-        """Line chart of welfare across all rounds."""
+        """
+        Line chart of welfare. Splits into one subplot per phase, because
+        Cobb-Douglas utility with different numbers of goods is not
+        comparable across phases.
+        """
         if not self.history:
             print("No rounds to plot.")
             return
 
-        fig, ax = plt.subplots(figsize=figsize)
-        names = list(self.countries.keys())
-        rounds = [h["round"] for h in self.history]
+        phases = sorted({h["phase"] for h in self.history})
+        fig, axes = plt.subplots(
+            1, len(phases),
+            figsize=(figsize[0] * len(phases), figsize[1]),
+            squeeze=False,
+        )
 
-        for name in names:
-            welfares = [h["results"][name]["welfare"] for h in self.history]
-            ax.plot(rounds, welfares, marker="o", linewidth=2, label=name)
+        for i, ph in enumerate(phases):
+            ax = axes[0, i]
+            ph_hist = [h for h in self.history if h["phase"] == ph]
+            rounds = [h["round"] for h in ph_hist]
+            ph_names = list(ph_hist[-1]["results"].keys())
+            for name in ph_names:
+                welfares = [
+                    h["results"][name]["welfare"]
+                    for h in ph_hist if name in h["results"]
+                ]
+                ax.plot(rounds, welfares, marker="o", linewidth=2, label=name)
+            ax.set_xlabel("Round", fontsize=12)
+            ax.set_ylabel("Welfare (utility index)", fontsize=12)
+            ax.set_title(
+                f"Phase {ph} -- Welfare Over Time",
+                fontsize=14, fontweight="bold",
+            )
+            ax.legend(loc="best", fontsize=10)
+            ax.set_xticks(rounds)
+            ax.grid(True, alpha=0.3)
 
-        ax.set_xlabel("Round", fontsize=12)
-        ax.set_ylabel("Welfare (utility index)", fontsize=12)
-        ax.set_title("Welfare Over Time", fontsize=14, fontweight="bold")
-        ax.legend(loc="best", fontsize=10)
-        ax.set_xticks(rounds)
-        ax.grid(True, alpha=0.3)
         plt.tight_layout()
         plt.show()
 
@@ -690,6 +1073,73 @@ class IPESimulation:
                 ratio = config["capital"] / config["labor"]
                 print(f"  K/L ratio: {ratio:.2f}")
 
+            print()
+
+    # ── Firm roster + firm forms (Phase 3+) ───────────────────────
+
+    def print_firm_roster(self):
+        """Display the MNC roster: firm IDs, varieties, hosts, productivity."""
+        if not self.firms:
+            print("No firms loaded. Run upgrade_to_phase3() first.")
+            return
+        print(f"\n{'':=<70}")
+        print(f"  MNC ROSTER  --  {len(self.firms)} firms")
+        print(f"{'':=<70}")
+        print(
+            f"  {'ID':4s}{'Variety':10s}{'Industry':11s}{'Host':10s}"
+            f"{'Prod.':>7s}{'Max scale':>11s}{'Unit cost':>11s}"
+        )
+        print(f"  {'-'*64}")
+        for fid, cfg in self.firm_config.items():
+            host = self.firms[fid]["host"]
+            print(
+                f"  {fid:4s}{cfg['variety']:10s}{cfg['industry']:11s}"
+                f"{host:10s}{cfg['productivity']:7.1f}"
+                f"{cfg['max_scale']:11.0f}{cfg['unit_cost']:11.2f}"
+            )
+        print(f"\n  Productivity tiers: HIGH=1.3, MED=1.0, LOW=0.7")
+        print(f"  Owner is always a student from a DIFFERENT country.\n")
+
+    def print_firm_decision_forms(self, round_num: int = None):
+        """Printable decision form per firm for MNC owners."""
+        if not self.firms:
+            print("No firms loaded.")
+            return
+        rnd = (self.round_num + 1) if round_num is None else round_num
+        for fid, cfg in self.firm_config.items():
+            host = self.firms[fid]["host"]
+            cumprof = self.firms[fid]["cumulative_profit"]
+            print(f"+{'-'*55}+")
+            header = f"|  ROUND {rnd} -- FIRM {fid} ({cfg['variety']})"
+            print(f"{header:<56s}|")
+            print(f"+{'-'*55}+")
+            line = (
+                f"|  Industry: {cfg['industry']}   "
+                f"Productivity: {cfg['productivity']}"
+            )
+            print(f"{line:<56s}|")
+            line = (
+                f"|  Current host: {host}   "
+                f"Cumulative profit: {cumprof:.1f}"
+            )
+            print(f"{line:<56s}|")
+            line = (
+                f"|  Max scale: {cfg['max_scale']}   "
+                f"Unit cost: {cfg['unit_cost']:.2f}"
+            )
+            print(f"{line:<56s}|")
+            print(f"|{' '*55}|")
+            line = f"|  SCALE (0-{cfg['max_scale']}): ______"
+            print(f"{line:<56s}|")
+            line = f"|  RELOCATE TO: ___________  (blank = stay)"
+            print(f"{line:<56s}|")
+            if self.phase >= 4:
+                line = (
+                    f"|  EXPORT? (Y/N, fixed cost "
+                    f"{cfg['fixed_export_cost']:.0f}): _____"
+                )
+                print(f"{line:<56s}|")
+            print(f"+{'-'*55}+")
             print()
 
     # ── Paper form generator ──────────────────────────────────────
@@ -816,19 +1266,30 @@ class IPESimulation:
     # ── Save / load state ─────────────────────────────────────────
 
     def get_state(self) -> dict:
-        """Export full simulation state as a serializable dict."""
+        """Export full simulation state as a JSON-serializable dict."""
         return {
             "countries": self.countries,
             "goods": self.goods,
             "phase": self.phase,
             "round_num": self.round_num,
             "history": self.history,
+            # Phase 3+ state
+            "firm_config": self.firm_config,
+            "firms": self.firms,
+            "world_prices": self.world_prices,
+            "variety_rho": self.variety_rho,
         }
 
     @classmethod
     def from_state(cls, state: dict) -> "IPESimulation":
-        """Restore simulation from saved state."""
+        """Restore simulation from saved state. Backward compatible with
+        saves that pre-date Phase 3 (firm fields default to empty)."""
         sim = cls(state["countries"], state["goods"], state["phase"])
         sim.round_num = state["round_num"]
         sim.history = state["history"]
+        # Phase 3+ fields (optional for backward compat)
+        sim.firm_config = state.get("firm_config", {})
+        sim.firms = state.get("firms", {})
+        sim.world_prices = state.get("world_prices", dict(WORLD_PRICES))
+        sim.variety_rho = state.get("variety_rho", VARIETY_RHO)
         return sim
