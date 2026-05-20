@@ -206,14 +206,35 @@ BASE_FX_FRICTION = 0.02        # 2% baseline on cross-currency, non-union, non-r
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  PHASE 6 INSTITUTIONS & POWER PARAMETERS
+#  PHASE 6 SOVEREIGN DEBT PARAMETERS
+# ═══════════════════════════════════════════════════════════════════
+# Rolling debt stock denominated in the reserve currency (numeraire).
+# Borrowing lifts consumption now; servicing/repaying lowers it later.
+# Foreign-currency debt + a weak currency = "original sin": the real burden
+# of servicing rises as your currency depreciates.
+
+DEBT_BASE_RATE = 0.05          # base interest rate on the debt stock
+DEBT_RISK_PREMIUM = 0.15       # premium scaling with debt/capacity ratio
+DEBT_DEFAULT_BAN_ROUNDS = 2    # rounds a defaulter cannot borrow (tunable)
+DEBT_DEFAULT_FRICTION = 0.05   # extra FX friction on a defaulter's trades during the ban
+DEBT_DIVIDEND_PENALTY = 0.5    # WTO dividend halved (not zeroed) during the ban
+IMF_DEBT_RELIEF = 0.5          # IMF bailout refinances away half the debt stock
+IMF_AUSTERITY = 0.08           # ...in exchange for an 8% welfare cut
+IMF_AUSTERITY_ROUNDS = 2       # ...for this many rounds
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  PHASE 7 INSTITUTIONS & POWER PARAMETERS
 # ═══════════════════════════════════════════════════════════════════
 # WTO membership, bound tariffs, hegemonic provision of public goods.
 
 WTO_DIVIDEND = 0.02            # friction cut between non-defecting WTO members
-HEGEMON_PROVISION_COST = 0.05  # hegemon pays 5% of its welfare to lead
-HEGEMON_PROVISION_BENEFIT = 0.02  # providing cuts global friction 2%
-HEGEMON_WITHHOLD_PENALTY = 0.03   # withholding adds 3% global friction
+HEGEMON_PROVISION_COST = 0.04  # hegemon pays 4% of its welfare to lead
+HEGEMON_PROVISION_BENEFIT = 0.05  # providing cuts global friction 5%
+HEGEMON_WITHHOLD_PENALTY = 0.07   # withholding adds 7% global friction
+# Tuned so provision is clearly collectively beneficial (system better off when
+# the hegemon provides, in both WTO-none and WTO-all settings) while the
+# hegemon is still individually tempted to free-ride (it bears the cost).
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -258,8 +279,8 @@ class IPESimulation:
         # monetary_unions: name -> {"members": [...], "state": {shared monetary fields}}
         self.monetary_unions = {}
 
-        # Phase 6+ institutional state. Per-country fields (wto_member,
-        # bound_tariffs, defections) are added by upgrade_to_phase6().
+        # Phase 7+ institutional state. Per-country fields (wto_member,
+        # bound_tariffs, defections) are added by upgrade_to_phase7().
         self.hegemon = None            # set from reserve_currency_holder at upgrade
         self.hegemon_provides = True   # does the hegemon supply the public good?
         self._pending_global_crisis = None  # severity, consumed next run_round
@@ -269,6 +290,7 @@ class IPESimulation:
     def run_round(self, decisions: dict, trades: list,
                   firm_decisions: dict = None,
                   monetary_decisions: dict = None,
+                  debt_decisions: dict = None,
                   institutional_decisions: dict = None,
                   side_payments: list = None) -> dict:
         """
@@ -344,10 +366,22 @@ class IPESimulation:
                 )
             monetary_events = self._apply_monetary_decisions(monetary_decisions)
 
-        # Step 0b: Institutional decisions (Phase 6+): WTO membership,
+        # Step 0a2: Validate debt decisions (Phase 6+); applied later in the
+        # welfare loop because debt scales consumption-based welfare.
+        if self.phase >= 6:
+            if debt_decisions is None:
+                debt_decisions = {}
+            dbt_errors = self._validate_debt_decisions(debt_decisions)
+            if dbt_errors:
+                self.round_num -= 1
+                raise ValueError(
+                    "Debt decision validation failed:\n" + "\n".join(dbt_errors)
+                )
+
+        # Step 0b: Institutional decisions (Phase 7+): WTO membership,
         # bindings, hegemon provision. Then flag this round's defectors.
         defected = set()
-        if self.phase >= 6:
+        if self.phase >= 7:
             if institutional_decisions:
                 if "hegemon_provides" in institutional_decisions:
                     self.hegemon_provides = bool(
@@ -395,16 +429,16 @@ class IPESimulation:
             defected=defected,
         )
 
-        # Step 3b: Side payments (Phase 6+) — goods transfers applied after
+        # Step 3b: Side payments (Phase 7+) — goods transfers applied after
         # trade, before welfare. Donor consumption drops; recipient's rises.
         side_payment_log = []
-        if self.phase >= 6 and side_payments:
+        if self.phase >= 7 and side_payments:
             side_payment_log = self._apply_side_payments(
                 consumption, varieties, side_payments
             )
 
-        # Step 3c: Consume a pending global crisis factor (Phase 6+).
-        crisis_factor = self._global_crisis_factor() if self.phase >= 6 else 1.0
+        # Step 3c: Consume a pending global crisis factor (Phase 7+).
+        crisis_factor = self._global_crisis_factor() if self.phase >= 7 else 1.0
 
         # Step 4: Welfare. Phase 3+ uses variety-aware CES utility.
         results = {}
@@ -421,14 +455,26 @@ class IPESimulation:
                 crisis_welfare_loss = welfare * CRISIS_WELFARE_HIT
                 welfare -= crisis_welfare_loss
 
-            # Phase 6+: hegemon pays the cost of leadership; global crisis
+            # Phase 7+: hegemon pays the cost of leadership; global crisis
             # scales everyone's welfare.
             hegemon_cost = 0.0
-            if self.phase >= 6:
+            if self.phase >= 7:
                 if name == self.hegemon and self.hegemon_provides:
                     hegemon_cost = welfare * HEGEMON_PROVISION_COST
                     welfare -= hegemon_cost
                 welfare *= crisis_factor
+
+            # Phase 6+: sovereign debt — borrowing lifts welfare now,
+            # service/repay/default move it later (original sin via the
+            # currency's depreciation factor). Mutates the country's debt
+            # state once this round.
+            debt_info = None
+            if self.phase >= 6:
+                debt_info = self._apply_country_debt(
+                    name, welfare, consumption[name],
+                    debt_decisions.get(name, {})
+                )
+                welfare = debt_info["welfare_after"]
 
             if no_trade_welfare > 0:
                 gains_pct = (welfare - no_trade_welfare) / no_trade_welfare * 100
@@ -445,6 +491,8 @@ class IPESimulation:
                 "gains_from_trade_pct": gains_pct,
                 "tariff_losses": tariff_losses[name],
             }
+            if self.phase >= 6:
+                results[name]["debt"] = debt_info
 
             if self.phase >= 5:
                 ev = monetary_events.get(name, {})
@@ -462,7 +510,7 @@ class IPESimulation:
                     "union_id": self.countries[name].get("union_id"),
                 }
 
-            if self.phase >= 6:
+            if self.phase >= 7:
                 results[name]["institutions"] = {
                     "wto_member": self.countries[name].get("wto_member", False),
                     "bound_tariffs": dict(self.countries[name].get("bound_tariffs", {})),
@@ -506,6 +554,11 @@ class IPESimulation:
         if self.phase >= 5:
             round_result["monetary_events"] = monetary_events
         if self.phase >= 6:
+            round_result["debt_defaults"] = sorted(
+                n for n in self.countries
+                if results[n].get("debt", {}) and results[n]["debt"]["defaulted"]
+            )
+        if self.phase >= 7:
             round_result["hegemon"] = self.hegemon
             round_result["hegemon_provides"] = self.hegemon_provides
             round_result["defected"] = sorted(defected)
@@ -846,6 +899,123 @@ class IPESimulation:
             friction += WARNING_FRICTION_BUMP
         return min(friction, 1.0)
 
+    # ── Sovereign debt (Phase 6+) ─────────────────────────────────
+
+    def _validate_debt_decisions(self, debt_decisions):
+        errors = []
+        for c, dd in debt_decisions.items():
+            if c not in self.countries:
+                errors.append(f"Unknown country in debt_decisions: {c}")
+                continue
+            if dd.get("borrow", 0) < 0:
+                errors.append(f"{c}: borrow must be >= 0")
+            if dd.get("repay", 0) < 0:
+                errors.append(f"{c}: repay must be >= 0")
+        return errors
+
+    def _is_debt_banned(self, country):
+        """True if the country is inside a post-default borrowing ban."""
+        return self.round_num <= self.countries[country].get("borrow_ban_until", 0)
+
+    def _debt_friction_delta(self, exporter, importer):
+        """Extra FX friction on a defaulter's trades during its ban window."""
+        delta = 0.0
+        if self._is_debt_banned(exporter) or self._is_debt_banned(importer):
+            delta += DEBT_DEFAULT_FRICTION
+        return delta
+
+    def _apply_country_debt(self, name, welfare, consumption, dd):
+        """
+        Resolve one country's debt this round and return an info dict
+        (also mutates the country's debt state). Welfare in -> welfare out.
+
+        Borrowing of B lifts welfare by (1 + B/C); servicing interest+repay
+        lowers it by (1 - service_real/C), where C is consumption capacity at
+        world prices and service_real = service / depreciation_factor
+        (a weak currency makes hard-currency debt more painful). Default wipes
+        the stock but triggers ban + friction penalties; IMF austerity (if
+        active) applies a flat welfare cut.
+        """
+        cfg = self.countries[name]
+        stock = cfg.get("debt_stock", 0.0)
+        dep = self._mon(name).get("depreciation_factor", 1.0)
+        C = max(sum(consumption.get(g, 0.0) * self.world_prices[g]
+                    for g in self.goods), 1e-9)
+        rate = DEBT_BASE_RATE + DEBT_RISK_PREMIUM * (stock / C)
+        interest = stock * rate
+        banned = self._is_debt_banned(name)
+        austerity_active = self.round_num <= cfg.get("imf_austerity_until", 0)
+
+        borrow = repay = service = 0.0
+        defaulted = False
+        wiped = 0.0
+        w = welfare
+
+        if dd.get("default") and stock > 1e-9:
+            defaulted = True
+            wiped = stock
+            cfg["debt_stock"] = 0.0
+            cfg["borrow_ban_until"] = self.round_num + DEBT_DEFAULT_BAN_ROUNDS
+            cfg["defaults"] = cfg.get("defaults", 0) + 1
+        else:
+            borrow = max(0.0, dd.get("borrow", 0.0))
+            if banned:
+                borrow = 0.0                      # no borrowing during a ban
+            borrow = min(borrow, C)               # cap: at most double consumption
+            repay = max(0.0, dd.get("repay", 0.0))
+            repay = min(repay, stock + borrow)
+            service = interest + repay
+            w = w * (1 + borrow / C)
+            service_real = service / dep if dep > 0 else service
+            w *= max(0.0, 1 - service_real / C)
+            cfg["debt_stock"] = max(0.0, stock + borrow - repay)
+
+        austerity_cut = 0.0
+        if austerity_active:
+            austerity_cut = cfg.get("imf_austerity", 0.0)
+            w *= (1 - austerity_cut)
+
+        return {
+            "welfare_after": w,
+            "debt_stock": cfg["debt_stock"],
+            "rate": rate,
+            "interest": interest,
+            "borrow": borrow,
+            "repay": repay,
+            "service": service,
+            "defaulted": defaulted,
+            "wiped": wiped,
+            "banned": banned,
+            "austerity_active": austerity_active,
+            "austerity_cut": austerity_cut,
+            "depreciation_factor": dep,
+        }
+
+    def request_imf_bailout(self, country, description: str = None):
+        """
+        IMF emergency refinancing (Phase 7 institution, callable once debt
+        exists). Refinances away IMF_DEBT_RELIEF of the country's debt stock
+        now, in exchange for an austerity welfare cut for the next
+        IMF_AUSTERITY_ROUNDS rounds. The alternative to default: keep market
+        access, but accept conditionality.
+        """
+        if self.phase < 6:
+            raise ValueError("IMF bailouts require the debt layer (Phase 6+).")
+        cfg = self.countries[country]
+        before = cfg.get("debt_stock", 0.0)
+        cfg["debt_stock"] = before * (1 - IMF_DEBT_RELIEF)
+        cfg["imf_austerity_until"] = self.round_num + IMF_AUSTERITY_ROUNDS
+        cfg["imf_austerity"] = IMF_AUSTERITY
+        if description is None:
+            description = (
+                f"IMF bailout for {country}: debt {before:.1f} -> "
+                f"{cfg['debt_stock']:.1f}, {IMF_AUSTERITY:.0%} austerity for "
+                f"{IMF_AUSTERITY_ROUNDS} rounds"
+            )
+        print(f"\n{'':=<55}")
+        print(f"  IMF BAILOUT: {description}")
+        print(f"{'':=<55}\n")
+
     # ── Trade execution ───────────────────────────────────────────
 
     def _execute_trades(self, consumption, decisions, trades, varieties=None,
@@ -916,13 +1086,16 @@ class IPESimulation:
             )
 
             # FX friction (Phase 5+) stacks multiplicatively on tariffs and
-            # applies symmetrically to both legs of the barter. Phase 6 layers
+            # applies symmetrically to both legs of the barter. Phase 7 layers
             # institutional effects (hegemon provision, WTO dividend) on top.
             fx = self._compute_fx_friction(exporter, importer)
             if self.phase >= 6:
+                fx += self._debt_friction_delta(exporter, importer)
+            if self.phase >= 7:
                 fx += self._institutional_friction_delta(
                     exporter, importer, defected
                 )
+            if self.phase >= 6:
                 fx = max(0.0, min(fx, 1.0))
             loss_importer = 1 - (1 - t_importer) * (1 - fx)  # on good_out
             loss_exporter = 1 - (1 - t_exporter) * (1 - fx)  # on good_in
@@ -1252,16 +1425,13 @@ class IPESimulation:
 
     def upgrade_to_phase6(self):
         """
-        Transition to Phase 6: institutions, power, and the capstone.
+        Transition to Phase 6: sovereign debt. Money/FX stays live.
 
-        Requires Phase 5 (monetary state must exist). Monetary/FX stays live.
-        Adds:
-          - WTO membership + bound tariffs + a rules-based friction dividend
-          - A hegemon (= current reserve currency holder) that each round
-            provides or withholds a global public good
-          - Goods-based side payments
-          - Coalition-weight challenges that can transfer hegemony (and the
-            reserve currency with it)
+        Each country gets a rolling debt stock (in reserve-currency numeraire),
+        a borrowing-ban clock, and a default counter. Borrowing lifts welfare
+        now; interest + repayment lower it later. Because debt is denominated
+        in the reserve currency, a weak local currency makes servicing more
+        painful (original sin).
         """
         if self.reserve_currency_holder is None:
             raise ValueError(
@@ -1271,7 +1441,48 @@ class IPESimulation:
         if "depreciation_factor" not in self.countries[sample]:
             raise ValueError(
                 "Run upgrade_to_phase5() before upgrade_to_phase6(): "
-                "Phase 6 keeps the monetary system live."
+                "sovereign debt builds on the monetary layer."
+            )
+        for c in self.countries:
+            self.countries[c]["debt_stock"] = 0.0
+            self.countries[c]["borrow_ban_until"] = 0
+            self.countries[c]["defaults"] = 0
+            self.countries[c]["imf_austerity_until"] = 0
+        self.phase = 6
+        print(f"{'':=<55}")
+        print(f"  Upgraded to Phase 6: Sovereign Debt")
+        print(f"{'':=<55}")
+        print(f"  Debt is denominated in the reserve currency "
+              f"({self.countries[self.reserve_currency_holder]['currency']}).")
+        print(f"  Rate = {DEBT_BASE_RATE:.0%} + {DEBT_RISK_PREMIUM:.0%} x "
+              f"(debt / consumption capacity).")
+        print(f"  Borrow to consume now; service + repay later. A weak currency")
+        print(f"  makes hard-currency debt more painful to service (original sin).")
+        print(f"  Default wipes the stock but bans borrowing for "
+              f"{DEBT_DEFAULT_BAN_ROUNDS} rounds + adds trade friction.\n")
+
+    def upgrade_to_phase7(self):
+        """
+        Transition to Phase 7: institutions, power, and the capstone.
+
+        Requires Phase 6 (sovereign debt) — money, FX, and debt all stay live.
+        Adds:
+          - WTO membership + bound tariffs + a rules-based friction dividend
+          - A hegemon (= current reserve currency holder) that each round
+            provides or withholds a global public good
+          - Goods-based side payments
+          - Coalition-weight challenges that can transfer hegemony (and the
+            reserve currency with it)
+          - An always-on IMF that bails out distressed debtors with strings
+        """
+        if self.reserve_currency_holder is None:
+            raise ValueError(
+                "Run award_reserve_currency() before upgrade_to_phase7()."
+            )
+        if self.phase < 6:
+            raise ValueError(
+                "Run upgrade_to_phase6() (sovereign debt) before "
+                "upgrade_to_phase7(): institutions build on the debt layer."
             )
         self.hegemon = self.reserve_currency_holder
         self.hegemon_provides = True
@@ -1279,9 +1490,9 @@ class IPESimulation:
             self.countries[c]["wto_member"] = False
             self.countries[c]["bound_tariffs"] = {}
             self.countries[c]["defections"] = 0
-        self.phase = 6
+        self.phase = 7
         print(f"{'':=<55}")
-        print(f"  Upgraded to Phase 6: Institutions & Power")
+        print(f"  Upgraded to Phase 7: Institutions & Power")
         print(f"{'':=<55}")
         print(f"  Hegemon: {self.hegemon} (also the reserve currency holder)")
         print(f"  WTO dividend: {WTO_DIVIDEND:.0%} friction cut between "
@@ -1291,7 +1502,9 @@ class IPESimulation:
         print(f"  Hegemon withholds -> global friction +"
               f"{HEGEMON_WITHHOLD_PENALTY:.0%}")
         print(f"  Hegemony transfers if a challenger coalition outweighs the "
-              f"rest of the world.\n")
+              f"rest of the world.")
+        print(f"  IMF stands ready to bail out distressed debtors "
+              f"(with conditionality).\n")
 
     # ── End-of-Phase-4 ceremonies ─────────────────────────────────
 
@@ -1301,9 +1514,8 @@ class IPESimulation:
         with Phase 4 welfare as the tiebreaker. Set
         self.reserve_currency_holder = top country.
 
-        Call at the end of Phase 4 (Round 16 in the default schedule).
-        The winner becomes the Phase 5 reserve currency holder and the
-        Phase 6 hegemon.
+        Call at the end of Phase 4. The winner becomes the Phase 5 reserve
+        currency holder and the Phase 7 hegemon.
 
         Returns the full ranking list (best first).
         """
@@ -1347,7 +1559,7 @@ class IPESimulation:
             f"  Their currency becomes the default invoicing unit in "
             f"Phase 5,"
         )
-        print(f"  and they enter Phase 6 as the hegemon.\n")
+        print(f"  and they enter Phase 7 as the hegemon.\n")
         return ranking
 
     def print_firm_rankings(self):
@@ -1633,7 +1845,7 @@ class IPESimulation:
         print(f"  {', '.join(union['members'])} revert to own currencies "
               f"(dep factor {final_dep:.2f}).\n")
 
-    # ── Institutions & power (Phase 6+) ───────────────────────────
+    # ── Institutions & power (Phase 7+) ───────────────────────────
 
     def join_wto(self, *countries):
         """Opt one or more countries into the WTO."""
@@ -1685,8 +1897,8 @@ class IPESimulation:
 
         Returns True if the challenge succeeds.
         """
-        if self.phase < 6:
-            raise ValueError("Hegemonic challenges are a Phase 6 mechanic.")
+        if self.phase < 7:
+            raise ValueError("Hegemonic challenges are a Phase 7 mechanic.")
         backers = list(backers or [])
         coalition = {challenger, *backers}
         for c in coalition:
@@ -1746,9 +1958,10 @@ class IPESimulation:
 
     def _institutional_friction_delta(self, exporter, importer, defected):
         """
-        Phase 6 friction adjustment (added to FX friction, clamped >= 0):
+        Phase 7 friction adjustment (added to FX friction, clamped >= 0):
           - hegemon provision lowers / withholding raises global friction
           - non-defecting WTO member-to-member trade gets the dividend
+          - a debt defaulter in its ban window gets only half the dividend
         """
         delta = 0.0
         if self.hegemon_provides:
@@ -1759,7 +1972,11 @@ class IPESimulation:
         im_member = self.countries[importer].get("wto_member")
         if (ex_member and im_member
                 and exporter not in defected and importer not in defected):
-            delta -= WTO_DIVIDEND
+            dividend = WTO_DIVIDEND
+            # Debt defaulters keep WTO access but at a reduced dividend
+            if self._is_debt_banned(exporter) or self._is_debt_banned(importer):
+                dividend *= DEBT_DIVIDEND_PENALTY
+            delta -= dividend
         return delta
 
     def _flag_defections(self, decisions):
@@ -1999,8 +2216,38 @@ class IPESimulation:
                         f"= full crisis)"
                     )
 
-        # Institutions (Phase 6+)
-        if phase >= 6:
+        # Sovereign debt (Phase 6+)
+        if phase >= 6 and any("debt" in res[n] for n in names):
+            print(f"\n  SOVEREIGN DEBT")
+            print(
+                f"  {'':12s}{'Stock':>9s}{'Rate':>7s}{'Borrow':>8s}"
+                f"{'Service':>9s}{'Status':>10s}"
+            )
+            print(f"  {'-'*55}")
+            for name in names:
+                d = res[name].get("debt")
+                if not d:
+                    continue
+                status = ""
+                if d["defaulted"]:
+                    status = "DEFAULT"
+                elif d["banned"]:
+                    status = "banned"
+                elif d.get("austerity_active"):
+                    status = "austerity"
+                print(
+                    f"  {name:12s}{d['debt_stock']:9.1f}{d['rate']:7.0%}"
+                    f"{d['borrow']:8.1f}{d['service']:9.1f}{status:>10s}"
+                )
+            for name in names:
+                d = res[name].get("debt")
+                if d and d["defaulted"]:
+                    print(f"\n  ** {name} DEFAULTED: wiped {d['wiped']:.1f} debt; "
+                          f"banned from borrowing {DEBT_DEFAULT_BAN_ROUNDS} rounds "
+                          f"+ trade friction **")
+
+        # Institutions (Phase 7+)
+        if phase >= 7:
             heg = rd.get("hegemon")
             provides = rd.get("hegemon_provides", True)
             print(f"\n  INSTITUTIONS")
@@ -2024,11 +2271,43 @@ class IPESimulation:
 
         print(f"\n{'':=<65}\n")
 
-    def print_institutions_dashboard(self):
-        """Projectable Phase 6 snapshot: hegemon, WTO membership, bindings,
-        defection counts, cumulative-welfare power ranking."""
+    def print_debt_dashboard(self):
+        """Projectable Phase 6+ snapshot: each country's debt stock, current
+        interest rate, default count, and ban/austerity status."""
         if self.phase < 6:
-            print("Institutions dashboard available in Phase 6+.")
+            print("Debt dashboard available in Phase 6+.")
+            return
+        print(f"\n{'':=<66}")
+        print(f"  SOVEREIGN DEBT DASHBOARD")
+        print(f"{'':=<66}")
+        print(f"  Debt denominated in {self.countries[self.reserve_currency_holder]['currency']} "
+              f"(reserve currency).\n")
+        print(f"  {'Country':12s}{'DebtStock':>11s}{'Rate':>7s}"
+              f"{'Defaults':>10s}{'Status':>12s}")
+        print(f"  {'-'*52}")
+        for c in self.countries:
+            cfg = self.countries[c]
+            stock = cfg.get("debt_stock", 0.0)
+            # Approximate rate using last round's consumption capacity if known
+            rate = DEBT_BASE_RATE
+            status = ""
+            if self._is_debt_banned(c):
+                status = "banned"
+            elif self.round_num <= cfg.get("imf_austerity_until", 0):
+                status = "austerity"
+            print(
+                f"  {c:12s}{stock:11.1f}{rate:7.0%}"
+                f"{cfg.get('defaults', 0):>10d}{status:>12s}"
+            )
+        print(f"\n  (Rate rises with debt/capacity each round. Default wipes "
+              f"the stock but\n   bans borrowing {DEBT_DEFAULT_BAN_ROUNDS} rounds; "
+              f"IMF refinances {IMF_DEBT_RELIEF:.0%} for austerity.)\n")
+
+    def print_institutions_dashboard(self):
+        """Projectable Phase 7 snapshot: hegemon, WTO membership, bindings,
+        defection counts, cumulative-welfare power ranking."""
+        if self.phase < 7:
+            print("Institutions dashboard available in Phase 7+.")
             return
         print(f"\n{'':=<70}")
         print(f"  INSTITUTIONS DASHBOARD")
@@ -2654,7 +2933,7 @@ class IPESimulation:
             "reserve_currency_holder": self.reserve_currency_holder,
             # Phase 5+ state (monetary fields live inside `countries`)
             "monetary_unions": self.monetary_unions,
-            # Phase 6+ state (WTO/binding fields live inside `countries`)
+            # Phase 7+ state (WTO/binding fields live inside `countries`)
             "hegemon": self.hegemon,
             "hegemon_provides": self.hegemon_provides,
             "_pending_global_crisis": self._pending_global_crisis,
@@ -2677,7 +2956,7 @@ class IPESimulation:
         sim.reserve_currency_holder = state.get("reserve_currency_holder", None)
         # Phase 5+ fields
         sim.monetary_unions = state.get("monetary_unions", {})
-        # Phase 6+ fields
+        # Phase 7+ fields
         sim.hegemon = state.get("hegemon", None)
         sim.hegemon_provides = state.get("hegemon_provides", True)
         sim._pending_global_crisis = state.get("_pending_global_crisis", None)
