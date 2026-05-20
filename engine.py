@@ -1,11 +1,22 @@
 """
-IPE Simulation Engine v1
-========================
-Phase 1: Ricardian Comparative Advantage (1 factor, 2+ goods)
-Phase 2: Heckscher-Ohlin (2 factors, 3+ goods, distributional politics)
+IPE Simulation Engine
+=====================
+A round-based, simultaneous-move classroom simulation of the international
+political economy, built up over seven phases:
 
-Turn-based classroom simulation. Instructor enters student decisions,
-engine computes outcomes. Designed to run in a Jupyter notebook.
+  Phase 1: Ricardian comparative advantage (1 factor, 2 goods)
+  Phase 2: Heckscher-Ohlin (2 factors, 3 goods, distributional politics)
+  Phase 3: MNCs and varieties (new trade theory)
+  Phase 4: Heterogeneous firms (new-new trade theory)
+  Phase 5: Money & FX (the trilemma)
+  Phase 6: Sovereign debt (borrowing, original sin, default, IMF)
+  Phase 7: Institutions & power (WTO, hegemonic stability)
+
+Each round, all countries commit decisions simultaneously (in ignorance of
+one another's choices); the instructor enters them and the engine resolves
+the whole round at once. It is NOT turn-based — nobody reacts to anyone
+else within a round, which is what makes the negotiate-then-reveal trust
+dynamics real. Designed to run in a Jupyter notebook.
 """
 
 import numpy as np
@@ -352,31 +363,34 @@ class IPESimulation:
                     "Firm decision validation failed:\n" + "\n".join(fd_errors)
                 )
 
-        # Step 0: Monetary decisions + trilemma (Phase 5+), applied first so
-        # crisis devaluations affect this round's trade friction and profits.
-        monetary_events = {}
+        # Validate monetary (Phase 5+) and debt (Phase 6+) decisions BEFORE
+        # mutating any state, so a debt error can't leave monetary state
+        # half-applied on a rolled-back round.
+        if self.phase >= 5 and monetary_decisions is None:
+            monetary_decisions = {}
+        if self.phase >= 6 and debt_decisions is None:
+            debt_decisions = {}
         if self.phase >= 5:
-            if monetary_decisions is None:
-                monetary_decisions = {}
             md_errors = self._validate_monetary_decisions(monetary_decisions)
             if md_errors:
                 self.round_num -= 1
                 raise ValueError(
                     "Monetary decision validation failed:\n" + "\n".join(md_errors)
                 )
-            monetary_events = self._apply_monetary_decisions(monetary_decisions)
-
-        # Step 0a2: Validate debt decisions (Phase 6+); applied later in the
-        # welfare loop because debt scales consumption-based welfare.
         if self.phase >= 6:
-            if debt_decisions is None:
-                debt_decisions = {}
             dbt_errors = self._validate_debt_decisions(debt_decisions)
             if dbt_errors:
                 self.round_num -= 1
                 raise ValueError(
                     "Debt decision validation failed:\n" + "\n".join(dbt_errors)
                 )
+
+        # Step 0: Apply monetary decisions + trilemma (Phase 5+) first, so
+        # crisis devaluations affect this round's trade friction and profits.
+        # Debt is applied later in the welfare loop (it scales welfare).
+        monetary_events = {}
+        if self.phase >= 5:
+            monetary_events = self._apply_monetary_decisions(monetary_decisions)
 
         # Step 0b: Institutional decisions (Phase 7+): WTO membership,
         # bindings, hegemon provision. Then flag this round's defectors.
@@ -400,6 +414,10 @@ class IPESimulation:
 
         # Step 1: Country production (scalar totals)
         production = self._compute_production(decisions)
+        # Keep the country-only output (before MNC output is folded in) so
+        # factor prices reflect the country's OWN marginal products, not the
+        # MNCs hosted on its soil.
+        country_production = deepcopy(production)
 
         # Step 1b: Firm production, added to host country's industry total
         firm_output = {}
@@ -464,10 +482,20 @@ class IPESimulation:
                     welfare -= hegemon_cost
                 welfare *= crisis_factor
 
+            # Gains FROM TRADE are measured on welfare before debt: borrowing
+            # is consumption pulled from the future, not a gain from trade.
+            trade_welfare = welfare
+            if no_trade_welfare > 0:
+                gains_pct = (trade_welfare - no_trade_welfare) / no_trade_welfare * 100
+            elif trade_welfare > 0:
+                gains_pct = float("inf")
+            else:
+                gains_pct = 0.0
+
             # Phase 6+: sovereign debt — borrowing lifts welfare now,
             # service/repay/default move it later (original sin via the
-            # currency's depreciation factor). Mutates the country's debt
-            # state once this round.
+            # currency's depreciation factor). Applied AFTER the gains metric
+            # so it reflects trade, not borrowing. Mutates debt state once.
             debt_info = None
             if self.phase >= 6:
                 debt_info = self._apply_country_debt(
@@ -475,13 +503,6 @@ class IPESimulation:
                     debt_decisions.get(name, {})
                 )
                 welfare = debt_info["welfare_after"]
-
-            if no_trade_welfare > 0:
-                gains_pct = (welfare - no_trade_welfare) / no_trade_welfare * 100
-            elif welfare > 0:
-                gains_pct = float("inf")
-            else:
-                gains_pct = 0.0
 
             results[name] = {
                 "production": production[name],
@@ -523,7 +544,7 @@ class IPESimulation:
 
             if self.phase >= 2:
                 results[name]["factor_prices"] = self._compute_factor_prices(
-                    name, decisions[name], production[name]
+                    name, decisions[name], country_production[name]
                 )
             if self.phase >= 3:
                 results[name]["consumption_varieties"] = varieties[name]
@@ -1848,7 +1869,9 @@ class IPESimulation:
     # ── Institutions & power (Phase 7+) ───────────────────────────
 
     def join_wto(self, *countries):
-        """Opt one or more countries into the WTO."""
+        """Opt one or more countries into the WTO. Phase 7+."""
+        if self.phase < 7:
+            raise ValueError("The WTO is a Phase 7 institution.")
         for c in countries:
             if c not in self.countries:
                 raise ValueError(f"Unknown country: {c}")
@@ -1857,23 +1880,29 @@ class IPESimulation:
               f"{[c for c in self.countries if self.countries[c].get('wto_member')]}")
 
     def leave_wto(self, *countries):
-        """Withdraw one or more countries from the WTO."""
+        """Withdraw one or more countries from the WTO. Phase 7+."""
+        if self.phase < 7:
+            raise ValueError("The WTO is a Phase 7 institution.")
         for c in countries:
             self.countries[c]["wto_member"] = False
 
     def bind_tariff(self, country: str, good: str, ceiling: float):
         """
-        Commit a country to a maximum tariff on a good (a WTO binding).
+        Commit a country to a maximum tariff on a good (a WTO binding). Phase 7+.
         Applying a tariff above the ceiling in a round = defection: the
         country loses the WTO dividend that round (no extra welfare penalty).
         """
+        if self.phase < 7:
+            raise ValueError("WTO bindings are a Phase 7 mechanic.")
         if not (0 <= ceiling <= 1.0):
             raise ValueError("ceiling must be in [0, 1].")
         self.countries[country].setdefault("bound_tariffs", {})[good] = ceiling
         print(f"  {country} binds {good} tariff at <= {ceiling:.0%}")
 
     def set_hegemon_provision(self, provides: bool):
-        """Set whether the hegemon supplies the global public good this round."""
+        """Set whether the hegemon supplies the global public good. Phase 7+."""
+        if self.phase < 7:
+            raise ValueError("Hegemonic provision is a Phase 7 mechanic.")
         self.hegemon_provides = bool(provides)
         verb = "PROVIDES" if provides else "WITHHOLDS"
         print(f"  Hegemon ({self.hegemon}) {verb} the public good "
@@ -1932,6 +1961,8 @@ class IPESimulation:
         (b) the share of countries in the WTO — leadership and broad
         cooperation soften the blow.
         """
+        if self.phase < 7:
+            raise ValueError("Global crises are resolved in Phase 7+.")
         if not (0 < severity < 1):
             raise ValueError("severity must be in (0, 1).")
         self._pending_global_crisis = severity
