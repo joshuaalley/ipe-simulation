@@ -206,6 +206,17 @@ BASE_FX_FRICTION = 0.02        # 2% baseline on cross-currency, non-union, non-r
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  PHASE 6 INSTITUTIONS & POWER PARAMETERS
+# ═══════════════════════════════════════════════════════════════════
+# WTO membership, bound tariffs, hegemonic provision of public goods.
+
+WTO_DIVIDEND = 0.02            # friction cut between non-defecting WTO members
+HEGEMON_PROVISION_COST = 0.05  # hegemon pays 5% of its welfare to lead
+HEGEMON_PROVISION_BENEFIT = 0.02  # providing cuts global friction 2%
+HEGEMON_WITHHOLD_PENALTY = 0.03   # withholding adds 3% global friction
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  SIMULATION ENGINE
 # ═══════════════════════════════════════════════════════════════════
 
@@ -247,11 +258,19 @@ class IPESimulation:
         # monetary_unions: name -> {"members": [...], "state": {shared monetary fields}}
         self.monetary_unions = {}
 
+        # Phase 6+ institutional state. Per-country fields (wto_member,
+        # bound_tariffs, defections) are added by upgrade_to_phase6().
+        self.hegemon = None            # set from reserve_currency_holder at upgrade
+        self.hegemon_provides = True   # does the hegemon supply the public good?
+        self._pending_global_crisis = None  # severity, consumed next run_round
+
     # ── Core round logic ──────────────────────────────────────────
 
     def run_round(self, decisions: dict, trades: list,
                   firm_decisions: dict = None,
-                  monetary_decisions: dict = None) -> dict:
+                  monetary_decisions: dict = None,
+                  institutional_decisions: dict = None,
+                  side_payments: list = None) -> dict:
         """
         Execute one round of the simulation.
 
@@ -325,6 +344,26 @@ class IPESimulation:
                 )
             monetary_events = self._apply_monetary_decisions(monetary_decisions)
 
+        # Step 0b: Institutional decisions (Phase 6+): WTO membership,
+        # bindings, hegemon provision. Then flag this round's defectors.
+        defected = set()
+        if self.phase >= 6:
+            if institutional_decisions:
+                if "hegemon_provides" in institutional_decisions:
+                    self.hegemon_provides = bool(
+                        institutional_decisions["hegemon_provides"]
+                    )
+                for c, idec in institutional_decisions.items():
+                    if c == "hegemon_provides" or c not in self.countries:
+                        continue
+                    if "join_wto" in idec:
+                        self.countries[c]["wto_member"] = bool(idec["join_wto"])
+                    if "bound_tariffs" in idec:
+                        self.countries[c].setdefault("bound_tariffs", {}).update(
+                            idec["bound_tariffs"]
+                        )
+            defected = self._flag_defections(decisions)
+
         # Step 1: Country production (scalar totals)
         production = self._compute_production(decisions)
 
@@ -352,8 +391,20 @@ class IPESimulation:
 
         # Step 3: Execute trades. Varieties move proportionally with their good.
         trade_log, tariff_losses, trade_records = self._execute_trades(
-            consumption, decisions, trades, varieties=varieties
+            consumption, decisions, trades, varieties=varieties,
+            defected=defected,
         )
+
+        # Step 3b: Side payments (Phase 6+) — goods transfers applied after
+        # trade, before welfare. Donor consumption drops; recipient's rises.
+        side_payment_log = []
+        if self.phase >= 6 and side_payments:
+            side_payment_log = self._apply_side_payments(
+                consumption, varieties, side_payments
+            )
+
+        # Step 3c: Consume a pending global crisis factor (Phase 6+).
+        crisis_factor = self._global_crisis_factor() if self.phase >= 6 else 1.0
 
         # Step 4: Welfare. Phase 3+ uses variety-aware CES utility.
         results = {}
@@ -369,6 +420,15 @@ class IPESimulation:
             if self.phase >= 5 and monetary_events.get(name, {}).get("crisis"):
                 crisis_welfare_loss = welfare * CRISIS_WELFARE_HIT
                 welfare -= crisis_welfare_loss
+
+            # Phase 6+: hegemon pays the cost of leadership; global crisis
+            # scales everyone's welfare.
+            hegemon_cost = 0.0
+            if self.phase >= 6:
+                if name == self.hegemon and self.hegemon_provides:
+                    hegemon_cost = welfare * HEGEMON_PROVISION_COST
+                    welfare -= hegemon_cost
+                welfare *= crisis_factor
 
             if no_trade_welfare > 0:
                 gains_pct = (welfare - no_trade_welfare) / no_trade_welfare * 100
@@ -400,6 +460,17 @@ class IPESimulation:
                     "crisis": ev.get("crisis", False),
                     "crisis_welfare_loss": crisis_welfare_loss,
                     "union_id": self.countries[name].get("union_id"),
+                }
+
+            if self.phase >= 6:
+                results[name]["institutions"] = {
+                    "wto_member": self.countries[name].get("wto_member", False),
+                    "bound_tariffs": dict(self.countries[name].get("bound_tariffs", {})),
+                    "defected": name in defected,
+                    "defections": self.countries[name].get("defections", 0),
+                    "is_hegemon": name == self.hegemon,
+                    "hegemon_cost": hegemon_cost,
+                    "crisis_factor": crisis_factor,
                 }
 
             if self.phase >= 2:
@@ -434,6 +505,14 @@ class IPESimulation:
             round_result["mnc_tax_cumulative"] = dict(self.mnc_tax_revenue)
         if self.phase >= 5:
             round_result["monetary_events"] = monetary_events
+        if self.phase >= 6:
+            round_result["hegemon"] = self.hegemon
+            round_result["hegemon_provides"] = self.hegemon_provides
+            round_result["defected"] = sorted(defected)
+            round_result["side_payment_log"] = side_payment_log
+            round_result["global_crisis_factor"] = crisis_factor
+            # Crisis is one-shot: consume it
+            self._pending_global_crisis = None
         self.history.append(round_result)
         return round_result
 
@@ -769,7 +848,8 @@ class IPESimulation:
 
     # ── Trade execution ───────────────────────────────────────────
 
-    def _execute_trades(self, consumption, decisions, trades, varieties=None):
+    def _execute_trades(self, consumption, decisions, trades, varieties=None,
+                        defected=None):
         """
         Execute trades. Tariffs destroy a fraction of imports (deadweight loss).
         Returns (trade_log, tariff_losses, trade_records).
@@ -783,6 +863,7 @@ class IPESimulation:
         """
         trade_log = []
         trade_records = []
+        defected = defected or set()
         tariff_losses = {c: {g: 0.0 for g in self.goods} for c in self.countries}
 
         for trade in trades:
@@ -835,8 +916,14 @@ class IPESimulation:
             )
 
             # FX friction (Phase 5+) stacks multiplicatively on tariffs and
-            # applies symmetrically to both legs of the barter.
+            # applies symmetrically to both legs of the barter. Phase 6 layers
+            # institutional effects (hegemon provision, WTO dividend) on top.
             fx = self._compute_fx_friction(exporter, importer)
+            if self.phase >= 6:
+                fx += self._institutional_friction_delta(
+                    exporter, importer, defected
+                )
+                fx = max(0.0, min(fx, 1.0))
             loss_importer = 1 - (1 - t_importer) * (1 - fx)  # on good_out
             loss_exporter = 1 - (1 - t_exporter) * (1 - fx)  # on good_in
 
@@ -1162,6 +1249,49 @@ class IPESimulation:
         print(f"  stress=1 -> warning ({1-WARNING_DEVALUATION:.0%} devaluation); "
               f"stress=2 -> crisis ({1-CRISIS_DEVALUATION:.0%} + "
               f"{CRISIS_WELFARE_HIT:.0%} welfare).\n")
+
+    def upgrade_to_phase6(self):
+        """
+        Transition to Phase 6: institutions, power, and the capstone.
+
+        Requires Phase 5 (monetary state must exist). Monetary/FX stays live.
+        Adds:
+          - WTO membership + bound tariffs + a rules-based friction dividend
+          - A hegemon (= current reserve currency holder) that each round
+            provides or withholds a global public good
+          - Goods-based side payments
+          - Coalition-weight challenges that can transfer hegemony (and the
+            reserve currency with it)
+        """
+        if self.reserve_currency_holder is None:
+            raise ValueError(
+                "Run award_reserve_currency() before upgrade_to_phase6()."
+            )
+        sample = next(iter(self.countries))
+        if "depreciation_factor" not in self.countries[sample]:
+            raise ValueError(
+                "Run upgrade_to_phase5() before upgrade_to_phase6(): "
+                "Phase 6 keeps the monetary system live."
+            )
+        self.hegemon = self.reserve_currency_holder
+        self.hegemon_provides = True
+        for c in self.countries:
+            self.countries[c]["wto_member"] = False
+            self.countries[c]["bound_tariffs"] = {}
+            self.countries[c]["defections"] = 0
+        self.phase = 6
+        print(f"{'':=<55}")
+        print(f"  Upgraded to Phase 6: Institutions & Power")
+        print(f"{'':=<55}")
+        print(f"  Hegemon: {self.hegemon} (also the reserve currency holder)")
+        print(f"  WTO dividend: {WTO_DIVIDEND:.0%} friction cut between "
+              f"non-defecting members")
+        print(f"  Hegemon provides -> cost {HEGEMON_PROVISION_COST:.0%} welfare, "
+              f"global friction -{HEGEMON_PROVISION_BENEFIT:.0%}")
+        print(f"  Hegemon withholds -> global friction +"
+              f"{HEGEMON_WITHHOLD_PENALTY:.0%}")
+        print(f"  Hegemony transfers if a challenger coalition outweighs the "
+              f"rest of the world.\n")
 
     # ── End-of-Phase-4 ceremonies ─────────────────────────────────
 
@@ -1503,6 +1633,192 @@ class IPESimulation:
         print(f"  {', '.join(union['members'])} revert to own currencies "
               f"(dep factor {final_dep:.2f}).\n")
 
+    # ── Institutions & power (Phase 6+) ───────────────────────────
+
+    def join_wto(self, *countries):
+        """Opt one or more countries into the WTO."""
+        for c in countries:
+            if c not in self.countries:
+                raise ValueError(f"Unknown country: {c}")
+            self.countries[c]["wto_member"] = True
+        print(f"  WTO members now: "
+              f"{[c for c in self.countries if self.countries[c].get('wto_member')]}")
+
+    def leave_wto(self, *countries):
+        """Withdraw one or more countries from the WTO."""
+        for c in countries:
+            self.countries[c]["wto_member"] = False
+
+    def bind_tariff(self, country: str, good: str, ceiling: float):
+        """
+        Commit a country to a maximum tariff on a good (a WTO binding).
+        Applying a tariff above the ceiling in a round = defection: the
+        country loses the WTO dividend that round (no extra welfare penalty).
+        """
+        if not (0 <= ceiling <= 1.0):
+            raise ValueError("ceiling must be in [0, 1].")
+        self.countries[country].setdefault("bound_tariffs", {})[good] = ceiling
+        print(f"  {country} binds {good} tariff at <= {ceiling:.0%}")
+
+    def set_hegemon_provision(self, provides: bool):
+        """Set whether the hegemon supplies the global public good this round."""
+        self.hegemon_provides = bool(provides)
+        verb = "PROVIDES" if provides else "WITHHOLDS"
+        print(f"  Hegemon ({self.hegemon}) {verb} the public good "
+              f"({'global friction -' + format(HEGEMON_PROVISION_BENEFIT, '.0%') if provides else 'global friction +' + format(HEGEMON_WITHHOLD_PENALTY, '.0%')}).")
+
+    def _cumulative_welfare(self):
+        """Total welfare per country across all completed rounds."""
+        cum = {c: 0.0 for c in self.countries}
+        for h in self.history:
+            for c in self.countries:
+                if c in h["results"]:
+                    cum[c] += h["results"][c]["welfare"]
+        return cum
+
+    def challenge_hegemon(self, challenger: str, backers=None):
+        """
+        A challenger and its backers attempt to displace the hegemon. The
+        coalition's combined cumulative welfare is compared against everyone
+        outside the coalition. If the coalition outweighs the rest, hegemony
+        (and the reserve currency role) transfers to the challenger.
+
+        Returns True if the challenge succeeds.
+        """
+        if self.phase < 6:
+            raise ValueError("Hegemonic challenges are a Phase 6 mechanic.")
+        backers = list(backers or [])
+        coalition = {challenger, *backers}
+        for c in coalition:
+            if c not in self.countries:
+                raise ValueError(f"Unknown country: {c}")
+        cum = self._cumulative_welfare()
+        coalition_weight = sum(cum[c] for c in coalition)
+        rest_weight = sum(cum[c] for c in self.countries if c not in coalition)
+        print(f"\n{'':=<55}")
+        print(f"  HEGEMONIC CHALLENGE: {challenger} vs {self.hegemon}")
+        print(f"{'':=<55}")
+        print(f"  Coalition: {sorted(coalition)}")
+        print(f"  Coalition weight: {coalition_weight:.1f}  |  "
+              f"Rest of world: {rest_weight:.1f}")
+        if coalition_weight > rest_weight:
+            old = self.hegemon
+            self.hegemon = challenger
+            self.reserve_currency_holder = challenger
+            print(f"  ** CHALLENGE SUCCEEDS ** Hegemony transfers "
+                  f"{old} -> {challenger}.")
+            print(f"  The reserve currency moves with it.\n")
+            return True
+        print(f"  Challenge fails; {self.hegemon} retains hegemony.\n")
+        return False
+
+    def inject_global_crisis(self, severity: float = 0.20,
+                             description: str = None):
+        """
+        Schedule a system-wide welfare shock for the NEXT round. Effective
+        pain is mitigated by (a) the hegemon providing the public good and
+        (b) the share of countries in the WTO — leadership and broad
+        cooperation soften the blow.
+        """
+        if not (0 < severity < 1):
+            raise ValueError("severity must be in (0, 1).")
+        self._pending_global_crisis = severity
+        if description is None:
+            description = f"Global crisis scheduled (base severity {severity:.0%})"
+        print(f"\n{'':=<55}")
+        print(f"  SHOCK: {description}")
+        print(f"  Pain next round depends on hegemon provision + WTO breadth.")
+        print(f"{'':=<55}\n")
+
+    def _global_crisis_factor(self):
+        """Effective welfare multiplier from a pending global crisis."""
+        sev = self._pending_global_crisis
+        if not sev:
+            return 1.0
+        if self.hegemon_provides:
+            sev *= 0.5  # leadership halves the pain
+        n = len(self.countries)
+        wto_share = sum(
+            1 for c in self.countries if self.countries[c].get("wto_member")
+        ) / n if n else 0.0
+        sev *= (1 - 0.5 * wto_share)  # broad cooperation softens further
+        return 1.0 - sev
+
+    def _institutional_friction_delta(self, exporter, importer, defected):
+        """
+        Phase 6 friction adjustment (added to FX friction, clamped >= 0):
+          - hegemon provision lowers / withholding raises global friction
+          - non-defecting WTO member-to-member trade gets the dividend
+        """
+        delta = 0.0
+        if self.hegemon_provides:
+            delta -= HEGEMON_PROVISION_BENEFIT
+        else:
+            delta += HEGEMON_WITHHOLD_PENALTY
+        ex_member = self.countries[exporter].get("wto_member")
+        im_member = self.countries[importer].get("wto_member")
+        if (ex_member and im_member
+                and exporter not in defected and importer not in defected):
+            delta -= WTO_DIVIDEND
+        return delta
+
+    def _flag_defections(self, decisions):
+        """
+        Return the set of WTO members whose applied tariff schedule this round
+        exceeds one of their bindings. Increments each defector's count.
+        """
+        defected = set()
+        for c in self.countries:
+            if not self.countries[c].get("wto_member"):
+                continue
+            bindings = self.countries[c].get("bound_tariffs", {})
+            if not bindings:
+                continue
+            floor = self.countries[c].get("tariff_floor", 0.0)
+            dec_tariffs = decisions.get(c, {}).get("tariffs", {})
+            for good, ceiling in bindings.items():
+                applied = floor
+                for partner, gt in dec_tariffs.items():
+                    applied = max(applied, gt.get(good, 0.0))
+                if applied > ceiling + 1e-9:
+                    defected.add(c)
+                    self.countries[c]["defections"] = (
+                        self.countries[c].get("defections", 0) + 1
+                    )
+                    break
+        return defected
+
+    def _apply_side_payments(self, consumption, varieties, side_payments):
+        """
+        Apply goods-based side payments after trade, before welfare. Each is
+        (donor, recipient, good, qty). Donor must hold the goods. Returns a
+        log of executed / failed transfers.
+        """
+        log = []
+        for sp in side_payments:
+            donor, recipient, good, qty = sp
+            if donor not in self.countries or recipient not in self.countries:
+                log.append(f"  FAILED side payment: unknown country in {sp}")
+                continue
+            if consumption[donor].get(good, 0.0) < qty - 0.01:
+                log.append(
+                    f"  FAILED: {donor} cannot pay {qty:.0f} {good} "
+                    f"(has {consumption[donor].get(good, 0):.1f})"
+                )
+                continue
+            consumption[donor][good] -= qty
+            consumption[recipient][good] = (
+                consumption[recipient].get(good, 0.0) + qty
+            )
+            # Keep variety bundles consistent: pull from donor's mix, add to
+            # recipient under a generic side-payment variety key.
+            if varieties is not None:
+                self._transfer_varieties(
+                    varieties, donor, recipient, good, qty, 0.0
+                )
+            log.append(f"  {donor} -> {recipient}: {qty:.0f} {good} (side payment)")
+        return log
+
     # ── Display ───────────────────────────────────────────────────
 
     def print_results(self, round_num: int = None):
@@ -1683,7 +1999,59 @@ class IPESimulation:
                         f"= full crisis)"
                     )
 
+        # Institutions (Phase 6+)
+        if phase >= 6:
+            heg = rd.get("hegemon")
+            provides = rd.get("hegemon_provides", True)
+            print(f"\n  INSTITUTIONS")
+            print(f"  Hegemon: {heg} -- "
+                  f"{'PROVIDES' if provides else 'WITHHOLDS'} the public good")
+            members = [n for n in names
+                       if res[n].get("institutions", {}).get("wto_member")]
+            print(f"  WTO members: {members if members else '(none yet)'}")
+            defectors = rd.get("defected", [])
+            if defectors:
+                print(f"  ** Defected on bindings this round: {defectors} "
+                      f"(lost the WTO dividend) **")
+            if rd.get("side_payment_log"):
+                print(f"\n  SIDE PAYMENTS")
+                for line in rd["side_payment_log"]:
+                    print(line)
+            cf = rd.get("global_crisis_factor", 1.0)
+            if cf < 1.0:
+                print(f"\n  ** GLOBAL CRISIS: welfare scaled x{cf:.2f} "
+                      f"for all countries **")
+
         print(f"\n{'':=<65}\n")
+
+    def print_institutions_dashboard(self):
+        """Projectable Phase 6 snapshot: hegemon, WTO membership, bindings,
+        defection counts, cumulative-welfare power ranking."""
+        if self.phase < 6:
+            print("Institutions dashboard available in Phase 6+.")
+            return
+        print(f"\n{'':=<70}")
+        print(f"  INSTITUTIONS DASHBOARD")
+        print(f"{'':=<70}")
+        print(f"  Hegemon: {self.hegemon}  |  "
+              f"public good: {'PROVIDED' if self.hegemon_provides else 'WITHHELD'}")
+        print(f"\n  {'Country':12s}{'WTO':>5s}{'Defections':>12s}"
+              f"{'Bindings':>10s}{'CumWelfare':>12s}")
+        print(f"  {'-'*51}")
+        cum = self._cumulative_welfare()
+        ranking = sorted(self.countries, key=lambda c: cum[c], reverse=True)
+        for c in ranking:
+            cfg = self.countries[c]
+            wto = "yes" if cfg.get("wto_member") else "no"
+            nb = len(cfg.get("bound_tariffs", {}))
+            star = " *" if c == self.hegemon else ""
+            print(
+                f"  {c:12s}{wto:>5s}{cfg.get('defections', 0):>12d}"
+                f"{nb:>10d}{cum[c]:12.1f}{star}"
+            )
+        print(f"\n  (* = hegemon. Power ranking is cumulative welfare; a "
+              f"challenger coalition\n   that outweighs the rest can take "
+              f"hegemony via challenge_hegemon().)\n")
 
     # ── Visualization ─────────────────────────────────────────────
 
@@ -2286,6 +2654,10 @@ class IPESimulation:
             "reserve_currency_holder": self.reserve_currency_holder,
             # Phase 5+ state (monetary fields live inside `countries`)
             "monetary_unions": self.monetary_unions,
+            # Phase 6+ state (WTO/binding fields live inside `countries`)
+            "hegemon": self.hegemon,
+            "hegemon_provides": self.hegemon_provides,
+            "_pending_global_crisis": self._pending_global_crisis,
         }
 
     @classmethod
@@ -2305,4 +2677,8 @@ class IPESimulation:
         sim.reserve_currency_holder = state.get("reserve_currency_holder", None)
         # Phase 5+ fields
         sim.monetary_unions = state.get("monetary_unions", {})
+        # Phase 6+ fields
+        sim.hegemon = state.get("hegemon", None)
+        sim.hegemon_provides = state.get("hegemon_provides", True)
+        sim._pending_global_crisis = state.get("_pending_global_crisis", None)
         return sim
