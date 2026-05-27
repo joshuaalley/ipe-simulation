@@ -1,0 +1,225 @@
+\documentclass[11pt]{article}
+\usepackage[letterpaper,margin=0.85in]{geometry}
+\usepackage{booktabs}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{xcolor}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\newcommand{\blank}[1]{\underline{\hspace{#1}}}
+\newcommand{\boxx}{$\square$}
+\newcommand{\hr}{\par\vspace{2pt}\noindent\rule{\linewidth}{0.4pt}\par\vspace{2pt}}
+\pagestyle{empty}
+\begin{document}
+{\large\bfseries MNC Decision Forms} \hfill (Phase 3+)\par 
+You own this firm even though it sits in another country. Each round: choose how much to produce (\emph{scale}), whether to \emph{relocate} to a new host, and (Phase 4+) whether to pay the fixed cost to \emph{export}. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7.
+\hr
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F1: Cloth-A}\par
+Industry: \textbf{cloth} \quad
+Productivity: \textbf{1.3} \quad
+Starting host: \textbf{Bosque}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{0.60} \quad
+Export fixed cost: \textbf{8}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F2: Cloth-B}\par
+Industry: \textbf{cloth} \quad
+Productivity: \textbf{1.0} \quad
+Starting host: \textbf{Llano}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{0.60} \quad
+Export fixed cost: \textbf{8}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F3: Cloth-C}\par
+Industry: \textbf{cloth} \quad
+Productivity: \textbf{0.7} \quad
+Starting host: \textbf{Sabine}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{0.60} \quad
+Export fixed cost: \textbf{8}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F4: Wine-A}\par
+Industry: \textbf{wine} \quad
+Productivity: \textbf{1.3} \quad
+Starting host: \textbf{Llano}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{0.60} \quad
+Export fixed cost: \textbf{8}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F5: Wine-B}\par
+Industry: \textbf{wine} \quad
+Productivity: \textbf{1.0} \quad
+Starting host: \textbf{Sabine}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{0.60} \quad
+Export fixed cost: \textbf{8}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F6: Wine-C}\par
+Industry: \textbf{wine} \quad
+Productivity: \textbf{1.0} \quad
+Starting host: \textbf{Brazos}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{0.60} \quad
+Export fixed cost: \textbf{8}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F7: Mach-A}\par
+Industry: \textbf{machinery} \quad
+Productivity: \textbf{1.3} \quad
+Starting host: \textbf{Trinity}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{1.00} \quad
+Export fixed cost: \textbf{12}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F8: Mach-B}\par
+Industry: \textbf{machinery} \quad
+Productivity: \textbf{1.0} \quad
+Starting host: \textbf{Pecos}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{1.00} \quad
+Export fixed cost: \textbf{12}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F9: Mach-C}\par
+Industry: \textbf{machinery} \quad
+Productivity: \textbf{0.7} \quad
+Starting host: \textbf{Brazos}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{1.00} \quad
+Export fixed cost: \textbf{12}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F10: Mach-D}\par
+Industry: \textbf{machinery} \quad
+Productivity: \textbf{1.0} \quad
+Starting host: \textbf{Trinity}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{1.00} \quad
+Export fixed cost: \textbf{12}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F11: Cloth-D}\par
+Industry: \textbf{cloth} \quad
+Productivity: \textbf{0.7} \quad
+Starting host: \textbf{Trinity}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{0.60} \quad
+Export fixed cost: \textbf{8}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F12: Wine-D}\par
+Industry: \textbf{wine} \quad
+Productivity: \textbf{0.7} \quad
+Starting host: \textbf{Bosque}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{0.60} \quad
+Export fixed cost: \textbf{8}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+
+
+\noindent\fbox{\begin{minipage}{0.95\linewidth}
+{\bfseries ROUND \blank{1cm} --- FIRM F13: Mach-E}\par
+Industry: \textbf{machinery} \quad
+Productivity: \textbf{0.7} \quad
+Starting host: \textbf{Sabine}\par
+Max scale: \textbf{40} \quad
+Unit cost: \textbf{1.00} \quad
+Export fixed cost: \textbf{12}\par
+\vspace{3pt}
+SCALE (0--40): \blank{2cm} \qquad
+RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}
+\end{minipage}}
+\vspace{8pt}
+\end{document}

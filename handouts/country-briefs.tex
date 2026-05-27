@@ -1,0 +1,241 @@
+\documentclass[11pt]{article}
+\usepackage[letterpaper,margin=0.85in]{geometry}
+\usepackage{booktabs}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{xcolor}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\newcommand{\blank}[1]{\underline{\hspace{#1}}}
+\newcommand{\boxx}{$\square$}
+\newcommand{\hr}{\par\vspace{2pt}\noindent\rule{\linewidth}{0.4pt}\par\vspace{2pt}}
+\pagestyle{empty}
+\begin{document}
+
+{\Large\bfseries Country Brief: Brazos}\par
+\textit{Large, balanced economy.}
+\hr
+
+{\bfseries Phase 1 --- Ricardo} \hfill (one factor: labor)\par
+Labor force: \textbf{150} workers\par
+Productivity: cloth = 2.0/worker, wine = 2.0/worker\par
+Your own opportunity cost: 1 wine costs \textbf{1.00} cloth foregone.\par
+\textit{What can you make more cheaply than your trading partners?}
+
+\vspace{6pt}
+{\bfseries Phase 2 --- Heckscher--Ohlin} \hfill (two factors: labor + capital)\par
+Labor: \textbf{150} \quad Capital: \textbf{150} \quad K/L ratio: \textbf{1.00}\par
+\vspace{2pt}
+\begin{tabular}{lccc}
+\toprule
+Good & Your TFP & Labor share & Capital share \\
+\midrule
+    cloth & 1.0 & 0.70 & 0.30 \\
+    wine & 1.0 & 0.55 & 0.45 \\
+    machinery & 1.0 & 0.25 & 0.75 \\
+\bottomrule
+\end{tabular}\par
+\vspace{2pt}
+\textit{Factor intensities are the same for everyone: cloth is labor-intensive,
+machinery is capital-intensive, wine is in between.}
+
+\vspace{6pt}
+{\bfseries Later in the game}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item \textbf{Phase 3+ (MNCs):} firms that start on your soil --- Wine-C (F6, wine), Mach-C (F9, machinery).
+  \item \textbf{Phase 5 (money):} you run your own currency --- choose a regime and live with the trilemma.
+  \item \textbf{Phase 6 (debt):} you may borrow against future consumption --- and you may default.
+  \item \textbf{Phase 7 (institutions):} join the WTO, bind your tariffs, and decide whether to back the system.
+\end{itemize}
+
+\newpage
+
+{\Large\bfseries Country Brief: Bosque}\par
+\textit{Small textiles powerhouse.}
+\hr
+
+{\bfseries Phase 1 --- Ricardo} \hfill (one factor: labor)\par
+Labor force: \textbf{60} workers\par
+Productivity: cloth = 4.0/worker, wine = 1.0/worker\par
+Your own opportunity cost: 1 wine costs \textbf{4.00} cloth foregone.\par
+\textit{What can you make more cheaply than your trading partners? }
+
+\vspace{6pt}
+{\bfseries Phase 2 --- Heckscher--Ohlin} \hfill (two factors: labor + capital)\par
+Labor: \textbf{60} \quad Capital: \textbf{25} \quad K/L ratio: \textbf{0.42}\par
+\vspace{2pt}
+\begin{tabular}{lccc}
+\toprule
+Good & Your TFP & Labor share & Capital share \\
+\midrule
+    cloth & 1.2 & 0.70 & 0.30 \\
+    wine & 0.8 & 0.55 & 0.45 \\
+    machinery & 0.7 & 0.25 & 0.75 \\
+\bottomrule
+\end{tabular}\par
+\vspace{2pt}
+\textit{Factor intensities are the same for everyone: cloth is labor-intensive,
+machinery is capital-intensive, wine is in between.}
+
+\vspace{6pt}
+{\bfseries Later in the game}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item \textbf{Phase 3+ (MNCs):} firms that start on your soil --- Cloth-A (F1, cloth), Wine-D (F12, wine).
+  \item \textbf{Phase 5 (money):} you run your own currency --- choose a regime and live with the trilemma.
+  \item \textbf{Phase 6 (debt):} you may borrow against future consumption --- and you may default.
+  \item \textbf{Phase 7 (institutions):} join the WTO, bind your tariffs, and decide whether to back the system.
+\end{itemize}
+
+\newpage
+
+{\Large\bfseries Country Brief: Llano}\par
+\textit{Medium economy with strong wine sector.}
+\hr
+
+{\bfseries Phase 1 --- Ricardo} \hfill (one factor: labor)\par
+Labor force: \textbf{100} workers\par
+Productivity: cloth = 1.0/worker, wine = 3.0/worker\par
+Your own opportunity cost: 1 wine costs \textbf{0.33} cloth foregone.\par
+\textit{What can you make more cheaply than your trading partners? }
+
+\vspace{6pt}
+{\bfseries Phase 2 --- Heckscher--Ohlin} \hfill (two factors: labor + capital)\par
+Labor: \textbf{100} \quad Capital: \textbf{80} \quad K/L ratio: \textbf{0.80}\par
+\vspace{2pt}
+\begin{tabular}{lccc}
+\toprule
+Good & Your TFP & Labor share & Capital share \\
+\midrule
+    cloth & 0.8 & 0.70 & 0.30 \\
+    wine & 1.3 & 0.55 & 0.45 \\
+    machinery & 0.9 & 0.25 & 0.75 \\
+\bottomrule
+\end{tabular}\par
+\vspace{2pt}
+\textit{Factor intensities are the same for everyone: cloth is labor-intensive,
+machinery is capital-intensive, wine is in between.}
+
+\vspace{6pt}
+{\bfseries Later in the game}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item \textbf{Phase 3+ (MNCs):} firms that start on your soil --- Cloth-B (F2, cloth), Wine-A (F4, wine).
+  \item \textbf{Phase 5 (money):} you run your own currency --- choose a regime and live with the trilemma.
+  \item \textbf{Phase 6 (debt):} you may borrow against future consumption --- and you may default.
+  \item \textbf{Phase 7 (institutions):} join the WTO, bind your tariffs, and decide whether to back the system.
+\end{itemize}
+
+\newpage
+
+{\Large\bfseries Country Brief: Trinity}\par
+\textit{Large economy, somewhat diversified.}
+\hr
+
+{\bfseries Phase 1 --- Ricardo} \hfill (one factor: labor)\par
+Labor force: \textbf{120} workers\par
+Productivity: cloth = 3.0/worker, wine = 1.5/worker\par
+Your own opportunity cost: 1 wine costs \textbf{2.00} cloth foregone.\par
+\textit{What can you make more cheaply than your trading partners? }
+
+\vspace{6pt}
+{\bfseries Phase 2 --- Heckscher--Ohlin} \hfill (two factors: labor + capital)\par
+Labor: \textbf{120} \quad Capital: \textbf{200} \quad K/L ratio: \textbf{1.67}\par
+\vspace{2pt}
+\begin{tabular}{lccc}
+\toprule
+Good & Your TFP & Labor share & Capital share \\
+\midrule
+    cloth & 1.0 & 0.70 & 0.30 \\
+    wine & 0.9 & 0.55 & 0.45 \\
+    machinery & 1.2 & 0.25 & 0.75 \\
+\bottomrule
+\end{tabular}\par
+\vspace{2pt}
+\textit{Factor intensities are the same for everyone: cloth is labor-intensive,
+machinery is capital-intensive, wine is in between.}
+
+\vspace{6pt}
+{\bfseries Later in the game}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item \textbf{Phase 3+ (MNCs):} firms that start on your soil --- Mach-A (F7, machinery), Mach-D (F10, machinery), Cloth-D (F11, cloth).
+  \item \textbf{Phase 5 (money):} you run your own currency --- choose a regime and live with the trilemma.
+  \item \textbf{Phase 6 (debt):} you may borrow against future consumption --- and you may default.
+  \item \textbf{Phase 7 (institutions):} join the WTO, bind your tariffs, and decide whether to back the system.
+\end{itemize}
+
+\newpage
+
+{\Large\bfseries Country Brief: Pecos}\par
+\textit{Tiny but efficient.}
+\hr
+
+{\bfseries Phase 1 --- Ricardo} \hfill (one factor: labor)\par
+Labor force: \textbf{50} workers\par
+Productivity: cloth = 3.5/worker, wine = 3.5/worker\par
+Your own opportunity cost: 1 wine costs \textbf{1.00} cloth foregone.\par
+\textit{What can you make more cheaply than your trading partners? }
+
+\vspace{6pt}
+{\bfseries Phase 2 --- Heckscher--Ohlin} \hfill (two factors: labor + capital)\par
+Labor: \textbf{50} \quad Capital: \textbf{120} \quad K/L ratio: \textbf{2.40}\par
+\vspace{2pt}
+\begin{tabular}{lccc}
+\toprule
+Good & Your TFP & Labor share & Capital share \\
+\midrule
+    cloth & 1.0 & 0.70 & 0.30 \\
+    wine & 1.0 & 0.55 & 0.45 \\
+    machinery & 1.1 & 0.25 & 0.75 \\
+\bottomrule
+\end{tabular}\par
+\vspace{2pt}
+\textit{Factor intensities are the same for everyone: cloth is labor-intensive,
+machinery is capital-intensive, wine is in between.}
+
+\vspace{6pt}
+{\bfseries Later in the game}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item \textbf{Phase 3+ (MNCs):} firms that start on your soil --- Mach-B (F8, machinery).
+  \item \textbf{Phase 5 (money):} you run your own currency --- choose a regime and live with the trilemma.
+  \item \textbf{Phase 6 (debt):} you may borrow against future consumption --- and you may default.
+  \item \textbf{Phase 7 (institutions):} join the WTO, bind your tariffs, and decide whether to back the system.
+\end{itemize}
+
+\newpage
+
+{\Large\bfseries Country Brief: Sabine}\par
+\textit{Medium economy, low productivity.}
+\hr
+
+{\bfseries Phase 1 --- Ricardo} \hfill (one factor: labor)\par
+Labor force: \textbf{100} workers\par
+Productivity: cloth = 1.0/worker, wine = 1.5/worker\par
+Your own opportunity cost: 1 wine costs \textbf{0.67} cloth foregone.\par
+\textit{What can you make more cheaply than your trading partners? }
+
+\vspace{6pt}
+{\bfseries Phase 2 --- Heckscher--Ohlin} \hfill (two factors: labor + capital)\par
+Labor: \textbf{100} \quad Capital: \textbf{35} \quad K/L ratio: \textbf{0.35}\par
+\vspace{2pt}
+\begin{tabular}{lccc}
+\toprule
+Good & Your TFP & Labor share & Capital share \\
+\midrule
+    cloth & 1.1 & 0.70 & 0.30 \\
+    wine & 1.0 & 0.55 & 0.45 \\
+    machinery & 0.6 & 0.25 & 0.75 \\
+\bottomrule
+\end{tabular}\par
+\vspace{2pt}
+\textit{Factor intensities are the same for everyone: cloth is labor-intensive,
+machinery is capital-intensive, wine is in between.}
+
+\vspace{6pt}
+{\bfseries Later in the game}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item \textbf{Phase 3+ (MNCs):} firms that start on your soil --- Cloth-C (F3, cloth), Wine-B (F5, wine), Mach-E (F13, machinery).
+  \item \textbf{Phase 5 (money):} you run your own currency --- choose a regime and live with the trilemma.
+  \item \textbf{Phase 6 (debt):} you may borrow against future consumption --- and you may default.
+  \item \textbf{Phase 7 (institutions):} join the WTO, bind your tariffs, and decide whether to back the system.
+\end{itemize}
+\end{document}

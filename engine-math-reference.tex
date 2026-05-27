@@ -1,0 +1,289 @@
+\documentclass[11pt]{article}
+\usepackage[letterpaper, margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{titlesec}
+
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titlespacing*{\section}{0pt}{16pt}{6pt}
+\titleformat{\subsection}{\normalsize\bfseries}{}{0pt}{}
+\titlespacing*{\subsection}{0pt}{8pt}{2pt}
+\setlist[itemize]{leftmargin=1.4em, itemsep=1pt, topsep=2pt}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\textbf{IPE Simulation --- Engine Math Reference}}
+\author{Instructor reference (not for students)}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-1.2cm}
+
+\noindent\rule{\textwidth}{0.4pt}
+\textit{This document maps the textbook theory each phase teaches to what the
+engine actually computes, and flags where the two diverge. It exists so you can
+answer a sharp question and never overclaim. Students never see it.}
+\noindent\rule{\textwidth}{0.4pt}
+
+\section{Modeling philosophy}
+
+The engine is a \textbf{pedagogical simulator}, not a computable general
+equilibrium (CGE) or DSGE model. Every round is resolved by tractable
+closed-form arithmetic --- Cobb-Douglas and CES aggregators, multiplicative
+welfare adjustments, and reduced-form policy-to-state dynamics --- chosen so
+students can \emph{act} and \emph{see} a directional result, deliberately
+trading equilibrium rigor for legibility.
+
+Two consequences worth holding in mind throughout:
+\begin{itemize}
+  \item \textbf{Welfare is dimensionless utility}, not money. ``Money''
+  quantities (debt, taxes, side payments) reach welfare only through a stated
+  bridge --- valuing goods at \code{world\_prices} --- or are kept in a separate
+  ledger that never touches utility.
+  \item \textbf{Prices are not market-clearing.} Inter-country trade is barter
+  at student-negotiated ratios; there is no endogenous price vector and no
+  factor-price equalization. The engine demonstrates each model's qualitative
+  lesson; it does not solve for equilibrium.
+\end{itemize}
+
+\subsection{Notation}
+$g$ indexes goods (cloth, wine, machinery); $j$ indexes the $J$ goods in welfare;
+$L,K$ are labor and capital; $Y_g$ is output of good $g$; $c_j$ is consumption of
+good $j$; $w,r$ are wage and return to capital; $D$ is a country's debt stock;
+$d$ is its currency depreciation factor (1.00 = par).
+
+\subsection{Parameters (all tunable at the top of \code{engine.py})}
+\begin{center}\small
+\begin{tabular}{lll}
+\toprule
+Symbol / constant & Value & Meaning \\
+\midrule
+factor shares (cloth) & $\alpha{=}0.70,\ \beta{=}0.30$ & labor-intensive \\
+factor shares (wine) & $\alpha{=}0.55,\ \beta{=}0.45$ & moderate \\
+factor shares (machinery) & $\alpha{=}0.25,\ \beta{=}0.75$ & capital-intensive \\
+\code{WORLD\_PRICES} & cloth 1, wine 1, machinery 1.5 & numeraire goods prices \\
+productivity tiers & HIGH 1.3, MED 1.0, LOW 0.7 & firm productivity (Ph.\ 4) \\
+\code{VARIETY\_RHO} $\rho$ & 0.6 & CES; $\sigma = 1/(1-\rho) = 2.5$ \\
+\code{PHASE5\_MONEY\_GROWTH\_CHOICES} & $0,\ 2,\ 5,\ 10\%$ & money-supply growth \\
+\code{WARNING\_DEVALUATION} & 0.90 & stress-1 currency drop \\
+\code{CRISIS\_DEVALUATION} & 0.70 & stress-2 currency drop \\
+\code{CRISIS\_WELFARE\_HIT} & 0.10 & stress-2 welfare hit \\
+\code{BASE\_FX\_FRICTION} & 0.02 & cross-currency friction \\
+\code{WARNING\_FRICTION\_BUMP} & 0.03 & friction after a warning \\
+\code{DEBT\_BASE\_RATE} & 0.05 & base sovereign rate \\
+\code{DEBT\_RISK\_PREMIUM} & 0.15 & premium $\times$ (debt/capacity) \\
+\code{DEBT\_DEFAULT\_BAN\_ROUNDS} & 2 & borrowing ban after default \\
+\code{DEBT\_DEFAULT\_FRICTION} & 0.05 & defaulter trade friction \\
+\code{DEBT\_DIVIDEND\_PENALTY} & 0.5 & WTO dividend halved in ban \\
+\code{IMF\_DEBT\_RELIEF} & 0.5 & bailout refinances half the stock \\
+\code{IMF\_AUSTERITY} & 0.08 & austerity welfare cut \\
+\code{IMF\_AUSTERITY\_ROUNDS} & 2 & austerity duration \\
+\code{WTO\_DIVIDEND} & 0.02 & member-member friction cut \\
+\code{HEGEMON\_PROVISION\_COST} & 0.04 & hegemon's welfare cost to lead \\
+\code{HEGEMON\_PROVISION\_BENEFIT} & 0.05 & global friction cut if providing \\
+\code{HEGEMON\_WITHHOLD\_PENALTY} & 0.07 & global friction rise if withholding \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The welfare pipeline (order of operations each round)}
+For each country the engine computes base utility, then applies multiplicative
+adjustments in this fixed order (later phases only):
+\[
+U_{\text{base}} \xrightarrow{\text{Ph.5 crisis}} \xrightarrow{\text{Ph.7 hegemon cost}}
+\xrightarrow{\text{Ph.7 global crisis}} \underbrace{U_{\text{trade}}}_{\text{gains-from-trade measured here}}
+\xrightarrow{\text{Ph.6 debt}} U_{\text{final}}.
+\]
+Gains-from-trade are measured at $U_{\text{trade}}$ --- before debt --- so that
+borrowing (consumption pulled from the future) is not miscounted as a gain from
+trade.
+
+\section{Phase 1 --- Ricardian comparative advantage}
+\textbf{Theory.} One factor (labor), constant productivity per good. A country
+exports the good in which it has lower opportunity cost. The PPF is a straight
+line; gains from trade come from specialization.
+
+\textbf{Engine} (\code{\_compute\_production}, \code{\_utility}).
+\begin{align*}
+Y_g &= L_g \cdot a_g && \text{(linear: } a_g \text{ = productivity of good } g\text{)}\\
+U &= \prod_{j=1}^{J} c_j^{1/J} && \text{(Cobb-Douglas, equal weights)}
+\end{align*}
+Opportunity cost (shown in the briefs, 2-good case): $\text{OC} = a_{g_0}/a_{g_1}$.
+Trade is barter; a tariff destroys a fraction of the imported good,
+$\text{received} = \text{qty}\,(1-t)$.
+
+\textbf{Divergence.} Linear production $\Rightarrow$ constant opportunity cost
+(no diminishing returns, no curved PPF). ``Gains from trade'' is utility of the
+consumed bundle minus utility of own production (the no-trade baseline), not a
+welfare-theoretic equivalent variation.
+
+\section{Phase 2 --- Heckscher-Ohlin}
+\textbf{Theory.} Two factors. A country exports the good that intensively uses
+its abundant factor. Stolper-Samuelson: opening trade raises the real return of
+the abundant factor and lowers the scarce factor (the magnification effect:
+$\hat{p}_1 \Rightarrow \hat{w} > \hat{p}_1 > 0 > \hat{r}$ when good 1 is
+labor-intensive).
+
+\textbf{Engine} (\code{\_compute\_production}, \code{\_compute\_factor\_prices}).
+\begin{align*}
+Y_g &= \mathrm{TFP}_g \cdot L_g^{\alpha_g} K_g^{\beta_g}, \qquad \alpha_g + \beta_g = 1 \\
+w_g &= \frac{\partial Y_g}{\partial L_g} = \alpha_g \frac{Y_g}{L_g}, \qquad
+r_g = \frac{\partial Y_g}{\partial K_g} = \beta_g \frac{Y_g}{K_g}
+\end{align*}
+Factor intensity is encoded directly in $(\alpha_g,\beta_g)$; the engine reports
+allocation-weighted average $w$ and $r$. Factors are paid their marginal product.
+
+\textbf{Divergence.} No zero-profit/price-taking goods market, no endogenous
+prices, no factor-price equalization. Stolper-Samuelson \emph{emerges} from the
+allocation $+$ marginal-product arithmetic (the abundant factor's reported return
+rises as the country tilts toward its abundant-factor-intensive good) but is not
+derived analytically; the engine will not reproduce, e.g., the Leontief paradox
+or the exact magnification effect.
+
+\section{Phase 3 --- MNCs, varieties, new trade theory}
+\textbf{Theory.} Krugman: increasing returns $+$ love of variety yield
+intra-industry trade and gains from variety, formalized with CES preferences and
+monopolistic competition.
+
+\textbf{Engine} (\code{\_compute\_firm\_production}, \code{\_build\_variety\_bundles},
+\code{\_utility\_with\_varieties}, \code{\_compute\_firm\_profits}).
+MNC output is linear in scale, $Y_{\text{firm}} = \text{scale}\times\text{productivity}$
+(0 in a relocation round; scale capped at \code{max\_scale}). Each good's
+consumption is a CES aggregate over its varieties, nested inside the Cobb-Douglas:
+\[
+c_g = \Big(\textstyle\sum_{v} q_v^{\rho}\Big)^{1/\rho}, \qquad
+U = \prod_{g} c_g^{1/J}, \qquad \rho = 0.6,\ \ \sigma = \tfrac{1}{1-\rho} = 2.5 .
+\]
+More varieties raise $c_g$ at fixed total quantity --- the variety gain. Firm
+profit (numeraire): $\pi = Y_{\text{firm}}\cdot p_{\text{industry}} -
+\text{scale}\cdot\text{unit\_cost}$. Trade moves a good's varieties in proportion
+to the exporter's variety mix.
+
+\textbf{Divergence.} Real new trade theory has monopolistic competition with free
+entry, markup pricing, and an \emph{endogenous} number of varieties pinned down by
+market size and fixed costs. Here the firm set is fixed and CES enters only on the
+consumption side; firms sell at a fixed world price, not a markup. The model
+captures love-of-variety and intra-industry trade qualitatively, not the
+monopolistic-competition equilibrium.
+
+\section{Phase 4 --- Heterogeneous firms (Melitz)}
+\textbf{Theory.} Firms draw productivity $\varphi$; only firms above a cutoff
+$\varphi^\ast$ find it worth paying the fixed export cost $f_x$ and exporting.
+Trade reallocates toward high-$\varphi$ firms and raises average productivity
+(selection).
+
+\textbf{Engine} (\code{\_compute\_firm\_profits}). Each firm has a fixed
+productivity tier. With \code{export}\,=\,True it pays the fixed cost:
+\[
+\pi = \underbrace{Y_{\text{firm}}\,p_{\text{ind}}}_{\text{revenue}}
+- \text{scale}\cdot\text{unit\_cost}
+- \underbrace{f_x}_{\text{if exporting}}
+- \underbrace{p_{\text{ind}}Y_{\text{firm}}\cdot \tau_{\text{mnc}}}_{\text{MNC tax, Ph.4+}} .
+\]
+Selection is demonstrated by outcome: a low-productivity firm that pays $f_x$
+earns negative $\pi$; a high-productivity firm profits. Populist regimes set a
+tariff floor (applied tariff $= \max(\text{declared},\ \text{floor})$) and an MNC
+revenue tax routed to a \textbf{separate ledger} (it does not enter welfare).
+
+\textbf{Divergence.} Real Melitz derives $\varphi^\ast$ endogenously from the
+productivity distribution and fixed costs in equilibrium. Here productivity is
+discrete (HIGH/MED/LOW) and the export choice is the student's, so selection is
+shown, not solved.
+
+\section{Phase 5 --- Money, FX, and the trilemma}
+\textbf{Theory.} The Mundell-Fleming ``impossible trinity'': a country cannot
+simultaneously run a fixed exchange rate, open capital markets, and independent
+monetary policy. Pushing all three invites a speculative attack.
+
+\textbf{Engine} (\code{\_apply\_monetary\_decisions}, \code{\_compute\_fx\_friction}).
+Let $s$ be the stress counter and $d$ the depreciation factor. Overreach is
+peg $\wedge$ open-capital $\wedge$ independent-money. Per round:
+\[
+\text{overreach} \Rightarrow s \mathrel{+}= 1; \qquad \text{else } s = 0 .
+\]
+\[
+s = 1:\ d \mathrel{\times}= 0.90\ \text{(warning)};\qquad
+s = 2:\ d \mathrel{\times}= 0.70,\ U \mathrel{\times}= 0.90,\ s \to 0\ \text{(crisis)} .
+\]
+Money-supply decay: if independent, $d \mathrel{\times}= (1-g)$ with
+$g\in\{0,2,5,10\%\}$. FX friction on a trade leg (\code{\_compute\_fx\_friction}):
+$0$ if the reserve-currency holder is a party or the two share a monetary union;
+otherwise \code{BASE\_FX\_FRICTION} $=0.02$, halved if both peg, plus
+\code{WARNING\_FRICTION\_BUMP} $=0.03$ if either was just warned. Friction stacks
+on tariffs multiplicatively: $\text{loss} = 1-(1-t)(1-\mathrm{fx})$.
+
+\textbf{Divergence.} $d$ is a \emph{reduced-form currency-strength index} driven by
+policy choices and shocks --- there is no money supply/demand, no interest parity,
+no PPP, no modeled exchange-rate market. The trilemma is operationalized as a
+stress accumulator, not derived from an open-economy equilibrium. A monetary union
+shares one $(s,d,\text{policy})$ state across members (individual debts, shared
+currency --- the Eurozone analogy).
+
+\section{Phase 6 --- Sovereign debt}
+\textbf{Theory.} Debt is sustainable while the interest burden stays within
+capacity; spreads rise with the debt burden; ``original sin'' (Eichengreen-Hausmann)
+means foreign-currency debt becomes crushing when the local currency depreciates.
+
+\textbf{Engine} (\code{\_apply\_country\_debt}). Let consumption capacity
+$C = \sum_g c_g\, p_g$ (goods at world prices). Then:
+\begin{align*}
+\text{rate} &= \underbrace{0.05}_{\text{base}} + \underbrace{0.15}_{\text{premium}}\cdot \frac{D}{C}, \qquad
+\text{interest} = D\cdot\text{rate} \\
+\text{borrow } B:&\quad U \mathrel{\times}= \Big(1 + \tfrac{B}{C}\Big), \quad B \le C \\
+\text{service } (\text{interest}+\text{repay}):&\quad
+U \mathrel{\times}= \max\!\Big(0,\ 1 - \tfrac{\text{service}/d}{C}\Big), \qquad
+D \leftarrow D + B - \text{repay}
+\end{align*}
+The division of service by $d$ \emph{is} original sin: a weak currency ($d<1$)
+inflates the real burden of hard-currency debt. \textbf{Default} wipes the stock
+($D\to 0$), bans borrowing for 2 rounds, and adds trade friction, but skips the
+service hit that round. \textbf{IMF bailout}: $D \mathrel{\times}= 0.5$ now, in
+exchange for $U \mathrel{\times}= 0.92$ for 2 rounds (austerity).
+
+\textbf{Divergence.} No inter-temporal optimization (no Euler equation, no
+forward-looking default decision); the borrow/service welfare scaling is a
+mechanical multiplier. Debt is denominated only in the reserve currency. The rate
+rule is a reduced-form spread, not a default-probability-priced yield.
+
+\section{Phase 7 --- Institutions and power}
+\textbf{Theory.} Hegemonic stability (Kindleberger, Krasner): a leader supplies
+public goods --- open markets, a stable system --- at private cost, and is tempted
+to free-ride. Regimes/the WTO (Keohane) lower transaction costs among members.
+
+\textbf{Engine} (\code{\_institutional\_friction\_delta}, \code{\_global\_crisis\_factor},
+\code{challenge\_hegemon}). All institutional effects act on \emph{trade friction}
+or welfare. The friction added to a trade leg, on top of the Phase-5 base and any
+Phase-6 default friction, is
+\[
+\Delta_{\text{inst}} =
+\underbrace{\big({-}0.05 \text{ if provide else } {+}0.07\big)}_{\text{hegemon public good}}
+\;\;\underbrace{-\,0.02}_{\substack{\text{WTO dividend, if both members}\\\text{\& neither defected}\\(\times 0.5 \text{ if debt-banned})}} ,
+\]
+then the total $\mathrm{fx}$ is clamped to $[0,1]$. The hegemon pays
+$U \mathrel{\times}= 0.96$ when it provides. A pending \textbf{global crisis} of
+severity $\varsigma$ scales every country's welfare by
+\[
+1 - \varsigma\cdot\big(0.5 \text{ if hegemon provides}\big)\cdot\big(1 - 0.5\,\text{wto\_share}\big),
+\]
+so leadership and broad membership both soften it. A \textbf{hegemonic challenge}
+succeeds when the challenger coalition's cumulative welfare exceeds that of all
+non-coalition countries; hegemony and the reserve-currency role then transfer.
+Side payments are goods transfers applied before welfare.
+
+\textbf{Divergence.} A stylized public-goods/coordination model, not a
+game-theoretic equilibrium. The challenge rule is a raw weight comparison, not a
+bargaining solution; ``defection'' is simply applying a tariff above a binding.
+The hegemony parameters are tuned (see the simulation notes) so that provision is
+collectively beneficial in both WTO-none and WTO-all settings while the hegemon is
+still individually tempted to free-ride.
+
+\vspace{8pt}
+\noindent\rule{\textwidth}{0.4pt}
+\textit{All formulas above are exactly what the code computes; the
+\code{stress\_test\_phase*.py} suites assert these numbers. To change a behavior,
+edit the constant at the top of \code{engine.py} and rerun the tests.}
+\end{document}
