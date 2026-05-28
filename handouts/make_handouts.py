@@ -122,7 +122,7 @@ def country_brief_page(name):
 Labor force: \textbf{{{p1['labor']}}} workers\par
 Productivity: {prod_line}\par
 Your own opportunity cost: 1 {esc(wine)} costs \textbf{{{opp:.2f}}} {esc(cloth)} foregone.\par
-\textit{{What can you make more cheaply than your trading partners? That is your comparative advantage.}}
+\textit{{What can you make more cheaply than your trading partners?}}
 
 \vspace{{6pt}}
 {{\bfseries Phase 2 --- Heckscher--Ohlin}} \hfill (two factors: labor + capital)\par
@@ -137,8 +137,7 @@ Good & Your TFP & Labor share & Capital share \\
 \end{{tabular}}\par
 \vspace{{2pt}}
 \textit{{Factor intensities are the same for everyone: cloth is labor-intensive,
-machinery is capital-intensive, wine is in between. Tilt toward the good that
-uses your \emph{{abundant}} factor.}}
+machinery is capital-intensive, wine is in between.}}
 
 \vspace{{6pt}}
 {{\bfseries Later in the game}}\par

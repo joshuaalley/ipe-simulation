@@ -36,12 +36,12 @@ PHASE1_COUNTRIES = {
     "Brazos": {
         "labor": 150,
         "productivity": {"cloth": 2.0, "wine": 2.0},
-        "description": "Large, balanced economy. No clear comparative advantage.",
+        "description": "Large, balanced economy.",
     },
     "Bosque": {
         "labor": 60,
         "productivity": {"cloth": 4.0, "wine": 1.0},
-        "description": "Small but highly productive in cloth. Textiles powerhouse.",
+        "description": "Small textiles powerhouse.",
     },
     "Llano": {
         "labor": 100,
@@ -51,17 +51,17 @@ PHASE1_COUNTRIES = {
     "Trinity": {
         "labor": 120,
         "productivity": {"cloth": 3.0, "wine": 1.5},
-        "description": "Large economy, leans toward cloth but diversified.",
+        "description": "Large economy, somewhat diversified.",
     },
     "Pecos": {
         "labor": 50,
         "productivity": {"cloth": 3.5, "wine": 3.5},
-        "description": "Tiny but efficient. Absolute advantage in both goods, small market.",
+        "description": "Tiny but efficient.",
     },
     "Sabine": {
         "labor": 100,
         "productivity": {"cloth": 1.0, "wine": 1.5},
-        "description": "Medium economy, low productivity. Comparative advantage in wine.",
+        "description": "Medium economy, low productivity.",
     },
 }
 
@@ -78,7 +78,7 @@ PHASE2_COUNTRIES = {
             "wine":      {"tfp": 1.0, "labor_share": 0.55, "capital_share": 0.45},
             "machinery": {"tfp": 1.0, "labor_share": 0.25, "capital_share": 0.75},
         },
-        "description": "Balanced factor endowments. Can compete in any sector.",
+        "description": "Balanced factor endowments.",
     },
     "Bosque": {
         "labor": 60, "capital": 25,
@@ -87,7 +87,7 @@ PHASE2_COUNTRIES = {
             "wine":      {"tfp": 0.8, "labor_share": 0.55, "capital_share": 0.45},
             "machinery": {"tfp": 0.7, "labor_share": 0.25, "capital_share": 0.75},
         },
-        "description": "Labor-abundant, capital-scarce. Strong in textiles.",
+        "description": "Labor-abundant, capital-scarce.",
     },
     "Llano": {
         "labor": 100, "capital": 80,
@@ -96,7 +96,7 @@ PHASE2_COUNTRIES = {
             "wine":      {"tfp": 1.3, "labor_share": 0.55, "capital_share": 0.45},
             "machinery": {"tfp": 0.9, "labor_share": 0.25, "capital_share": 0.75},
         },
-        "description": "Moderate endowments. TFP advantage in wine.",
+        "description": "Moderate endowments.",
     },
     "Trinity": {
         "labor": 120, "capital": 200,
@@ -105,7 +105,7 @@ PHASE2_COUNTRIES = {
             "wine":      {"tfp": 0.9, "labor_share": 0.55, "capital_share": 0.45},
             "machinery": {"tfp": 1.2, "labor_share": 0.25, "capital_share": 0.75},
         },
-        "description": "Capital-abundant industrial power. Machinery is natural strength.",
+        "description": "Capital-abundant economy.",
     },
     "Pecos": {
         "labor": 50, "capital": 120,
@@ -114,7 +114,7 @@ PHASE2_COUNTRIES = {
             "wine":      {"tfp": 1.0, "labor_share": 0.55, "capital_share": 0.45},
             "machinery": {"tfp": 1.1, "labor_share": 0.25, "capital_share": 0.75},
         },
-        "description": "Small, very capital-rich. High-tech potential but limited labor.",
+        "description": "Small, very capital-rich; limited labor.",
     },
     "Sabine": {
         "labor": 100, "capital": 35,
@@ -123,7 +123,7 @@ PHASE2_COUNTRIES = {
             "wine":      {"tfp": 1.0, "labor_share": 0.55, "capital_share": 0.45},
             "machinery": {"tfp": 0.6, "labor_share": 0.25, "capital_share": 0.75},
         },
-        "description": "Labor-abundant, capital-poor. Struggles with heavy industry.",
+        "description": "Labor-abundant, capital-poor.",
     },
 }
 
@@ -1531,12 +1531,16 @@ class IPESimulation:
 
     def award_reserve_currency(self):
         """
-        Rank countries by cumulative welfare across all completed rounds,
-        with Phase 4 welfare as the tiebreaker. Set
-        self.reserve_currency_holder = top country.
+        Rank countries by their AVERAGE gains from trade (%) across all
+        completed rounds -- a size-neutral measure of how well each country
+        exploited trade, not how large it is -- with cumulative welfare as
+        the tiebreaker. Set self.reserve_currency_holder = top country.
 
         Call at the end of Phase 4. The winner becomes the Phase 5 reserve
-        currency holder and the Phase 7 hegemon.
+        currency holder and the Phase 7 hegemon. Because the metric is the
+        gains-from-trade percentage (not the welfare level), a small but well-
+        traded economy can earn the reserve currency over a large one -- the
+        hegemon is contested on skill, not pre-ordained by endowment size.
 
         Returns the full ranking list (best first).
         """
@@ -1544,33 +1548,38 @@ class IPESimulation:
             print("No rounds played; cannot award reserve currency.")
             return []
         cum_welfare = {n: 0.0 for n in self.countries}
-        p4_welfare = {n: 0.0 for n in self.countries}
+        sum_gains = {n: 0.0 for n in self.countries}
+        rounds_played = {n: 0 for n in self.countries}
         for h in self.history:
             for n in self.countries:
                 if n in h["results"]:
-                    w = h["results"][n]["welfare"]
-                    cum_welfare[n] += w
-                    if h.get("phase") == 4:
-                        p4_welfare[n] += w
-        # Rank descending by (cumulative, phase4 tiebreaker)
+                    cum_welfare[n] += h["results"][n]["welfare"]
+                    sum_gains[n] += h["results"][n].get(
+                        "gains_from_trade_pct", 0.0)
+                    rounds_played[n] += 1
+        avg_gains = {
+            n: (sum_gains[n] / rounds_played[n]) if rounds_played[n] else 0.0
+            for n in self.countries
+        }
+        # Rank descending by (avg gains-from-trade %, cumulative-welfare tiebreak)
         ranking = sorted(
             self.countries.keys(),
-            key=lambda n: (cum_welfare[n], p4_welfare[n]),
+            key=lambda n: (avg_gains[n], cum_welfare[n]),
             reverse=True,
         )
         self.reserve_currency_holder = ranking[0]
         print(f"\n{'':=<65}")
         print(f"  RESERVE CURRENCY AWARDED")
         print(f"{'':=<65}")
-        print(f"  Cumulative welfare across trade rounds "
-              f"(Phase 4 as tiebreaker):\n")
-        print(f"  {'Rank':5s}{'Country':14s}{'Cumulative':>12s}{'Phase 4':>12s}")
+        print(f"  Average gains from trade across all rounds "
+              f"(cumulative welfare breaks ties):\n")
+        print(f"  {'Rank':5s}{'Country':14s}{'Avg gains':>12s}{'Cum. welf.':>12s}")
         print(f"  {'-'*43}")
         for i, n in enumerate(ranking, 1):
             mark = "*" if i == 1 else " "
             print(
                 f"  {mark} {i:<3d}{n:14s}"
-                f"{cum_welfare[n]:12.2f}{p4_welfare[n]:12.2f}"
+                f"{avg_gains[n]:10.1f}% {cum_welfare[n]:12.1f}"
             )
         print(
             f"\n  ** {self.reserve_currency_holder} ** is the reserve "

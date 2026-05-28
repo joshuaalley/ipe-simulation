@@ -203,10 +203,10 @@ def test_mnc_tax_phase3_inactive():
 
 
 # ────────────────────────────────────────────────────────────────────
-# 6. award_reserve_currency picks top cumulative welfare
+# 6. award_reserve_currency picks top average gains from trade
 # ────────────────────────────────────────────────────────────────────
 def test_award_reserve_currency():
-    print("\n[6] reserve currency awarded to top cumulative welfare")
+    print("\n[6] reserve currency awarded to top average gains from trade")
     sim = fresh_phase4()
     # Already has 2 rounds of history (one Phase 3, one Phase 4)
     sim.run_round(BAL_DEC, [], firm_decisions=fd(sim))
@@ -215,12 +215,15 @@ def test_award_reserve_currency():
     check("  ranking has all 6 countries", len(ranking) == 6)
     check("  reserve_currency_holder set",
           sim.reserve_currency_holder == ranking[0])
-    # Check that the top country actually has the highest cumulative welfare
-    cum = {n: sum(h["results"][n]["welfare"] for h in sim.history)
-           for n in sim.countries}
-    top_by_cum = max(cum, key=cum.get)
-    check(f"  top in ranking ({ranking[0]}) is top in cumulative ({top_by_cum})",
-          ranking[0] == top_by_cum)
+    # Top country should have the highest AVERAGE gains-from-trade %
+    avg_gains = {
+        n: sum(h["results"][n]["gains_from_trade_pct"] for h in sim.history)
+           / len(sim.history)
+        for n in sim.countries
+    }
+    top_by_gains = max(avg_gains, key=avg_gains.get)
+    check(f"  top in ranking ({ranking[0]}) is top in avg gains ({top_by_gains})",
+          ranking[0] == top_by_gains)
 
     # Empty-history edge case
     sim_empty = IPESimulation(PHASE2_COUNTRIES, PHASE2_GOODS, phase=4)
