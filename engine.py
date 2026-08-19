@@ -2076,6 +2076,49 @@ class IPESimulation:
             log.append(f"  {donor} -> {recipient}: {qty:.0f} {good} (side payment)")
         return log
 
+    # ── Classroom helpers (projection + spreadsheet round I/O) ────
+    #
+    # Implemented in classroom.py so the engine keeps working even if
+    # pandas/openpyxl are unavailable; imported lazily for the same reason.
+
+    @staticmethod
+    def _classroom():
+        try:
+            import classroom
+            return classroom
+        except ImportError as e:                       # pragma: no cover
+            raise ImportError(
+                "classroom.py (and pandas/openpyxl) are needed for show() "
+                "and the spreadsheet round helpers."
+            ) from e
+
+    def show(self, round_num: int = None, scale: float = 1.0,
+             sort: str = None, trades: bool = True, columns=None):
+        """
+        Big-screen scoreboard for projection (HTML in a notebook, text
+        elsewhere). Raise `scale` for a deeper room: sim.show(scale=1.5).
+        If a high scale pushes later-phase columns off the edge, trim with
+        sim.show(scale=1.8, columns="core").
+        print_results() remains the full detailed record.
+        """
+        return self._classroom().show(
+            self, round_num=round_num, scale=scale, sort=sort,
+            trades=trades, columns=columns
+        )
+
+    def write_round_template(self, path: str, round_num: int = None):
+        """Write a blank Excel workbook for the next round, pre-filled."""
+        return self._classroom().write_round_template(
+            self, path, round_num=round_num
+        )
+
+    def load_round(self, path: str) -> dict:
+        """
+        Read a filled round workbook into run_round() keyword arguments:
+            sim.run_round(**sim.load_round("rounds/round07.xlsx"))
+        """
+        return self._classroom().load_round(self, path)
+
     # ── Display ───────────────────────────────────────────────────
 
     def print_results(self, round_num: int = None):

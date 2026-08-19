@@ -17,13 +17,74 @@ could react inside a round and that tension would disappear.)
 
 ## What projects well
 
-The engine produces two kinds of output, both projector-friendly:
+Three kinds of output:
 
-- **Text tables** (`print_*`) — your live "scoreboard."
+- **`sim.show()`** — the big-screen scoreboard. Use this one live.
 - **matplotlib charts** (`plot_*`) — your "aha" visuals for debrief.
+- **Text tables** (`print_*`) — the detailed record; better for your own
+  reference than for the back row.
 
 Drive everything from the notebook, running **one cell at a time** so the class
 watches each result appear.
+
+### Sizing the scoreboard to the room
+
+`print_results()` renders at the notebook's own font size, with fixed 12-character
+columns — small and padding-heavy on a projector. `sim.show()` exists to fix that:
+large type, tight cells, colored gains, and event badges (CRISIS, DEFAULT,
+defected, WTO, hegemon).
+
+```python
+sim.show()                              # good in a normal classroom
+sim.show(scale=1.5)                     # deeper room
+sim.show(scale=1.8, columns="core")     # very deep room: welfare + gains only
+```
+
+`scale` multiplies every dimension, so **check it once in each new room**. Columns
+grow with the phase (factor prices from Phase 2, FX/stress from Phase 5, debt from
+Phase 6); if a high `scale` pushes them off the edge, trim with `columns="core"`
+or an explicit list such as `columns=["welfare", "gains", "debt"]`.
+
+Other options: `sort="gains"` turns it into a leaderboard (the default keeps a
+fixed country order, which is easier to compare round to round), and
+`trades=False` drops the trade log.
+
+## Entering a round from a spreadsheet
+
+Typing nested dicts in front of the class is slow and a mistyped key throws a
+traceback mid-session. Instead, keep the paper forms and transcribe into Excel.
+
+**Before class** — generate a blank workbook, pre-filled with your countries,
+goods, firm roster, and current policy settings:
+
+```python
+sim.write_round_template("rounds/round07.xlsx")
+```
+
+**In or after class** — type the numbers from the paper forms into the sheets,
+then load and run:
+
+```python
+sim.run_round(**sim.load_round("rounds/round07.xlsx"))
+sim.show(scale=1.4)
+```
+
+Sheets map onto the engine's decisions:
+
+| Sheet | Holds | Notes |
+|---|---|---|
+| `production` | labor (and capital, Phase 2+) per good | endowments shown for checking |
+| `trades` | `exporter, importer, good_out, qty_out, good_in, qty_in` | one row per agreed swap — mirrors the paper form |
+| `tariffs` | `importer, partner, good, tariff` | only non-zero rows; `0.25` and `25` both mean 25% |
+| `firms` | scale, relocate_to, export | Phase 3+; blank `relocate_to` = stay |
+| `finance` | FX regime, capital controls, money growth, borrow/repay/default, WTO | Phase 5+; pre-filled with current settings |
+
+`load_round` validates before anything runs and reports **every** problem at once
+("unknown country 'Atlantis'", "no row for Pecos"), so you fix a sheet in one pass
+rather than one error at a time.
+
+The filled workbooks are the semester's data. Keep the `rounds/` folder and a
+future class is a load, not a retype.
 
 ## The rhythm of one round (~75-minute session)
 
