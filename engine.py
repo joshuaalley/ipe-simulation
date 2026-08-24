@@ -1799,10 +1799,10 @@ class IPESimulation:
     def inject_capital_flight(self, country: str, severity: float = 0.5,
                               description: str = None):
         """
-        Sudden capital outflow: depreciates the currency by `severity` (a
-        fraction, e.g. 0.5 = 30%... no — 0.5 means depreciation_factor *= 0.5).
-        Models a balance-of-payments shock for Round 22. Capital controls do
-        not stop it here, but in the debrief discuss whether they should have.
+        Sudden capital outflow. `severity` is the multiplier applied to the
+        currency: 0.5 halves it, 0.7 costs 30% of its value. Models a
+        balance-of-payments shock for Round 22. Capital controls do not stop
+        it here, but in the debrief discuss whether they should have.
         """
         if not (0 < severity < 1):
             raise ValueError("severity must be in (0, 1)")
@@ -1816,6 +1816,165 @@ class IPESimulation:
         print(f"\n{'':=<55}")
         print(f"  SHOCK: {description}")
         print(f"{'':=<55}\n")
+
+    # ── Endogenous crisis targeting ───────────────────────────────
+    #
+    # Which country gets hit is decided by the countries' OWN policy choices,
+    # not by the instructor. Both scores break down into named components and
+    # print as a table, so you can project exactly why a country was targeted.
+    # That transparency is the point: the selection IS the lesson, and nobody
+    # can claim you picked a favourite.
+
+    def _rank(self, rows):
+        """Sort scored rows deterministically: score, then weakest currency,
+        then the larger secondary exposure, then name. Never depends on dict
+        ordering, so the same decisions always produce the same target."""
+        rows.sort(key=lambda r: (-r[1], r[3], -r[4], r[0]))
+        return [(n, s, p) for n, s, p, _dep, _sec in rows]
+
+    def fx_vulnerability(self):
+        """
+        Rank countries by exposure to a currency attack, using only their own
+        monetary choices. Returns [(country, score, {component: points})],
+        most exposed first.
+        """
+        if self.phase < 5:
+            raise ValueError(
+                "FX vulnerability needs the monetary layer (Phase 5+)."
+            )
+        rows = []
+        for name in self.countries:
+            m = self._mon(name)
+            dep = m.get("depreciation_factor", 1.0)
+            growth = m.get("money_supply_growth", 0.0)
+            overreach = (
+                m.get("fx_regime") == "peg"
+                and not m.get("capital_controls", False)
+                and m.get("independent_monetary", True)
+            )
+            parts = {
+                "trilemma overreach": 3.0 if overreach else 0.0,
+                "accumulated stress": 2.0 * m.get("stress", 0),
+                "post-warning jitters": 1.0 if m.get("warning_active") else 0.0,
+                "loose money": 10.0 * growth,
+                "open capital account": 0.0 if m.get("capital_controls") else 1.0,
+                "already-weak currency": 2.0 * max(0.0, 1.0 - dep),
+            }
+            rows.append((name, sum(parts.values()), parts, dep, growth))
+        return self._rank(rows)
+
+    def debt_vulnerability(self):
+        """
+        Rank countries by exposure to a balance-of-payments / debt shock,
+        using only their own borrowing and monetary choices.
+        """
+        if self.phase < 6:
+            raise ValueError(
+                "Debt vulnerability needs the debt layer (Phase 6+)."
+            )
+        rows = []
+        for name in self.countries:
+            cfg = self.countries[name]
+            m = self._mon(name)
+            dep = m.get("depreciation_factor", 1.0)
+            stock = cfg.get("debt_stock", 0.0)
+            capacity = 1e-9
+            if self.history:
+                res = self.history[-1]["results"].get(name)
+                if res:
+                    capacity = max(
+                        sum(res["consumption"].get(g, 0.0) * self.world_prices[g]
+                            for g in self.goods),
+                        1e-9,
+                    )
+            parts = {
+                "leverage (debt/consumption)": 4.0 * (stock / capacity),
+                "original sin (weak currency)": 2.0 * max(0.0, 1.0 - dep),
+                "open capital account": 0.0 if m.get("capital_controls") else 1.0,
+                "post-default ban": 1.0 if self._is_debt_banned(name) else 0.0,
+            }
+            rows.append((name, sum(parts.values()), parts, dep, stock))
+        return self._rank(rows)
+
+    # Short headers for the projected table; the scored dicts keep full names.
+    SHORT_LABELS = {
+        "trilemma overreach": "trilemma",
+        "accumulated stress": "stress",
+        "post-warning jitters": "warned",
+        "loose money": "loose money",
+        "open capital account": "open capital",
+        "already-weak currency": "weak FX",
+        "leverage (debt/consumption)": "leverage",
+        "original sin (weak currency)": "original sin",
+        "post-default ban": "default ban",
+    }
+
+    def print_vulnerability(self, kind: str = "fx"):
+        """Projectable exposure table. kind: 'fx' (Phase 5+) or 'debt' (6+)."""
+        if kind not in ("fx", "debt"):
+            raise ValueError("kind must be 'fx' or 'debt'")
+        ranked = (self.fx_vulnerability() if kind == "fx"
+                  else self.debt_vulnerability())
+        title = ("CURRENCY-ATTACK EXPOSURE" if kind == "fx"
+                 else "DEBT / BALANCE-OF-PAYMENTS EXPOSURE")
+        components = list(ranked[0][2].keys())
+        col = 14
+        width = 12 + 7 + 2 + col * len(components)
+        print(f"\n{'':=<{width}}")
+        print(f"  {title}  --  scored from each country's own choices")
+        print(f"{'':=<{width}}")
+        print(f"  {'Country':10s}{'Score':>7s}  " +
+              "".join(f"{self.SHORT_LABELS.get(c, c)[:col-1]:>{col}s}"
+                      for c in components))
+        print(f"  {'-'*(width - 2)}")
+        for name, score, parts in ranked:
+            mark = "*" if name == ranked[0][0] else " "
+            print(f"{mark} {name:10s}{score:7.2f}  " +
+                  "".join(f"{parts[c]:{col}.2f}" for c in components))
+        print(f"\n  Most exposed: {ranked[0][0]} "
+              f"(score {ranked[0][1]:.2f}) -- by its own policy choices.\n")
+        return ranked
+
+    def trigger_speculative_attack(self, show: bool = True,
+                                   description: str = None):
+        """
+        Fire a currency crisis on the MOST EXPOSED country, chosen by the
+        countries' own monetary choices rather than by you. Prints the
+        exposure table first (unless show=False) so the class can see why.
+
+        Returns the targeted country.
+        """
+        ranked = self.print_vulnerability("fx") if show \
+            else self.fx_vulnerability()
+        target = ranked[0][0]
+        if description is None:
+            description = (
+                f"Speculative attack on {target}: the most exposed currency "
+                f"(score {ranked[0][1]:.2f}) devalues "
+                f"{1 - CRISIS_DEVALUATION:.0%}"
+            )
+        self.inject_speculative_attack(target, description)
+        return target
+
+    def trigger_capital_flight(self, severity: float = 0.6,
+                               show: bool = True, description: str = None):
+        """
+        Fire a balance-of-payments shock on the MOST EXPOSED debtor, chosen by
+        the countries' own borrowing and monetary choices rather than by you.
+
+        Returns the targeted country.
+        """
+        ranked = self.print_vulnerability("debt") if show \
+            else self.debt_vulnerability()
+        target = ranked[0][0]
+        if description is None:
+            description = (
+                f"Capital flight from {target}: the most exposed debtor "
+                f"(score {ranked[0][1]:.2f}) loses "
+                f"{1 - severity:.0%} of its currency's value"
+            )
+        self.inject_capital_flight(target, severity, description)
+        return target
 
     def form_monetary_union(self, *countries, name: str):
         """

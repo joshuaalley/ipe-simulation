@@ -145,11 +145,49 @@ Run the relevant `inject_*` cell so the next round opens with a new wrinkle:
 - `sim.inject_productivity_surge(country, industry, multiplier)` — automation / new tech / foreign-cost collapse
 - `sim.inject_populist_backlash(country)` — tariff floor + MNC tax
 - `sim.inject_monetary_shock(country, growth)` — forced money printing
-- `sim.inject_speculative_attack(country)` — manual currency crisis (pacing safety valve)
+- `sim.inject_speculative_attack(country)` — currency crisis on a named country
 - `sim.inject_capital_flight(country, severity)` — balance-of-payments shock
 - `sim.inject_global_crisis(severity)` — system-wide shock (Phase 7)
 
 Each prints a banner — project it as the cliffhanger.
+
+### Let the crisis pick its own victim
+
+For the two crises that fall on a *specific* country, don't choose the target
+yourself — a hand-picked victim invites "you singled us out." These pick the
+most exposed country from the countries' **own policy choices**:
+
+```python
+sim.trigger_speculative_attack()          # Phase 5+ currency crisis
+sim.trigger_capital_flight(severity=0.6)  # Phase 6+ debt / BOP shock
+```
+
+Both print a scored exposure table before firing, so you can project exactly
+why a country was hit:
+
+| Score component | Currency attack | Debt shock |
+|---|---|---|
+| trilemma overreach (peg + open capital + own money) | 3.0 | — |
+| accumulated stress | 2.0 each | — |
+| post-warning jitters | 1.0 | — |
+| loose money | 10 × growth rate | — |
+| leverage (debt ÷ consumption) | — | 4.0 × ratio |
+| original sin (weak currency) | — | 2.0 × depreciation |
+| open capital account | 1.0 | 1.0 |
+| already-weak currency | 2.0 × depreciation | — |
+| post-default ban | — | 1.0 |
+
+Ranking is fully deterministic — the same decisions always produce the same
+target (ties break on weakest currency, then the larger secondary exposure,
+then name), so nothing depends on your judgement or on dict ordering.
+
+**The selection is the lesson.** Project `sim.print_vulnerability("fx")` (or
+`"debt"`) *before* firing and ask the room to predict who gets hit. The country
+that pegged with an open capital account while printing money is the one the
+market comes for — which is precisely the trilemma, made personal.
+
+You can also project the table on its own, without firing anything, as a
+mid-phase warning shot.
 
 ## Phase transitions
 
