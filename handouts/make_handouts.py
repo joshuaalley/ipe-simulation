@@ -4,7 +4,10 @@ LaTeX, driven by the live constants in engine.py. Re-run after retuning any
 endowment, firm, or parameter and the PDFs stay in sync.
 
     cd ipe-simulation/handouts
-    python make_handouts.py          # writes the .tex files here
+    python make_handouts.py          # all six countries, full firm roster
+
+    # ...or match a smaller class:
+    python make_handouts.py --countries Sabine Bosque Llano Trinity --firms 11
     # then compile (twice is unnecessary; no cross-refs):
     #   pdflatex -interaction=nonstopmode <file>.tex
 
@@ -16,6 +19,7 @@ Outputs (this directory):
     forms-finance.tex           Monetary/debt/institutions add-on (Phase 5-7)
 """
 
+import argparse
 import os
 import sys
 
@@ -28,15 +32,47 @@ import engine  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-P1 = engine.PHASE1_COUNTRIES
+
+def _parse_args():
+    ap = argparse.ArgumentParser(
+        description="Generate printable country briefs and decision forms.")
+    ap.add_argument(
+        "--countries", nargs="+", metavar="NAME", default=None,
+        help="subset of countries to print for (default: all six). "
+             "Must match the country set you run the simulation with.")
+    ap.add_argument(
+        "--firms", type=int, default=None, metavar="N",
+        help="number of MNC forms to print, normally one per student "
+             "(default: the full roster).")
+    return ap.parse_args()
+
+
+ARGS = _parse_args() if __name__ == "__main__" else argparse.Namespace(
+    countries=None, firms=None)
+
 P1_GOODS = engine.PHASE1_GOODS
-P2 = engine.PHASE2_COUNTRIES
 P2_GOODS = engine.PHASE2_GOODS
-FIRMS = engine.PHASE3_FIRMS
 WORLD_PRICES = engine.WORLD_PRICES
 MONEY_CHOICES = engine.PHASE5_MONEY_GROWTH_CHOICES
 
-NAMES = list(P1.keys())
+if ARGS.countries:
+    unknown = [c for c in ARGS.countries if c not in engine.PHASE1_COUNTRIES]
+    if unknown:
+        raise SystemExit(
+            f"Unknown country/countries: {unknown}\n"
+            f"Choose from: {sorted(engine.PHASE1_COUNTRIES)}")
+    NAMES = list(ARGS.countries)
+    # Rehome/trim the firm roster to match, exactly as the engine requires.
+    FIRMS = engine.build_firm_roster(NAMES, n_firms=ARGS.firms, verbose=False)
+else:
+    NAMES = list(engine.PHASE1_COUNTRIES.keys())
+    FIRMS = engine.PHASE3_FIRMS
+    if ARGS.firms is not None:
+        FIRMS = engine.build_firm_roster(NAMES, n_firms=ARGS.firms,
+                                         verbose=False)
+
+P1 = {n: engine.PHASE1_COUNTRIES[n] for n in NAMES}
+P2 = {n: engine.PHASE2_COUNTRIES[n] for n in NAMES}
 
 
 # ── LaTeX helpers ─────────────────────────────────────────────────────
@@ -143,6 +179,8 @@ machinery is capital-intensive, wine is in between.}}
 {{\bfseries Later in the game}}\par
 \begin{{itemize}}[nosep,leftmargin=1.4em]
   \item \textbf{{Phase 3+ (MNCs):}} firms that start on your soil --- {hf_line}.
+    You will also \emph{{own}} a firm on someone else's soil: its profits are
+    yours, not its host's.
   \item \textbf{{Phase 5 (money):}} you run your own currency --- choose a regime and live with the trilemma.
   \item \textbf{{Phase 6 (debt):}} you may borrow against future consumption --- and you may default.
   \item \textbf{{Phase 7 (institutions):}} join the WTO, bind your tariffs, and decide whether to back the system.

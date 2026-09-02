@@ -370,17 +370,269 @@ form you collect — and nobody finds out until the reveal. (If it were
 turn-based, players could react inside a round and that tension would
 disappear.)</p>
 </div>
+<div id="setting-up-for-your-class-size" class="section level2">
+<h2>Setting up for your class size</h2>
+<p>The engine ships with six countries and thirteen firms. Neither is
+fixed — size both to your enrollment before the first session.</p>
+<div id="how-many-students-per-country" class="section level3">
+<h3>How many students per country</h3>
+<p>Aim for <strong>three per country; never fewer than two.</strong>
+Phase 2 turns on an argument <em>inside</em> each country (“do your
+workers or your capital owners win from this trade?”), and a group of
+two makes that a 1-on-1 with no coalition to form. Three also survives
+an absence — two becomes a solo player.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Students</th>
+<th>Countries</th>
+<th>Split</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>8–9</td>
+<td>3</td>
+<td>3 / 3 / 3</td>
+</tr>
+<tr class="even">
+<td>10–12</td>
+<td>4</td>
+<td>3 / 3 / 3 / 2 up to 3 / 3 / 3 / 3</td>
+</tr>
+<tr class="odd">
+<td>13–15</td>
+<td>5</td>
+<td>3 each</td>
+</tr>
+<tr class="even">
+<td>16–18</td>
+<td>6 (all)</td>
+<td>3 each</td>
+</tr>
+</tbody>
+</table>
+<p>Fewer countries also means shorter negotiations and less to
+transcribe each round. The cost is a thinner trade network: four
+countries gives six trading pairs, six countries gives fifteen.</p>
+</div>
+<div id="which-countries-to-drop" class="section level3">
+<h3>Which countries to drop</h3>
+<p>Keep the <em>spread</em> — two things make the models legible:</p>
+<ul>
+<li><strong>Phase 1</strong> needs a wide range of opportunity costs.
+Bosque (4.00) and Llano (0.33) are the extremes; keep both or the gains
+from trade get subtle.</li>
+<li><strong>Phase 2</strong> needs a clearly labor-abundant <em>and</em>
+a clearly capital-abundant country, or Stolper–Samuelson has nothing to
+contrast.</li>
+</ul>
+<table>
+<thead>
+<tr class="header">
+<th>Country</th>
+<th>K/L</th>
+<th>Phase 1 opp. cost</th>
+<th>Best TFP</th>
+<th>Firms hosted</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Sabine</td>
+<td>0.35</td>
+<td>0.67</td>
+<td>cloth 1.1</td>
+<td>3</td>
+</tr>
+<tr class="even">
+<td>Bosque</td>
+<td>0.42</td>
+<td><strong>4.00</strong></td>
+<td>cloth 1.2</td>
+<td>2</td>
+</tr>
+<tr class="odd">
+<td>Llano</td>
+<td>0.80</td>
+<td><strong>0.33</strong></td>
+<td>wine 1.3</td>
+<td>2</td>
+</tr>
+<tr class="even">
+<td>Brazos</td>
+<td>1.00</td>
+<td>1.00</td>
+<td>—</td>
+<td>2</td>
+</tr>
+<tr class="odd">
+<td>Trinity</td>
+<td>1.67</td>
+<td>2.00</td>
+<td>machinery 1.2</td>
+<td>3</td>
+</tr>
+<tr class="even">
+<td>Pecos</td>
+<td>2.40</td>
+<td>1.00</td>
+<td>machinery 1.1</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Brazos and Pecos are the natural first cuts</strong> — both
+sit at opportunity cost 1.00 (no comparative advantage), so they are
+redundant with each other. Dropping both leaves Sabine / Bosque / Llano
+/ Trinity: every survivor has a clear role, both Phase 1 extremes are
+intact, and two labor-abundant countries face one capital-abundant
+one.</p>
+<p>If you drop them, note that the Block 2 slide’s <code>\note{}</code>
+uses Pecos and Brazos in its worked opportunity-cost example — worth a
+touch-up.</p>
+</div>
+<div id="the-firm-roster-must-match-the-country-set" class="section level3">
+<h3>The firm roster must match the country set</h3>
+<p><strong>The engine refuses a roster hosted in countries that aren’t
+in play.</strong> This is deliberate: an off-map host used to pass the
+upgrade silently and then die with a bare <code>KeyError</code>
+mid-round, in front of the class.</p>
+<pre class="python"><code>sim.upgrade_to_phase3(PHASE3_FIRMS)   # 4-country game -&gt; ValueError naming F6, F8, F9</code></pre>
+<p>Build a roster that matches instead — <strong>one firm per
+student</strong>:</p>
+<pre class="python"><code>from engine import build_firm_roster
+firms = build_firm_roster([&quot;Sabine&quot;, &quot;Bosque&quot;, &quot;Llano&quot;, &quot;Trinity&quot;], n_firms=11)
+sim.upgrade_to_phase3(firms)</code></pre>
+<p><code>build_firm_roster</code> keeps firms already hosted in
+surviving countries, rehomes orphans to the least-loaded host, and trims
+to <code>n_firms</code> by dropping MED-tier firms first — so the
+HIGH/LOW productivity spread that drives Melitz selection in Phase 4
+stays intact. It prints what it produced:</p>
+<pre><code>  FIRM ROSTER BUILT  --  11 firms, 4 countries
+  Rehomed off-map firms: F6, F8, F9
+  Host          Firms   Mean prod.
+  Sabine            3         0.80
+  Bosque            2         1.00
+  Llano             3         1.10
+  Trinity           3         1.00
+
+  By industry: cloth 4, machinery 4, wine 3
+  By tier:     HIGH 3, MED 4, LOW 4</code></pre>
+<p><strong>Read that table before committing.</strong> The shipped
+roster is tuned so no country is over-rewarded or over-punished, and
+rehoming can drift that. It is not rebalanced silently precisely so you
+can catch it — swap a firm by hand if one host looks favoured.</p>
+</div>
+<div id="regenerate-the-handouts-to-match" class="section level3">
+<h3>Regenerate the handouts to match</h3>
+<p>The paper handouts are built from the engine’s constants, so they
+must be regenerated whenever the country set changes:</p>
+<pre><code>cd handouts
+python make_handouts.py --countries Sabine Bosque Llano Trinity --firms 11</code></pre>
+<p>Omit both flags for the full six-country, thirteen-firm set. The
+generator uses the same <code>build_firm_roster</code>, so the printed
+MNC forms always match what the engine will accept.</p>
+</div>
+</div>
 <div id="what-projects-well" class="section level2">
 <h2>What projects well</h2>
-<p>The engine produces two kinds of output, both projector-friendly:</p>
+<p>Three kinds of output:</p>
 <ul>
-<li><strong>Text tables</strong> (<code>print_*</code>) — your live
-“scoreboard.”</li>
+<li><strong><code>sim.show()</code></strong> — the big-screen
+scoreboard. Use this one live.</li>
 <li><strong>matplotlib charts</strong> (<code>plot_*</code>) — your
 “aha” visuals for debrief.</li>
+<li><strong>Text tables</strong> (<code>print_*</code>) — the detailed
+record; better for your own reference than for the back row.</li>
 </ul>
 <p>Drive everything from the notebook, running <strong>one cell at a
 time</strong> so the class watches each result appear.</p>
+<div id="sizing-the-scoreboard-to-the-room" class="section level3">
+<h3>Sizing the scoreboard to the room</h3>
+<p><code>print_results()</code> renders at the notebook’s own font size,
+with fixed 12-character columns — small and padding-heavy on a
+projector. <code>sim.show()</code> exists to fix that: large type, tight
+cells, colored gains, and event badges (CRISIS, DEFAULT, defected, WTO,
+hegemon).</p>
+<pre class="python"><code>sim.show()                              # good in a normal classroom
+sim.show(scale=1.5)                     # deeper room
+sim.show(scale=1.8, columns=&quot;core&quot;)     # very deep room: welfare + gains only</code></pre>
+<p><code>scale</code> multiplies every dimension, so <strong>check it
+once in each new room</strong>. Columns grow with the phase (factor
+prices from Phase 2, FX/stress from Phase 5, debt from Phase 6); if a
+high <code>scale</code> pushes them off the edge, trim with
+<code>columns=&quot;core&quot;</code> or an explicit list such as
+<code>columns=[&quot;welfare&quot;, &quot;gains&quot;, &quot;debt&quot;]</code>.</p>
+<p>Other options: <code>sort=&quot;gains&quot;</code> turns it into a leaderboard
+(the default keeps a fixed country order, which is easier to compare
+round to round), and <code>trades=False</code> drops the trade log.</p>
+</div>
+</div>
+<div id="entering-a-round-from-a-spreadsheet" class="section level2">
+<h2>Entering a round from a spreadsheet</h2>
+<p>Typing nested dicts in front of the class is slow and a mistyped key
+throws a traceback mid-session. Instead, keep the paper forms and
+transcribe into Excel.</p>
+<p><strong>Before class</strong> — generate a blank workbook, pre-filled
+with your countries, goods, firm roster, and current policy
+settings:</p>
+<pre class="python"><code>sim.write_round_template(&quot;rounds/round07.xlsx&quot;)</code></pre>
+<p><strong>In or after class</strong> — type the numbers from the paper
+forms into the sheets, then load and run:</p>
+<pre class="python"><code>sim.run_round(**sim.load_round(&quot;rounds/round07.xlsx&quot;))
+sim.show(scale=1.4)</code></pre>
+<p>Sheets map onto the engine’s decisions:</p>
+<table>
+<colgroup>
+<col width="33%" />
+<col width="33%" />
+<col width="33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Sheet</th>
+<th>Holds</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>production</code></td>
+<td>labor (and capital, Phase 2+) per good</td>
+<td>endowments shown for checking</td>
+</tr>
+<tr class="even">
+<td><code>trades</code></td>
+<td><code>exporter, importer, good_out, qty_out, good_in, qty_in</code></td>
+<td>one row per agreed swap — mirrors the paper form</td>
+</tr>
+<tr class="odd">
+<td><code>tariffs</code></td>
+<td><code>importer, partner, good, tariff</code></td>
+<td>only non-zero rows; <code>0.25</code> and <code>25</code> both mean
+25%</td>
+</tr>
+<tr class="even">
+<td><code>firms</code></td>
+<td>scale, relocate_to, export</td>
+<td>Phase 3+; blank <code>relocate_to</code> = stay</td>
+</tr>
+<tr class="odd">
+<td><code>finance</code></td>
+<td>FX regime, capital controls, money growth, borrow/repay/default,
+WTO</td>
+<td>Phase 5+; pre-filled with current settings</td>
+</tr>
+</tbody>
+</table>
+<p><code>load_round</code> validates before anything runs and reports
+<strong>every</strong> problem at once (“unknown country ‘Atlantis’”,
+“no row for Pecos”), so you fix a sheet in one pass rather than one
+error at a time.</p>
+<p>The filled workbooks are the semester’s data. Keep the
+<code>rounds/</code> folder and a future class is a load, not a
+retype.</p>
 </div>
 <div id="the-rhythm-of-one-round-75-minute-session" class="section level2">
 <h2>The rhythm of one round (~75-minute session)</h2>
@@ -486,14 +738,93 @@ with a new wrinkle:</p>
 MNC tax</li>
 <li><code>sim.inject_monetary_shock(country, growth)</code> — forced
 money printing</li>
-<li><code>sim.inject_speculative_attack(country)</code> — manual
-currency crisis (pacing safety valve)</li>
+<li><code>sim.inject_speculative_attack(country)</code> — currency
+crisis on a named country</li>
 <li><code>sim.inject_capital_flight(country, severity)</code> —
 balance-of-payments shock</li>
 <li><code>sim.inject_global_crisis(severity)</code> — system-wide shock
 (Phase 7)</li>
 </ul>
 <p>Each prints a banner — project it as the cliffhanger.</p>
+</div>
+<div id="let-the-crisis-pick-its-own-victim" class="section level3">
+<h3>Let the crisis pick its own victim</h3>
+<p>For the two crises that fall on a <em>specific</em> country, don’t
+choose the target yourself — a hand-picked victim invites “you singled
+us out.” These pick the most exposed country from the countries’
+<strong>own policy choices</strong>:</p>
+<pre class="python"><code>sim.trigger_speculative_attack()          # Phase 5+ currency crisis
+sim.trigger_capital_flight(severity=0.6)  # Phase 6+ debt / BOP shock</code></pre>
+<p>Both print a scored exposure table before firing, so you can project
+exactly why a country was hit:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Score component</th>
+<th>Currency attack</th>
+<th>Debt shock</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>trilemma overreach (peg + open capital + own money)</td>
+<td>3.0</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td>accumulated stress</td>
+<td>2.0 each</td>
+<td>—</td>
+</tr>
+<tr class="odd">
+<td>post-warning jitters</td>
+<td>1.0</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td>loose money</td>
+<td>10 × growth rate</td>
+<td>—</td>
+</tr>
+<tr class="odd">
+<td>leverage (debt ÷ consumption)</td>
+<td>—</td>
+<td>4.0 × ratio</td>
+</tr>
+<tr class="even">
+<td>original sin (weak currency)</td>
+<td>—</td>
+<td>2.0 × depreciation</td>
+</tr>
+<tr class="odd">
+<td>open capital account</td>
+<td>1.0</td>
+<td>1.0</td>
+</tr>
+<tr class="even">
+<td>already-weak currency</td>
+<td>2.0 × depreciation</td>
+<td>—</td>
+</tr>
+<tr class="odd">
+<td>post-default ban</td>
+<td>—</td>
+<td>1.0</td>
+</tr>
+</tbody>
+</table>
+<p>Ranking is fully deterministic — the same decisions always produce
+the same target (ties break on weakest currency, then the larger
+secondary exposure, then name), so nothing depends on your judgement or
+on dict ordering.</p>
+<p><strong>The selection is the lesson.</strong> Project
+<code>sim.print_vulnerability(&quot;fx&quot;)</code> (or <code>&quot;debt&quot;</code>)
+<em>before</em> firing and ask the room to predict who gets hit. The
+country that pegged with an open capital account while printing money is
+the one the market comes for — which is precisely the trilemma, made
+personal.</p>
+<p>You can also project the table on its own, without firing anything,
+as a mid-phase warning shot.</p>
 </div>
 </div>
 <div id="phase-transitions" class="section level2">

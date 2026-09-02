@@ -442,10 +442,79 @@ def write_round_template(sim, path, round_num=None):
 # ── Loader ────────────────────────────────────────────────────────
 
 def _read(path, sheet):
+    """Read a sheet, dropping entirely-blank rows. None if the sheet is absent."""
     try:
-        return pd.read_excel(path, sheet_name=sheet)
+        df = pd.read_excel(path, sheet_name=sheet)
     except ValueError:
         return None
+    return df.dropna(how="all")
+
+
+def _require_columns(df, sheet, required, problems):
+    """
+    Verify a sheet has the headers we are about to read.
+
+    Without this, a renamed or wrong-phase header reads as a missing value and
+    silently becomes 0.0 (or drops a whole row) -- so a typed-in trade vanishes,
+    or every country reports zero production, and the failure surfaces later as
+    a confusing complaint about the *data* rather than the *headers*.
+    """
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        problems.append(
+            f"{sheet}: missing column(s) {missing}.\n"
+            f"      Found instead: {list(df.columns)}.\n"
+            "      Rename the headers to match, or regenerate a blank sheet "
+            "with sim.write_round_template(...)."
+        )
+        return False
+    return True
+
+
+def play_round(sim, path, scale=1.0, **show_kwargs):
+    """
+    The whole round in one call. Run the same cell twice:
+
+      1. **Before class** -- the workbook doesn't exist yet, so this writes a
+         blank template pre-filled with your countries, goods and firm roster,
+         and stops.
+      2. **After collecting forms** -- you've typed the numbers in, so this
+         loads them, runs the round, and projects the scoreboard.
+
+    Safe to run at any time: it never overwrites a workbook you have filled in,
+    and it never fails just because a future round's file isn't there yet.
+    Re-running a cell whose round has already been played is refused rather
+    than silently advancing the clock a second time -- pass ``replay=True`` if
+    you really mean to play the same workbook again.
+
+        sim.play_round("rounds/round05.xlsx", scale=1.4)
+    """
+    replay = show_kwargs.pop("replay", False)
+    if not os.path.exists(path):
+        write_round_template(sim, path)
+        print(f"\n  Blank workbook written to: {path}")
+        print("  Fill in the sheets from the paper forms, then re-run this "
+              "cell to play the round.\n")
+        return None
+
+    key = os.path.abspath(path)
+    played = getattr(sim, "_played_workbooks", None)
+    if played is None:
+        played = sim._played_workbooks = set()
+    if key in played and not replay:
+        print(f"\n  Already played: {os.path.basename(path)} "
+              f"(you are on round {sim.round_num}).")
+        print("  Re-running would play it a second time and advance the round "
+              "again.")
+        print("  Projecting the existing result instead. To really replay, "
+              "call with replay=True.\n")
+        show(sim, scale=scale, **show_kwargs)
+        return None
+
+    result = sim.run_round(**load_round(sim, path))
+    played.add(key)
+    show(sim, scale=scale, **show_kwargs)
+    return result
 
 
 def load_round(sim, path):
@@ -470,14 +539,25 @@ def load_round(sim, path):
     if prod_df is None:
         raise ValueError(f"{path}: missing required sheet 'production'")
 
+    if phase == 1:
+        need = ["country"] + goods
+    else:
+        need = (["country"]
+                + [f"labor_{g}" for g in goods]
+                + [f"capital_{g}" for g in goods])
+    prod_ok = _require_columns(prod_df, "production", need, problems)
+
     decisions = {}
     seen = set()
-    for _, row in prod_df.iterrows():
+    for _, row in (prod_df.iterrows() if prod_ok else []):
         country = _as_text(row.get("country"))
         if country is None:
             continue
         if country not in sim.countries:
-            problems.append(f"production: unknown country {country!r}")
+            problems.append(
+                f"production: unknown country {country!r} -- this game has "
+                f"{sorted(sim.countries)}. Delete that row (a country you "
+                "dropped), or regenerate the sheet.")
             continue
         seen.add(country)
         where = f"production[{country}]"
@@ -496,7 +576,11 @@ def load_round(sim, path):
 
     # -- tariffs (long format, non-zero rows only) -----------------
     tar_df = _read(path, "tariffs")
-    if tar_df is not None:
+    if tar_df is not None and len(tar_df):
+        _require_columns(tar_df, "tariffs",
+                         ["importer", "partner", "good", "tariff"], problems)
+    if tar_df is not None and len(tar_df) and all(
+            c in tar_df.columns for c in ("importer", "partner", "good")):
         for i, row in tar_df.iterrows():
             imp = _as_text(row.get("importer"))
             partner = _as_text(row.get("partner"))
@@ -522,7 +606,12 @@ def load_round(sim, path):
     # -- trades ----------------------------------------------------
     trades = []
     tr_df = _read(path, "trades")
-    if tr_df is not None:
+    trade_cols = ["exporter", "importer", "good_out", "qty_out",
+                  "good_in", "qty_in"]
+    trades_ok = True
+    if tr_df is not None and len(tr_df):
+        trades_ok = _require_columns(tr_df, "trades", trade_cols, problems)
+    if tr_df is not None and trades_ok:
         for i, row in tr_df.iterrows():
             ex = _as_text(row.get("exporter"))
             im = _as_text(row.get("importer"))
@@ -558,6 +647,10 @@ def load_round(sim, path):
         f_df = _read(path, "firms")
         if f_df is None:
             problems.append("missing sheet 'firms' (required from Phase 3)")
+        elif not _require_columns(f_df, "firms",
+                                  ["firm", "scale", "relocate_to", "export"],
+                                  problems):
+            pass
         else:
             for i, row in f_df.iterrows():
                 fid = _as_text(row.get("firm"))
@@ -581,8 +674,14 @@ def load_round(sim, path):
     # -- finance (Phase 5+) ----------------------------------------
     if phase >= 5:
         fin_df = _read(path, "finance")
+        fin_need = ["country", "fx_regime", "capital_controls",
+                    "independent_monetary", "money_supply_growth"]
+        if phase >= 6:
+            fin_need += ["borrow", "repay", "default"]
         if fin_df is None:
             problems.append("missing sheet 'finance' (required from Phase 5)")
+        elif not _require_columns(fin_df, "finance", fin_need, problems):
+            pass
         else:
             monetary, debt, inst = {}, {}, {}
             for i, row in fin_df.iterrows():

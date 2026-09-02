@@ -21,6 +21,7 @@ dynamics real. Designed to run in a Jupyter notebook.
 
 import numpy as np
 import matplotlib.pyplot as plt
+from collections import Counter
 from copy import deepcopy
 from textwrap import dedent
 
@@ -194,6 +195,107 @@ WORLD_PRICES = {"cloth": 1.0, "wine": 1.0, "machinery": 1.5}
 # CES elasticity within each industry (love-of-variety).
 # rho closer to 0 = stronger variety preference; rho=1 = perfect substitutes.
 VARIETY_RHO = 0.6
+
+
+def build_firm_roster(countries, n_firms=None, base=None, verbose=True):
+    """
+    Build an MNC roster for an arbitrary country set and class size.
+
+    PHASE3_FIRMS is tuned so no country is over-rewarded or over-punished.
+    Drop countries to match a smaller class and that tuning breaks: some
+    firms are left hosted off-map, and Phase 3 will fail. This rebuilds a
+    roster that:
+
+      * keeps every firm already hosted in a surviving country,
+      * rehomes orphaned firms to the least-loaded surviving host
+        (fewest firms first, then lowest total productivity),
+      * trims to `n_firms` -- typically one per student -- dropping
+        MED-tier firms first so the HIGH/LOW productivity spread that
+        drives Melitz selection in Phase 4 survives,
+      * prints the resulting balance so you can eyeball fairness before
+        committing to it.
+
+    It is deliberately NOT automatic: upgrade_to_phase3() refuses an
+    off-map roster rather than silently rehoming, because a silent
+    reallocation could hand one country every high-productivity firm.
+
+    Usage
+    -----
+        firms = build_firm_roster(["Sabine", "Bosque", "Llano", "Trinity"],
+                                  n_firms=11)
+        sim.upgrade_to_phase3(firms)
+
+    Returns a firms_config dict for upgrade_to_phase3().
+    """
+    base = PHASE3_FIRMS if base is None else base
+    countries = list(countries)
+    if not countries:
+        raise ValueError("countries must be a non-empty list of country names")
+
+    roster = deepcopy(base)
+    if n_firms is None:
+        n_firms = len(roster)
+    if n_firms > len(roster):
+        raise ValueError(
+            f"asked for {n_firms} firms but the base roster only defines "
+            f"{len(roster)}; add entries to PHASE3_FIRMS first"
+        )
+    if n_firms < 1:
+        raise ValueError("n_firms must be at least 1")
+
+    def load(host):
+        """(firm count, total productivity) currently on a host."""
+        firms = [c for c in roster.values() if c["default_host"] == host]
+        return (len(firms), sum(c["productivity"] for c in firms))
+
+    # 1. rehome anything hosted off-map, least-loaded host first
+    orphans = sorted(fid for fid, c in roster.items()
+                     if c["default_host"] not in countries)
+    for fid in orphans:
+        roster[fid]["default_host"] = min(countries, key=load)
+
+    # 2. trim to size: heaviest host, most over-represented industry,
+    #    MED tier before HIGH/LOW
+    while len(roster) > n_firms:
+        counts = Counter(c["default_host"] for c in roster.values())
+        industries = Counter(c["industry"] for c in roster.values())
+        heaviest = max(sorted(counts), key=lambda h: counts[h])
+        candidates = [f for f, c in roster.items()
+                      if c["default_host"] == heaviest]
+        candidates.sort(key=lambda f: (
+            -industries[roster[f]["industry"]],
+            abs(roster[f]["productivity"] - 1.0),
+            f,
+        ))
+        del roster[candidates[0]]
+
+    if verbose:
+        by_host = Counter(c["default_host"] for c in roster.values())
+        by_ind = Counter(c["industry"] for c in roster.values())
+        print(f"\n{'':=<58}")
+        print(f"  FIRM ROSTER BUILT  --  {len(roster)} firms, "
+              f"{len(countries)} countries")
+        print(f"{'':=<58}")
+        if orphans:
+            print(f"  Rehomed off-map firms: {', '.join(orphans)}")
+        print(f"  {'Host':12s}{'Firms':>7s}{'Mean prod.':>13s}")
+        print(f"  {'-'*32}")
+        for host in countries:
+            prods = [c["productivity"] for c in roster.values()
+                     if c["default_host"] == host]
+            mean = sum(prods) / len(prods) if prods else 0.0
+            flag = "   <-- hosts none" if not prods else ""
+            print(f"  {host:12s}{by_host.get(host, 0):7d}{mean:13.2f}{flag}")
+        print(f"\n  By industry: "
+              + ", ".join(f"{g} {by_ind.get(g, 0)}" for g in sorted(by_ind)))
+        tiers = Counter("HIGH" if c["productivity"] >= 1.2 else
+                        "LOW" if c["productivity"] <= 0.8 else "MED"
+                        for c in roster.values())
+        print(f"  By tier:     "
+              + ", ".join(f"{t} {tiers.get(t, 0)}"
+                          for t in ("HIGH", "MED", "LOW")))
+        print()
+    return roster
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1390,6 +1492,27 @@ class IPESimulation:
         """
         if firms_config is None:
             firms_config = PHASE3_FIRMS
+
+        # Every firm must sit in a country that is actually in this game.
+        # Without this check an off-map host sails through here and then
+        # dies with a bare KeyError mid-round, in front of the class.
+        off_map = {fid: cfg["default_host"]
+                   for fid, cfg in firms_config.items()
+                   if cfg["default_host"] not in self.countries}
+        if off_map:
+            listing = "\n".join(f"    {fid} -> {host}"
+                                for fid, host in sorted(off_map.items()))
+            raise ValueError(
+                f"{len(off_map)} firm(s) are hosted in countries that are not "
+                f"in this game:\n{listing}\n"
+                f"  Countries in play: {sorted(self.countries)}\n"
+                "  Build a roster that matches your country set:\n"
+                "    from engine import build_firm_roster\n"
+                f"    firms = build_firm_roster({sorted(self.countries)}, "
+                "n_firms=<one per student>)\n"
+                "    sim.upgrade_to_phase3(firms)"
+            )
+
         self.firm_config = deepcopy(firms_config)
         self.firms = {
             fid: {"host": cfg["default_host"], "cumulative_profit": 0.0}
@@ -2263,6 +2386,16 @@ class IPESimulation:
         return self._classroom().show(
             self, round_num=round_num, scale=scale, sort=sort,
             trades=trades, columns=columns
+        )
+
+    def play_round(self, path: str, scale: float = 1.0, **show_kwargs):
+        """
+        Run a whole round from one spreadsheet, in one call. Run the cell once
+        to get a blank workbook, fill it in from the paper forms, run it again
+        to play the round and project the scoreboard.
+        """
+        return self._classroom().play_round(
+            self, path, scale=scale, **show_kwargs
         )
 
     def write_round_template(self, path: str, round_num: int = None):

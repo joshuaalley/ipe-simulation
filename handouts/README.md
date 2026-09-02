@@ -31,3 +31,22 @@ pdflatex -interaction=nonstopmode forms-finance.tex
 ```
 
 (No second pass needed — there are no cross-references.)
+
+## Matching a smaller class
+
+Two flags size the handouts to your enrollment:
+
+```
+python make_handouts.py --countries Sabine Bosque Llano Trinity --firms 11
+```
+
+- `--countries` prints briefs, trade forms and tariff rows for that subset only.
+- `--firms` prints that many MNC forms — normally **one per student**.
+
+The generator routes the firm list through the engine's `build_firm_roster`, so
+the forms you hand out always match a roster `upgrade_to_phase3()` will accept.
+Use the **same country list** here that you pass to the simulation; the engine
+rejects any firm hosted in a country that isn't in play.
+
+See *Setting up for your class size* in `../CLASSROOM_GUIDE.md` for how to
+choose which countries to keep.

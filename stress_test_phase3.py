@@ -10,6 +10,7 @@ from engine import (
     IPESimulation,
     PHASE2_COUNTRIES, PHASE2_GOODS,
     PHASE3_FIRMS, WORLD_PRICES, VARIETY_RHO,
+    build_firm_roster,
 )
 
 PASS, FAIL = [], []
@@ -470,6 +471,84 @@ def test_subset_firms():
     check("  all 5 firms in result", len(r["firms"]) == 5)
 
 
+# ────────────────────────────────────────────────────────────────────
+# Reduced country sets (smaller class): host validation + roster builder
+# ────────────────────────────────────────────────────────────────────
+def _small_sim(keep):
+    countries = {k: PHASE2_COUNTRIES[k] for k in keep}
+    sim = IPESimulation(countries, PHASE2_GOODS, phase=2)
+    dec = {n: {"production": {
+        "labor":   {g: c["labor"] / 3 for g in PHASE2_GOODS},
+        "capital": {g: c["capital"] / 3 for g in PHASE2_GOODS}}}
+        for n, c in countries.items()}
+    sim.run_round(dec, [])
+    return sim, dec
+
+
+def test_off_map_firm_hosts_rejected():
+    print("\n[off-map firm hosts are rejected at upgrade, not mid-round]")
+    keep = ["Sabine", "Bosque", "Llano", "Trinity"]
+    sim, _ = _small_sim(keep)
+    try:
+        sim.upgrade_to_phase3(PHASE3_FIRMS)
+        check("  full roster on 4 countries raises", False,
+              "no error raised")
+    except ValueError as e:
+        msg = str(e)
+        check("  full roster on 4 countries raises", True)
+        check("  message names the off-map firms",
+              "F6" in msg and "F8" in msg and "F9" in msg, msg[:90])
+        check("  message names the dropped hosts",
+              "Brazos" in msg and "Pecos" in msg, msg[:90])
+        check("  message points at build_firm_roster",
+              "build_firm_roster" in msg, msg[:90])
+    # a roster confined to surviving countries is accepted
+    sim2, _ = _small_sim(keep)
+    ok = {f: c for f, c in PHASE3_FIRMS.items() if c["default_host"] in keep}
+    sim2.upgrade_to_phase3(ok)
+    check("  on-map subset still accepted", sim2.phase == 3)
+
+
+def test_build_firm_roster():
+    print("\n[build_firm_roster rehomes and trims with balance]")
+    keep = ["Sabine", "Bosque", "Llano", "Trinity"]
+    roster = build_firm_roster(keep, n_firms=11, verbose=False)
+    check("  honours n_firms", len(roster) == 11, str(len(roster)))
+    check("  every host is in play",
+          all(c["default_host"] in keep for c in roster.values()),
+          str({f: c["default_host"] for f, c in roster.items()}))
+    check("  keeps the HIGH/LOW spread for Melitz",
+          any(c["productivity"] >= 1.2 for c in roster.values())
+          and any(c["productivity"] <= 0.8 for c in roster.values()))
+    counts = {h: sum(1 for c in roster.values() if c["default_host"] == h)
+              for h in keep}
+    check("  no host is starved or swamped",
+          max(counts.values()) - min(counts.values()) <= 2, str(counts))
+
+    # the built roster actually drives a Phase 3 round
+    sim, dec = _small_sim(keep)
+    sim.upgrade_to_phase3(roster)
+    fd = {f: {"scale": 10, "relocate_to": None, "export": False}
+          for f in sim.firms}
+    sim.run_round(dec, [], firm_decisions=fd)
+    check("  built roster runs a Phase 3 round", sim.round_num == 2)
+
+    # defaults and guards
+    full = build_firm_roster(list(PHASE2_COUNTRIES), verbose=False)
+    check("  n_firms=None keeps the whole base roster",
+          len(full) == len(PHASE3_FIRMS))
+    try:
+        build_firm_roster(keep, n_firms=99, verbose=False)
+        check("  over-large n_firms raises", False, "no error")
+    except ValueError:
+        check("  over-large n_firms raises", True)
+    try:
+        build_firm_roster([], verbose=False)
+        check("  empty country list raises", False, "no error")
+    except ValueError:
+        check("  empty country list raises", True)
+
+
 def main():
     tests = [
         test_zero_firms,
@@ -490,6 +569,8 @@ def main():
         test_default_firm_decisions,
         test_self_trade_phase3,
         test_subset_firms,
+        test_off_map_firm_hosts_rejected,
+        test_build_firm_roster,
     ]
     for t in tests:
         try:

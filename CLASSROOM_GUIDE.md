@@ -15,6 +15,111 @@ can promise a low tariff during negotiation, then defect on the form you
 collect — and nobody finds out until the reveal. (If it were turn-based, players
 could react inside a round and that tension would disappear.)
 
+## Setting up for your class size
+
+The engine ships with six countries and thirteen firms. Neither is fixed — size
+both to your enrollment before the first session.
+
+### How many students per country
+
+Aim for **three per country; never fewer than two.** Phase 2 turns on an argument
+*inside* each country ("do your workers or your capital owners win from this
+trade?"), and a group of two makes that a 1-on-1 with no coalition to form. Three
+also survives an absence — two becomes a solo player.
+
+| Students | Countries | Split |
+|---|---|---|
+| 8–9 | 3 | 3 / 3 / 3 |
+| 10–12 | 4 | 3 / 3 / 3 / 2 up to 3 / 3 / 3 / 3 |
+| 13–15 | 5 | 3 each |
+| 16–18 | 6 (all) | 3 each |
+
+Fewer countries also means shorter negotiations and less to transcribe each
+round. The cost is a thinner trade network: four countries gives six trading
+pairs, six countries gives fifteen.
+
+### Which countries to drop
+
+Keep the *spread* — two things make the models legible:
+
+- **Phase 1** needs a wide range of opportunity costs. Bosque (4.00) and Llano
+  (0.33) are the extremes; keep both or the gains from trade get subtle.
+- **Phase 2** needs a clearly labor-abundant *and* a clearly capital-abundant
+  country, or Stolper–Samuelson has nothing to contrast.
+
+| Country | K/L | Phase 1 opp. cost | Best TFP | Firms hosted |
+|---|---|---|---|---|
+| Sabine | 0.35 | 0.67 | cloth 1.1 | 3 |
+| Bosque | 0.42 | **4.00** | cloth 1.2 | 2 |
+| Llano | 0.80 | **0.33** | wine 1.3 | 2 |
+| Brazos | 1.00 | 1.00 | — | 2 |
+| Trinity | 1.67 | 2.00 | machinery 1.2 | 3 |
+| Pecos | 2.40 | 1.00 | machinery 1.1 | 1 |
+
+**Brazos and Pecos are the natural first cuts** — both sit at opportunity cost
+1.00 (no comparative advantage), so they are redundant with each other. Dropping
+both leaves Sabine / Bosque / Llano / Trinity: every survivor has a clear role,
+both Phase 1 extremes are intact, and two labor-abundant countries face one
+capital-abundant one.
+
+If you drop them, note that the Block 2 slide's `\note{}` uses Pecos and Brazos
+in its worked opportunity-cost example — worth a touch-up.
+
+### The firm roster must match the country set
+
+**The engine refuses a roster hosted in countries that aren't in play.** This is
+deliberate: an off-map host used to pass the upgrade silently and then die with a
+bare `KeyError` mid-round, in front of the class.
+
+```python
+sim.upgrade_to_phase3(PHASE3_FIRMS)   # 4-country game -> ValueError naming F6, F8, F9
+```
+
+Build a roster that matches instead — **one firm per student**:
+
+```python
+from engine import build_firm_roster
+firms = build_firm_roster(["Sabine", "Bosque", "Llano", "Trinity"], n_firms=11)
+sim.upgrade_to_phase3(firms)
+```
+
+`build_firm_roster` keeps firms already hosted in surviving countries, rehomes
+orphans to the least-loaded host, and trims to `n_firms` by dropping MED-tier
+firms first — so the HIGH/LOW productivity spread that drives Melitz selection in
+Phase 4 stays intact. It prints what it produced:
+
+```
+  FIRM ROSTER BUILT  --  11 firms, 4 countries
+  Rehomed off-map firms: F6, F8, F9
+  Host          Firms   Mean prod.
+  Sabine            3         0.80
+  Bosque            2         1.00
+  Llano             3         1.10
+  Trinity           3         1.00
+
+  By industry: cloth 4, machinery 4, wine 3
+  By tier:     HIGH 3, MED 4, LOW 4
+```
+
+**Read that table before committing.** The shipped roster is tuned so no country
+is over-rewarded or over-punished, and rehoming can drift that. It is not
+rebalanced silently precisely so you can catch it — swap a firm by hand if one
+host looks favoured.
+
+### Regenerate the handouts to match
+
+The paper handouts are built from the engine's constants, so they must be
+regenerated whenever the country set changes:
+
+```
+cd handouts
+python make_handouts.py --countries Sabine Bosque Llano Trinity --firms 11
+```
+
+Omit both flags for the full six-country, thirteen-firm set. The generator uses
+the same `build_firm_roster`, so the printed MNC forms always match what the
+engine will accept.
+
 ## What projects well
 
 Three kinds of output:
@@ -54,20 +159,29 @@ fixed country order, which is easier to compare round to round), and
 Typing nested dicts in front of the class is slow and a mistyped key throws a
 traceback mid-session. Instead, keep the paper forms and transcribe into Excel.
 
-**Before class** — generate a blank workbook, pre-filled with your countries,
-goods, firm roster, and current policy settings:
+**Each round cell in the notebook is a single line.** Run it twice:
 
 ```python
-sim.write_round_template("rounds/round07.xlsx")
+sim.play_round("rounds/round07.xlsx", scale=1.4)
 ```
 
-**In or after class** — type the numbers from the paper forms into the sheets,
-then load and run:
+- **1st run** (before class) — the workbook doesn't exist yet, so this writes a
+  blank one, pre-filled with your countries, goods, firm roster and current
+  policy settings, and stops.
+- **2nd run** (after you've typed in the paper forms) — loads it, runs the
+  round, and projects the scoreboard.
 
-```python
-sim.run_round(**sim.load_round("rounds/round07.xlsx"))
-sim.show(scale=1.4)
-```
+It never overwrites a workbook you have filled in, never fails just because a
+future round's file isn't there yet, and refuses to play the same workbook twice
+by accident — a stray re-run reprojects the existing result instead of advancing
+the round. Pass `replay=True` if you genuinely mean to replay it.
+
+Give every round its own file. Two cells pointing at the same workbook will
+collide, because a template written at one phase is missing the sheets a later
+phase needs.
+
+The two halves are still available separately when you want them —
+`sim.write_round_template(path)` and `sim.run_round(**sim.load_round(path))`.
 
 Sheets map onto the engine's decisions:
 
