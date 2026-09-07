@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .Rhistory
 simulation_state.json
+
+# Local play data -- the transcribed student decisions for each round.
+# Deliberately NOT committed: it is class data, not source. It is also the
+# only copy, so back it up (Dropbox version history) rather than relying on
+# git. Never use this directory as scratch space.
+rounds/

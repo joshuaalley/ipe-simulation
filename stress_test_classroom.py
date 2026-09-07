@@ -6,8 +6,11 @@ spacer rows, a stale template still listing dropped countries, and headers that
 do not match the phase. Every one of those used to fail silently or with a
 message that blamed the data instead of the headers.
 """
+import atexit
 import os
+import shutil
 import sys
+import tempfile
 import traceback
 
 import matplotlib
@@ -24,7 +27,11 @@ import classroom
 
 PASS, FAIL = [], []
 KEEP = ["Sabine", "Bosque", "Llano", "Trinity"]
-TMP = os.environ.get("TEMP", ".")
+# Scratch space for test workbooks. Never the project directory, and never
+# rounds/ -- that holds the real transcribed class data and is the only copy.
+# Isolated per run, and removed on exit so repeated runs don't litter TEMP.
+TMP = tempfile.mkdtemp(prefix="ipe_test_")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)
 
 
 def check(name, cond, detail=""):
