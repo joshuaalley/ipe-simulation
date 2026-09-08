@@ -574,14 +574,27 @@ round to round), and <code>trades=False</code> drops the trade log.</p>
 <p>Typing nested dicts in front of the class is slow and a mistyped key
 throws a traceback mid-session. Instead, keep the paper forms and
 transcribe into Excel.</p>
-<p><strong>Before class</strong> — generate a blank workbook, pre-filled
-with your countries, goods, firm roster, and current policy
-settings:</p>
-<pre class="python"><code>sim.write_round_template(&quot;rounds/round07.xlsx&quot;)</code></pre>
-<p><strong>In or after class</strong> — type the numbers from the paper
-forms into the sheets, then load and run:</p>
-<pre class="python"><code>sim.run_round(**sim.load_round(&quot;rounds/round07.xlsx&quot;))
-sim.show(scale=1.4)</code></pre>
+<p><strong>Each round cell in the notebook is a single line.</strong>
+Run it twice:</p>
+<pre class="python"><code>sim.play_round(&quot;rounds/round07.xlsx&quot;, scale=1.4)</code></pre>
+<ul>
+<li><strong>1st run</strong> (before class) — the workbook doesn’t exist
+yet, so this writes a blank one, pre-filled with your countries, goods,
+firm roster and current policy settings, and stops.</li>
+<li><strong>2nd run</strong> (after you’ve typed in the paper forms) —
+loads it, runs the round, and projects the scoreboard.</li>
+</ul>
+<p>It never overwrites a workbook you have filled in, never fails just
+because a future round’s file isn’t there yet, and refuses to play the
+same workbook twice by accident — a stray re-run reprojects the existing
+result instead of advancing the round. Pass <code>replay=True</code> if
+you genuinely mean to replay it.</p>
+<p>Give every round its own file. Two cells pointing at the same
+workbook will collide, because a template written at one phase is
+missing the sheets a later phase needs.</p>
+<p>The two halves are still available separately when you want them —
+<code>sim.write_round_template(path)</code> and
+<code>sim.run_round(**sim.load_round(path))</code>.</p>
 <p>Sheets map onto the engine’s decisions:</p>
 <table>
 <colgroup>

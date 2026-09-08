@@ -194,6 +194,60 @@ productivity distribution and fixed costs in equilibrium. Here productivity is
 discrete (HIGH/MED/LOW) and the export choice is the student's, so selection is
 shown, not solved.
 
+\section{Political approval (all phases)}
+\textbf{Theory.} In welfare terms a tariff is pure deadweight loss, so a
+welfare-maximizing player would never protect --- which makes the politics of
+Blocks 4, 6 and 7 unplayable. The missing half is the \emph{distributional}
+one: protection is a transfer to the import-competing sector, whose gain is
+concentrated and organized while the consumer's loss is diffuse (Olson). This
+ledger supplies that political return without touching the utility function.
+
+\textbf{Engine} (\code{\_update\_approval}, \code{\_resolve\_governments}).
+For country $i$, with $M_i$ the value of imports actually received,
+$\bar t_i$ the import-weighted mean tariff levied on them, $C_i$ consumption
+capacity at world prices, $S_i$ side payments received, and $A_i$ approval:
+\begin{align*}
+\text{exposure } x_i &= M_i / C_i, \qquad \bar t_i = \text{(tariff-weighted)}\
+\Delta A_i &= \underbrace{\pi\,\bar t_i x_i}_{\text{protection}}
+ - \underbrace{\varepsilon\, x_i}_{\text{openness}}
+ + \underbrace{\text{clip}\!\left(\rho \tfrac{U_i - U_i'}{U_i'}\right)}_{\text{prosperity}}
+ + \underbrace{\kappa\, S_i / C_i}_{\text{compensation}}
+ + \underbrace{\delta\,(A_0 - A_i)}_{\text{drift}}\
+A_i &\leftarrow \operatorname{clip}\left(A_i + \Delta A_i,\; 0,\; 100\right)
+\end{align*}
+with $\pi=35$, $\varepsilon=14$, $\rho=35$ (clipped to $\pm 15$), $\kappa=25$,
+$\delta=0.10$, $A_0=50$, and $U_i'$ last round's welfare.
+
+\textbf{The endogenous backlash.} If $A_i < 30$ for two consecutive rounds the
+government falls: \code{inject\_populist\_backlash} fires automatically (20\%
+tariff floor, 10\% MNC tax) and $A_i$ resets to $A_0$. Protection is therefore
+imposed \emph{on} a country that ignores its losers --- the instructor does not
+choose the victim.
+
+\textbf{Tuning.} Holding policy fixed, approval converges to
+\[
+A^{*} = A_0 - \frac{x\,(\varepsilon - \pi\bar t)}{\delta},
+\]
+so the steady state, not the starting value, decides who survives. The
+coefficients are set so $A^{*}$ sits below the crisis floor under free trade
+($\approx 20$) and above it from roughly a 20\% tariff ($\approx 35$). Under
+uniform play over a 20-round term this yields: free trade highest welfare but
+one government falls; 20\% tariffs all survive at $\sim3\%$ less welfare; 40\%
+tariffs politically safe at $\sim12\%$ less. \emph{An earlier tuning put
+$A^{*}$ below the floor at every tariff level, so every trading country fell
+regardless of policy --- a doom clock rather than a decision. Check $A^{*}$,
+not the first few rounds, after changing any coefficient.}
+
+\textbf{Divergence.} This is the most openly \emph{reduced-form} component in
+the engine --- a stipulated response function, in the same family as trilemma
+stress and the debt risk premium, not something derived from preferences or
+voting. There is no median voter, no electoral rule, and no separate interest
+groups: the ``concentrated benefit'' is a coefficient, not an aggregation over
+agents. It also has no free-rider problem and no lobbying cost, so it dramatizes
+Olson's logic rather than modelling it. Approval never enters $U$, so all welfare
+and gains-from-trade figures remain exactly as documented above; it is a second
+scoreboard, deliberately in tension with the first.
+
 \section{Phase 5 --- Money, FX, and the trilemma}
 \textbf{Theory.} The Mundell-Fleming ``impossible trinity'': a country cannot
 simultaneously run a fixed exchange rate, open capital markets, and independent

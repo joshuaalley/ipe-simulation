@@ -58,6 +58,11 @@ def _badges(res_c, is_hegemon=False):
         out.append(("DEFAULT", NEGATIVE))
     if debt.get("austerity_active"):
         out.append(("austerity", "#b26a00"))
+    appr = res_c.get("approval") or {}
+    if appr.get("government_fell"):
+        out.append(("GOVT FELL", NEGATIVE))
+    elif appr.get("low_rounds"):
+        out.append(("unpopular", "#b26a00"))
     inst = res_c.get("institutions") or {}
     if inst.get("defected"):
         out.append(("defected", NEGATIVE))
@@ -71,13 +76,14 @@ def _badges(res_c, is_hegemon=False):
 ALL_COLUMNS = {
     "welfare": "Welfare",
     "gains": "vs. autarky",
+    "approval": "Approval",
     "wage": "Wage",
     "ret": "Return to K",
     "fx": "FX",
     "stress": "Stress",
     "debt": "Debt",
 }
-CORE_COLUMNS = ["welfare", "gains"]
+CORE_COLUMNS = ["welfare", "gains", "approval"]
 
 
 def _columns_for_phase(phase, columns=None):
@@ -113,11 +119,13 @@ def _columns_for_phase(phase, columns=None):
 def _row_values(res_c):
     """Pull the scoreboard values out of one country's result dict."""
     fp = res_c.get("factor_prices") or {}
+    appr = res_c.get("approval") or {}
     mon = res_c.get("monetary") or {}
     debt = res_c.get("debt") or {}
     return {
         "welfare": res_c["welfare"],
         "gains": res_c["gains_from_trade_pct"],
+        "approval": appr.get("approval"),
         "wage": fp.get("avg_wage"),
         "ret": fp.get("avg_capital_return"),
         "fx": mon.get("depreciation_factor"),
@@ -132,6 +140,10 @@ def _fmt(key, val):
         return "--", MUTED
     if key == "gains":
         return _gain_cell(val)
+    if key == "approval":
+        colour = (NEGATIVE if val < 30 else
+                  "#b26a00" if val < 40 else POSITIVE if val >= 60 else "inherit")
+        return f"{val:.0f}", colour
     if key == "stress":
         return str(int(val)), (NEGATIVE if val >= 2 else
                                "#b26a00" if val == 1 else MUTED)

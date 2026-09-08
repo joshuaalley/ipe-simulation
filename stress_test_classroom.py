@@ -252,8 +252,9 @@ def test_scoreboard():
     check("  forces a light background", "background:#ffffff" in html)
     check("  scale drives the font size", "font-size:28px" in html)
     core = classroom.scoreboard_html(sim, columns="core")
-    check("  columns='core' trims to welfare + gains",
-          core.count("<th") == 3, str(core.count("<th")))
+    check("  columns='core' is Country + welfare + gains + approval",
+          core.count("<th") == 4, str(core.count("<th")))
+    check("  approval is on the board", "Approval" in core)
     text = classroom.scoreboard_text(sim)
     check("  text fallback works", "ROUND 1" in text and "Bosque" in text)
 

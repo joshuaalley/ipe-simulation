@@ -299,6 +299,38 @@ def build_firm_roster(countries, n_firms=None, base=None, verbose=True):
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  POLITICAL APPROVAL  (all phases)
+# ═══════════════════════════════════════════════════════════════════
+# Why protection exists at all. In welfare terms a tariff is pure
+# deadweight loss, so a welfare-maximising player would never protect --
+# which makes the politics of Blocks 4/6/7 unplayable. Approval is the
+# missing half: a SEPARATE ledger (it never enters the utility function)
+# capturing the domestic political return to protection.
+#
+# It is REDUCED FORM -- a stipulated response function, like trilemma
+# stress or the debt risk premium, not something derived from the model.
+#
+# The bargain it creates: tariffs buy approval and cost welfare; open
+# trade builds welfare and burns approval unless you compensate the
+# losers. Let approval sit too low too long and the government falls --
+# the populist regime takes over and imposes protection ON you.
+
+APPROVAL_START = 50.0            # every country begins here (0-100)
+APPROVAL_FLOOR = 0.0
+APPROVAL_CEILING = 100.0
+
+APPROVAL_PROTECTION = 35.0       # x mean tariff x import exposure
+APPROVAL_EXPOSURE = 14.0         # x import exposure (openness irritates)
+APPROVAL_PROSPERITY = 35.0       # x proportional welfare change
+APPROVAL_PROSPERITY_CAP = 15.0   # ...clamped, so one boom can't buy immunity
+APPROVAL_COMPENSATION = 25.0     # x side payments received / capacity
+APPROVAL_DRIFT = 0.10            # mean reversion toward APPROVAL_START
+
+APPROVAL_CRISIS_FLOOR = 30.0     # below this...
+APPROVAL_CRISIS_ROUNDS = 2       # ...for this many rounds -> backlash fires
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  PHASE 5 MONETARY & FX PARAMETERS
 # ═══════════════════════════════════════════════════════════════════
 # The trilemma: a country cannot simultaneously run a fixed exchange rate,
@@ -367,6 +399,7 @@ class IPESimulation:
 
     def __init__(self, countries: dict, goods: list, phase: int = 1):
         self.countries = deepcopy(countries)
+        self._seed_approval()
         self.goods = list(goods)
         self.phase = phase
         self.history = []
@@ -613,6 +646,11 @@ class IPESimulation:
                 "no_trade_welfare": no_trade_welfare,
                 "gains_from_trade_pct": gains_pct,
                 "tariff_losses": tariff_losses[name],
+                # Separate ledger: approval never enters the utility function.
+                "approval": self._update_approval(
+                    name, welfare, consumption[name], trade_records,
+                    side_payments
+                ),
             }
             if self.phase >= 6:
                 results[name]["debt"] = debt_info
@@ -662,12 +700,17 @@ class IPESimulation:
                 firm_decisions, firm_output
             )
 
+        # Governments that sat too long below the approval floor fall now,
+        # so the protectionist turn bites from the NEXT round.
+        governments_fallen = self._resolve_governments(results)
+
         round_result = {
             "round": self.round_num,
             "phase": self.phase,
             "results": results,
             "trade_log": trade_log,
             "trades_executed": trade_records,
+            "governments_fallen": governments_fallen,
         }
         if self.phase >= 3:
             round_result["firms"] = firm_results
@@ -1468,7 +1511,14 @@ class IPESimulation:
         Transition from Phase 1 to Phase 2 mid-simulation.
         Keeps history intact; future rounds use new parameters.
         """
+        # Approval is political history -- it survives the model change.
+        carried = {n: (c.get("approval", APPROVAL_START),
+                       c.get("low_approval_rounds", 0))
+                   for n, c in self.countries.items()}
         self.countries = deepcopy(new_countries)
+        for n, cfg in self.countries.items():
+            cfg["approval"], cfg["low_approval_rounds"] = carried.get(
+                n, (APPROVAL_START, 0))
         self.goods = list(new_goods)
         self.phase = 2
         print(f"{'':=<55}")
@@ -2357,6 +2407,126 @@ class IPESimulation:
                 )
             log.append(f"  {donor} -> {recipient}: {qty:.0f} {good} (side payment)")
         return log
+
+    # ── Political approval (separate ledger; never enters welfare) ─
+
+    def _seed_approval(self):
+        """Give every country a starting approval score and streak counter."""
+        for cfg in self.countries.values():
+            cfg.setdefault("approval", APPROVAL_START)
+            cfg.setdefault("low_approval_rounds", 0)
+
+    def _prev_welfare(self, name):
+        """That country's welfare last round, or None on the first round."""
+        for rd in reversed(self.history):
+            if name in rd.get("results", {}):
+                return rd["results"][name]["welfare"]
+        return None
+
+    def _update_approval(self, name, welfare, consumption, trade_records,
+                         side_payments):
+        """
+        Move one country's approval and return the component breakdown.
+
+        Components
+        ----------
+        protection    tariffs on what you actually import please the sectors
+                      they shelter -- the concentrated benefit
+        openness      import exposure irritates the groups it displaces --
+                      the diffuse cost, felt by whoever loses
+        prosperity    a rising standard of living is popular (clamped, so one
+                      good round cannot buy permanent immunity)
+        compensation  side payments received buy political peace
+        drift         gentle mean reversion, so scores stay live
+        """
+        cfg = self.countries[name]
+        approval = cfg.get("approval", APPROVAL_START)
+
+        capacity = max(sum(consumption.get(g, 0.0) * self.world_prices[g]
+                           for g in self.goods), 1e-9)
+
+        # imports actually received, and the tariff actually levied on them
+        imported = taxed = 0.0
+        for t in trade_records:
+            if t["importer"] == name:
+                val = t["qty_out_received"] * self.world_prices[t["good_out"]]
+                imported += val
+                taxed += val * t["tariff_importer"]
+            elif t["exporter"] == name:
+                val = t["qty_in_received"] * self.world_prices[t["good_in"]]
+                imported += val
+                taxed += val * t["tariff_exporter"]
+        exposure = imported / capacity
+        mean_tariff = (taxed / imported) if imported > 1e-9 else 0.0
+
+        received = 0.0
+        for sp in (side_payments or []):
+            try:
+                donor, recipient, good, qty = sp
+            except (TypeError, ValueError):
+                continue
+            if recipient == name and good in self.world_prices:
+                received += qty * self.world_prices[good]
+
+        prev = self._prev_welfare(name)
+        prosperity = 0.0
+        if prev and prev > 1e-9:
+            prosperity = APPROVAL_PROSPERITY * (welfare - prev) / prev
+            prosperity = max(-APPROVAL_PROSPERITY_CAP,
+                             min(APPROVAL_PROSPERITY_CAP, prosperity))
+
+        protection = APPROVAL_PROTECTION * mean_tariff * exposure
+        openness = APPROVAL_EXPOSURE * exposure
+        compensation = APPROVAL_COMPENSATION * (received / capacity)
+        drift = APPROVAL_DRIFT * (APPROVAL_START - approval)
+
+        delta = protection - openness + prosperity + compensation + drift
+        new = max(APPROVAL_FLOOR, min(APPROVAL_CEILING, approval + delta))
+        cfg["approval"] = new
+
+        if new < APPROVAL_CRISIS_FLOOR:
+            cfg["low_approval_rounds"] = cfg.get("low_approval_rounds", 0) + 1
+        else:
+            cfg["low_approval_rounds"] = 0
+
+        return {
+            "approval": new,
+            "change": new - approval,
+            "protection": protection,
+            "openness": -openness,
+            "prosperity": prosperity,
+            "compensation": compensation,
+            "drift": drift,
+            "mean_tariff": mean_tariff,
+            "exposure": exposure,
+            "low_rounds": cfg["low_approval_rounds"],
+            "government_fell": False,
+        }
+
+    def _resolve_governments(self, results):
+        """
+        Any country that has sat below the approval floor for too long loses
+        its government: the populist regime takes over and imposes protection.
+        Fires AFTER the round resolves, so it bites from the next one.
+        """
+        fallen = []
+        for name, cfg in self.countries.items():
+            if cfg.get("low_approval_rounds", 0) >= APPROVAL_CRISIS_ROUNDS:
+                fallen.append(name)
+                cfg["low_approval_rounds"] = 0
+                cfg["approval"] = APPROVAL_START      # new government, fresh slate
+                if "approval" in results.get(name, {}):
+                    results[name]["approval"]["government_fell"] = True
+                    results[name]["approval"]["approval"] = APPROVAL_START
+        for name in fallen:
+            self.inject_populist_backlash(
+                name,
+                description=(f"Government falls in {name}: approval stayed below "
+                             f"{APPROVAL_CRISIS_FLOOR:.0f} for "
+                             f"{APPROVAL_CRISIS_ROUNDS} rounds. A protectionist "
+                             "coalition takes power.")
+            )
+        return fallen
 
     # ── Classroom helpers (projection + spreadsheet round I/O) ────
     #
