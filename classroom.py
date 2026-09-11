@@ -529,6 +529,41 @@ def play_round(sim, path, scale=1.0, **show_kwargs):
     return result
 
 
+def _check_reference(sim, path):
+    """
+    Compare the workbook's recorded phase and country set against the live
+    simulation, and fail with the actual diagnosis if they disagree.
+
+    The common cause is not a bad spreadsheet: it is a restarted kernel where
+    an upgrade cell never re-ran, so the simulation is behind the workbook.
+    """
+    ref = _read(path, "_reference")
+    if ref is None or "field" not in ref.columns or "value" not in ref.columns:
+        return                                   # older workbook; nothing to check
+    rec = {str(f).strip(): str(v).strip()
+           for f, v in zip(ref["field"], ref["value"])}
+
+    written = rec.get("phase")
+    if written and written.isdigit() and int(written) != sim.phase:
+        want, have = int(written), sim.phase
+        step = ("run the Phase %d upgrade cell before this one"
+                % want if want > have else
+                "this workbook is from an earlier phase of the game")
+        raise ValueError(
+            f"{os.path.basename(path)} was written for Phase {want}, but the "
+            f"simulation is currently at Phase {have}.\n"
+            f"  Your headers are fine -- the simulation is out of step.\n"
+            f"  Fix: {step}. After a kernel restart you must re-run the setup "
+            f"and upgrade cells in order before replaying a round."
+        )
+    # Deliberately NO country-set check here. The recorded country list says
+    # how the blank template was generated, not what was typed into it: a
+    # workbook made by a six-country sim but filled with four valid rows is
+    # perfectly good. The production rows are validated one by one below
+    # ("unknown country", "no row for"), which catches real mismatches without
+    # rejecting data that is fine.
+
+
 def load_round(sim, path):
     """
     Read a filled round workbook and return keyword arguments for run_round():
@@ -545,6 +580,13 @@ def load_round(sim, path):
     goods = list(sim.goods)
     phase = sim.phase
     problems = []
+
+    # A workbook records the phase and country set it was built for. Check
+    # that FIRST: if the simulation has since moved on -- or, far more often,
+    # if the kernel was restarted and an upgrade cell never re-ran -- every
+    # column below will look "missing" and the error will blame your headers
+    # when the headers are fine.
+    _check_reference(sim, path)
 
     # -- production ------------------------------------------------
     prod_df = _read(path, "production")

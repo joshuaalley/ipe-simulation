@@ -10,8 +10,10 @@ economy, driven from a Jupyter notebook and projected for the room.
 | `simulation.ipynb` | The notebook you drive in class. |
 | `CLASSROOM_GUIDE.md` | **Start here** — class-size setup, round rhythm, facilitation. |
 | `handouts/` | Printable country briefs and decision forms. |
+| `calculator.py`, `calculator_template.html` | Students' production calculator: `sim.export_calculator()` writes it. |
+| `docs/` | The published calculator page (GitHub Pages). Generated; don't edit by hand. |
 | `engine-math-reference.pdf` | Instructor-only: the math behind each phase. |
-| `stress_test*.py`, `notebook_e2e_test.py` | Regression suite (439 checks). |
+| `stress_test*.py`, `notebook_e2e_test.py` | Regression suite (510 checks). |
 
 ## Quick start
 
@@ -44,10 +46,25 @@ The engine rejects a firm roster hosted in countries that aren't in play, so
 these two country lists must agree. See *Setting up for your class size* in
 `CLASSROOM_GUIDE.md`.
 
+## Student production calculator
+
+One static web page with a button per country in play. Students type an
+allocation and see what the engine will produce, and nothing else.
+
+```python
+sim.export_calculator()        # writes docs/index.html from the live simulation
+```
+
+Publish `docs/` with GitHub Pages (Settings → Pages → Deploy from a branch →
+`master`, `/docs`); each push republishes it. Re-export only after a shock that
+changes technology or endowments. See *Student production calculator* in
+`CLASSROOM_GUIDE.md`.
+
 ## Tests
 
 ```
 python stress_test.py && python stress_test_phase3.py && python stress_test_phase4.py \
   && python stress_test_phase5.py && python stress_test_phase6.py \
-  && python stress_test_phase7.py && python stress_test_classroom.py && python notebook_e2e_test.py
+  && python stress_test_phase7.py && python stress_test_approval.py && python stress_test_classroom.py \
+  && python stress_test_calculator.py && python notebook_e2e_test.py
 ```

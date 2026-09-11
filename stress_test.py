@@ -508,6 +508,120 @@ def test_extreme_specialization():
               f"got {w}, cons={r['results'][n]['consumption']}")
 
 
+# ────────────────────────────────────────────────────────────────────
+# Stolper-Samuelson: trade must move factor returns
+# ────────────────────────────────────────────────────────────────────
+SS_COUNTRIES = ["Bosque", "Llano", "Sabine", "Trinity"]
+SS_ALLOC = {   # each country tilts toward its natural export good; held FIXED
+    "Bosque":  ({"cloth": 40, "wine": 12, "machinery": 8},
+                {"cloth": 10, "wine": 8, "machinery": 7}),
+    "Llano":   ({"cloth": 20, "wine": 60, "machinery": 20},
+                {"cloth": 15, "wine": 40, "machinery": 25}),
+    "Sabine":  ({"cloth": 60, "wine": 30, "machinery": 10},
+                {"cloth": 15, "wine": 12, "machinery": 8}),
+    "Trinity": ({"cloth": 30, "wine": 25, "machinery": 65},
+                {"cloth": 30, "wine": 30, "machinery": 140}),
+}
+# labor-abundant countries ship cloth; capital-abundant Trinity ships machinery
+SS_TRADE = [("Bosque", "Trinity", "cloth", 12, "machinery", 3),
+            ("Sabine", "Trinity", "cloth", 15, "machinery", 4),
+            ("Trinity", "Llano", "machinery", 4, "wine", 10)]
+
+
+def _ss_round(trades):
+    sim = IPESimulation({c: PHASE2_COUNTRIES[c] for c in SS_COUNTRIES},
+                        PHASE2_GOODS, phase=2)
+    dec = {c: {"production": {"labor": SS_ALLOC[c][0],
+                              "capital": SS_ALLOC[c][1]}}
+           for c in SS_COUNTRIES}
+    sim.run_round(dec, trades)
+    return sim.history[-1]["results"]
+
+
+def test_stolper_samuelson():
+    print("\n[SS] opening trade moves REAL factor returns the way S-S predicts")
+    aut = _ss_round([])
+    trd = _ss_round(SS_TRADE)
+
+    def fp(res, c):
+        f = res[c]["factor_prices"]
+        return f["avg_wage"], f["avg_capital_return"]
+
+    for c in ("Bosque", "Sabine"):              # labor-abundant
+        (w0, r0), (w1, r1) = fp(aut, c), fp(trd, c)
+        check(f"  {c}: wage rises with trade", w1 > w0, f"{w0:.3f}->{w1:.3f}")
+        check(f"  {c}: return to capital falls", r1 < r0, f"{r0:.3f}->{r1:.3f}")
+    (w0, r0), (w1, r1) = fp(aut, "Trinity"), fp(trd, "Trinity")  # capital-abundant
+    check("  Trinity: return to capital rises", r1 > r0, f"{r0:.3f}->{r1:.3f}")
+    check("  Trinity: wage falls", w1 < w0, f"{w0:.3f}->{w1:.3f}")
+
+    # the old bug: identical allocation => identical factor prices, trade or not
+    check("  trade changes factor prices even with the allocation fixed",
+          fp(aut, "Trinity") != fp(trd, "Trinity"))
+
+    # prices are real: the Cobb-Douglas price index is 1 when no cap binds
+    p = trd["Bosque"]["factor_prices"]["home_prices"]
+    index = math.prod(p.values()) ** (1 / len(p))
+    check("  home prices normalised to a price index of 1",
+          abs(index - 1.0) < 1e-9, f"index={index:.6f}")
+
+    # autarky: consumption equals production, so prices are domestic scarcity
+    c0, y0 = aut["Trinity"]["consumption"], aut["Trinity"]["production"]
+    check("  autarky prices come from own production",
+          all(abs(c0[g] - y0[g]) < 1e-9 for g in PHASE2_GOODS))
+
+
+def test_factor_prices_fully_exported_good():
+    print("\n[SS] a good exported in full yields finite, capped prices")
+    sim = IPESimulation({c: PHASE2_COUNTRIES[c] for c in SS_COUNTRIES},
+                        PHASE2_GOODS, phase=2)
+    dec = {c: {"production": {"labor": SS_ALLOC[c][0],
+                              "capital": SS_ALLOC[c][1]}}
+           for c in SS_COUNTRIES}
+    sim.run_round(dec, [])
+    wine = sim.history[-1]["results"]["Bosque"]["production"]["wine"]
+    # Bosque ships every unit of wine it makes
+    sim.run_round(dec, [("Bosque", "Trinity", "wine", wine, "machinery", 1)])
+    f = sim.history[-1]["results"]["Bosque"]["factor_prices"]
+    check("  wage finite", math.isfinite(f["avg_wage"]), str(f["avg_wage"]))
+    check("  return to capital finite",
+          math.isfinite(f["avg_capital_return"]), str(f["avg_capital_return"]))
+    check("  every home price within the cap",
+          all(0 < v <= 10.0 for v in f["home_prices"].values()),
+          str(f["home_prices"]))
+
+
+def test_indexed_welfare_plot():
+    print("\n[SS] indexed welfare plot")
+    import matplotlib.pyplot as plt
+    shown = []
+    real_show = plt.show
+    plt.show = lambda *a, **k: shown.append(plt.gcf())
+    try:
+        sim = fresh_phase2()
+        dec = {c: {"production": {
+            "labor": {g: cfg["labor"] / 3 for g in PHASE2_GOODS},
+            "capital": {g: cfg["capital"] / 3 for g in PHASE2_GOODS}}}
+            for c, cfg in PHASE2_COUNTRIES.items()}
+        sim.run_round(dec, [])
+        sim.run_round(dec, [])
+        sim.plot_welfare(indexed=True)
+        check("  renders", len(shown) == 1)
+        if shown:
+            ax = shown[0].axes[0]
+            first = [ln.get_ydata()[0] for ln in ax.get_lines()
+                     if len(ln.get_ydata()) > 1]
+            check("  every country starts at 100",
+                  all(abs(v - 100.0) < 1e-9 for v in first), str(first))
+            check("  axis labelled as an index",
+                  "index" in ax.get_ylabel().lower(), ax.get_ylabel())
+        sim.plot_welfare()                      # default is untouched
+        check("  default plot still renders", len(shown) == 2)
+    finally:
+        plt.show = real_show
+        plt.close("all")
+
+
 def main():
     tests = [
         test_phase1_balanced_autarky,
@@ -527,6 +641,9 @@ def main():
         test_trade_log_format,
         test_empty_inputs,
         test_extreme_specialization,
+        test_stolper_samuelson,
+        test_factor_prices_fully_exported_good,
+        test_indexed_welfare_plot,
     ]
     for t in tests:
         try:

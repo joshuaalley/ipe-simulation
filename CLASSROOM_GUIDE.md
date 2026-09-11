@@ -200,6 +200,35 @@ rather than one error at a time.
 The filled workbooks are the semester's data. Keep the `rounds/` folder and a
 future class is a load, not a retype.
 
+## Student production calculator (Phase 2 on)
+
+From Phase 2, output is TFP · L^α · K^β, which nobody works out in their head.
+The calculator is one web page: students tap their country, type where their
+workers and capital go, and see exactly what the engine will produce, plus
+whether their totals match their endowment. That is the same check the engine
+runs, so a form that passes the calculator won't bounce in the notebook. It
+shows nothing else: no welfare, no prices, no suggested allocation. What to
+make, what to trade, and on what terms stay the students' problem.
+
+**Set up once.** `sim.export_calculator()` writes `docs/index.html` from the
+live simulation, with one button per country in play, so it follows your class
+size. Commit and push `docs/`, then turn on GitHub Pages: repository Settings →
+Pages → Deploy from a branch → `master`, `/docs`. The page appears at
+`https://<user>.github.io/<repository>/` (for this repository,
+https://joshuaalley.github.io/ipe-simulation/). Put the link on Canvas or a
+slide. The address names the repository, so if the repository is public,
+curious students can find the engine and this guide from it.
+
+**Re-export only after a shock.** Production changes only when technology or
+endowments do (`inject_productivity_surge`, `inject_shock`). Run
+`sim.export_calculator()` right after such a shock, then commit and push;
+Pages republishes within a minute. Ordinary rounds and phase upgrades leave it
+alone.
+
+**It checks itself.** The page carries a few outputs the engine computed at
+export time and recomputes them when it loads. If they ever disagree, students
+see "These numbers don't match the simulation" instead of a calculator.
+
 ## The rhythm of one round (~75-minute session)
 
 ### 1. Recap & set the scene (~5 min, projected)
@@ -246,12 +275,34 @@ Run the plot cell. The most discussion-generating ones:
 
 - `sim.plot_trade_network()` — who traded with whom; tariffs/friction visibly shrink the arrows
 - `sim.plot_welfare()` — the running scoreboard, split per phase
+- `sim.plot_welfare(indexed=True)` — the same, with every country set to 100 at
+  the phase's first round. Absolute levels bury the small economies: a 23% fall
+  from 11 to 9 is a sliver next to a big country's gain on a 10–60 axis. The
+  index puts every country's percentage swing on one footing — use it whenever
+  the question is *who gained and who lost*, rather than *who is biggest*.
 - `sim.plot_gains_from_trade()` — who won/lost this round (trade-only; excludes borrowing)
 - `sim.plot_firm_locations()` (Phase 3+) — where MNCs clustered
 - `sim.plot_currency_health()` (Phase 5+) — the FX-index and stress curves; crises show as cliffs
 
 Debrief off the visuals: *Why did that currency collapse? Who defaulted, and
 why was it tempting? Did the hegemon provide the public good — and who paid?*
+
+**Showing Stolper–Samuelson (Phase 2).** The Wage and Return-to-K columns are
+real returns: each factor's marginal product, valued at home prices read off
+what the country consumes. Opening trade changes consumption, so it moves them
+— the abundant factor's return rises and the scarce factor's falls. But a round
+where a group *reallocates* its labor and capital *and* trades mixes two
+effects together. The cleanest demonstration is a country that kept the same
+allocation from the autarky round to the trade round: any change in its factor
+returns is then purely the trade effect.
+
+One more pattern to expect: a country whose wage *and* return to capital both
+rise while its welfare falls. That country gave away more than it got. Wage
+and Return-to-K value what the country *produces* at home prices, including
+goods shipped out for little in return; Welfare measures what it *consumes*.
+When a group asks "how did we get poorer if everyone earns more?", the answer
+is the terms of their deals. Welfare, not the factor returns, says whether a
+deal paid.
 
 ### 7. Inject the next shock & preview (~3 min)
 Run the relevant `inject_*` cell so the next round opens with a new wrinkle:
@@ -263,7 +314,10 @@ Run the relevant `inject_*` cell so the next round opens with a new wrinkle:
 - `sim.inject_capital_flight(country, severity)` — balance-of-payments shock
 - `sim.inject_global_crisis(severity)` — system-wide shock (Phase 7)
 
-Each prints a banner — project it as the cliffhanger.
+Each prints a banner — project it as the cliffhanger. A productivity surge (or
+an `inject_shock` that changes technology or endowments) also changes what
+allocations produce: re-run `sim.export_calculator()` and push `docs/` so the
+students' calculator shows the new numbers.
 
 ### Let the crisis pick its own victim
 

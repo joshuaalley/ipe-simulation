@@ -13,6 +13,7 @@
 \setlist[itemize]{leftmargin=1.4em, itemsep=1pt, topsep=2pt}
 \setlength{\parskip}{4pt}
 \setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{3em}   % long \code{} names never run off the page
 \newcommand{\code}[1]{\texttt{#1}}
 
 \title{\textbf{IPE Simulation --- Engine Math Reference}}
@@ -26,7 +27,7 @@
 \noindent\rule{\textwidth}{0.4pt}
 \textit{This document maps the textbook theory each phase teaches to what the
 engine actually computes, and flags where the two diverge. It exists so you can
-answer a sharp question and never overclaim. Students never see it.}
+answer a sharp question and never overclaim. Students never see it.}\par
 \noindent\rule{\textwidth}{0.4pt}
 
 \section{Modeling philosophy}
@@ -128,21 +129,58 @@ the abundant factor and lowers the scarce factor (the magnification effect:
 $\hat{p}_1 \Rightarrow \hat{w} > \hat{p}_1 > 0 > \hat{r}$ when good 1 is
 labor-intensive).
 
-\textbf{Engine} (\code{\_compute\_production}, \code{\_compute\_factor\_prices}).
+\textbf{Engine} (\code{\_compute\_production}, \code{\_shadow\_prices},
+\code{\_compute\_factor\_prices}). Production is Cobb-Douglas; factor returns are
+\emph{value} marginal products at implicit home prices taken from the
+post-trade consumption bundle $c$:
 \begin{align*}
 Y_g &= \mathrm{TFP}_g \cdot L_g^{\alpha_g} K_g^{\beta_g}, \qquad \alpha_g + \beta_g = 1 \\
-w_g &= \frac{\partial Y_g}{\partial L_g} = \alpha_g \frac{Y_g}{L_g}, \qquad
-r_g = \frac{\partial Y_g}{\partial K_g} = \beta_g \frac{Y_g}{K_g}
+p_g &= \min\!\left(\frac{U}{c_g},\; 10\right), \qquad
+  U = \Big(\prod_{j} c_j\Big)^{1/J}
+  \qquad \text{(so } \textstyle\prod_j p_j^{1/J} = 1\text{)} \\
+w_g &= p_g\,\alpha_g \frac{Y_g}{L_g}, \qquad
+r_g = p_g\,\beta_g \frac{Y_g}{K_g}
 \end{align*}
-Factor intensity is encoded directly in $(\alpha_g,\beta_g)$; the engine reports
-allocation-weighted average $w$ and $r$. Factors are paid their marginal product.
+The reported $w$ and $r$ are allocation-weighted averages of $w_g$ and $r_g$.
+$p_g$ is the Cobb-Douglas marginal utility $U/(Jc_g)$ rescaled so the ideal price
+index is 1: a good the country consumes little of is dear at home, and returns
+are measured in consumption bundles --- \emph{real} returns. In autarky $c = Y$,
+so prices reflect domestic scarcity. Opening trade changes $c$, hence $p$, hence
+$w$ and $r$: exporting the labor-intensive good raises its home price and with
+it the wage. \emph{That is the Stolper-Samuelson channel.} The cap of 10 binds
+only when a good is exported almost entirely.
 
-\textbf{Divergence.} No zero-profit/price-taking goods market, no endogenous
-prices, no factor-price equalization. Stolper-Samuelson \emph{emerges} from the
-allocation $+$ marginal-product arithmetic (the abundant factor's reported return
-rises as the country tilts toward its abundant-factor-intensive good) but is not
-derived analytically; the engine will not reproduce, e.g., the Leontief paradox
-or the exact magnification effect.
+\textbf{Why this form.} The engine originally reported \emph{physical} marginal
+products, $w_g = \alpha_g Y_g / L_g$. Those depend only on the allocation, so
+trade could never move them --- in class a country that traded with an unchanged
+allocation showed identical factor prices to three decimals --- and averaging
+cloth-units with machinery-units is not meaningful. A first fix scaled prices so
+the bundle was worth its world-price value; nominal returns then swelled and
+shrank with the gains from trade, and a capital-abundant country could show its
+return to capital \emph{falling} when trade opened. Normalizing the price index
+to 1 fixes that: in a controlled test with every allocation held fixed, the
+labor-abundant countries' wages rise and capital returns fall, and the
+capital-abundant country's capital return rises and wage falls, in absolute
+real terms (\code{stress\_test.py}, \code{test\_stolper\_samuelson}). Histories
+saved before this change keep the old numbers; replaying those rounds gives the
+new ones.
+
+\textbf{Divergence.} The prices are shadow prices read off a consumption bundle,
+not market-clearing prices: there is no zero-profit condition, and because
+students allocate factors freely, sector marginal products are not equalized ---
+the reported $w$ and $r$ are averages across sectors, not a single economy-wide
+factor price. No factor-price equalization. The magnification effect holds in
+the controlled test but is not guaranteed for arbitrary play: when a country
+reallocates its factors \emph{and} trades in the same round, the reallocation
+effect and the trade effect are mixed together. To show Stolper-Samuelson
+cleanly, compare a country whose allocation did not change. Trade is also barter
+at whatever terms students negotiate, not balanced at common prices, so a
+lopsided deal is a transfer: $w$ and $r$ value what the country
+\emph{produces} at home prices, including goods shipped out for little in
+return, and both can rise while welfare falls. (In class, a country that sent
+27 cloth for 9 machinery saw its wage double while its welfare fell 23\%.)
+Welfare, not $w$ and $r$, says whether a deal paid. The engine will not
+reproduce, e.g., the Leontief paradox.
 
 \section{Phase 3 --- MNCs, varieties, new trade theory}
 \textbf{Theory.} Krugman: increasing returns $+$ love of variety yield
@@ -207,12 +245,12 @@ For country $i$, with $M_i$ the value of imports actually received,
 $\bar t_i$ the import-weighted mean tariff levied on them, $C_i$ consumption
 capacity at world prices, $S_i$ side payments received, and $A_i$ approval:
 \begin{align*}
-\text{exposure } x_i &= M_i / C_i, \qquad \bar t_i = \text{(tariff-weighted)}\
+\text{exposure } x_i &= M_i / C_i, \qquad \bar t_i = \text{(tariff-weighted)}\\
 \Delta A_i &= \underbrace{\pi\,\bar t_i x_i}_{\text{protection}}
  - \underbrace{\varepsilon\, x_i}_{\text{openness}}
  + \underbrace{\text{clip}\!\left(\rho \tfrac{U_i - U_i'}{U_i'}\right)}_{\text{prosperity}}
  + \underbrace{\kappa\, S_i / C_i}_{\text{compensation}}
- + \underbrace{\delta\,(A_0 - A_i)}_{\text{drift}}\
+ + \underbrace{\delta\,(A_0 - A_i)}_{\text{drift}}\\
 A_i &\leftarrow \operatorname{clip}\left(A_i + \Delta A_i,\; 0,\; 100\right)
 \end{align*}
 with $\pi=35$, $\varepsilon=14$, $\rho=35$ (clipped to $\pm 15$), $\kappa=25$,

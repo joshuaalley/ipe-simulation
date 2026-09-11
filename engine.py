@@ -192,6 +192,15 @@ PHASE3_FIRMS = {
 # Used only for firm profit accounting; inter-country goods trade is still barter.
 WORLD_PRICES = {"cloth": 1.0, "wine": 1.0, "machinery": 1.5}
 
+# Implicit home prices used to value factor marginal products (Phase 2+).
+# Trade is barter, so there are no market prices -- but Cobb-Douglas utility
+# gives every good a marginal utility U/(J c_j): goods a country consumes little
+# of are dear at home. Normalised so the Cobb-Douglas price index is 1, that is
+# p_j = U / c_j, which makes factor returns REAL returns -- the quantity
+# Stolper-Samuelson is about -- and lets trade move them. Capped so a good that
+# was exported almost entirely cannot report an absurd price.
+SHADOW_PRICE_CAP = 10.0   # max home price, as a multiple of the price index (1)
+
 # CES elasticity within each industry (love-of-variety).
 # rho closer to 0 = stronger variety preference; rho=1 = perfect substitutes.
 VARIETY_RHO = 0.6
@@ -684,7 +693,8 @@ class IPESimulation:
 
             if self.phase >= 2:
                 results[name]["factor_prices"] = self._compute_factor_prices(
-                    name, decisions[name], country_production[name]
+                    name, decisions[name], country_production[name],
+                    consumption[name]
                 )
             if self.phase >= 3:
                 results[name]["consumption_varieties"] = varieties[name]
@@ -1389,9 +1399,57 @@ class IPESimulation:
 
     # ── Factor prices (Phase 2) ───────────────────────────────────
 
-    def _compute_factor_prices(self, country_name, decision, production):
-        """Marginal products as implicit factor prices."""
+    def _shadow_prices(self, consumption):
+        """
+        Implicit home price of each good, in REAL terms.
+
+        Barter has no market prices, but Cobb-Douglas utility gives each good a
+        marginal utility U / (J * c_j) -- a good the country consumes little of
+        is dear at home. Normalising so the Cobb-Douglas price index
+        prod(p_j)^(1/J) equals 1 gives p_j = U / c_j, so a factor return valued
+        at these prices is a return in consumption bundles: a real return.
+
+        Why real rather than nominal: an earlier version scaled prices so the
+        bundle was worth its world-price value. Nominal returns then swell and
+        shrink with the gains from trade, which swamped the distributional
+        signal -- a capital-abundant country could show its return to capital
+        FALLING when trade opened. Stolper-Samuelson is a claim about real
+        returns, and in real terms the abundant factor rises and the scarce
+        factor falls in absolute value, as the theorem says.
+
+        Trade changes consumption, so trade changes these prices -- which is
+        the channel Stolper-Samuelson runs through.
+        """
+        goods = self.goods
+        J = len(goods)
+        cons = {g: max(consumption.get(g, 0.0), 0.0) for g in goods}
+        if any(cons[g] <= 1e-9 for g in goods):
+            U = 0.0
+        else:
+            U = float(np.prod([cons[g] for g in goods])) ** (1.0 / J)
+        if U <= 1e-9:
+            # A zero in the bundle zeroes Cobb-Douglas utility. Price the missing
+            # good at the cap and the rest at the index, rather than divide by 0.
+            return {g: (SHADOW_PRICE_CAP if cons[g] <= 1e-9 else 1.0)
+                    for g in goods}
+        return {g: min(U / cons[g], SHADOW_PRICE_CAP) for g in goods}
+
+    def _compute_factor_prices(self, country_name, decision, production,
+                               consumption):
+        """
+        Factor returns as VALUE marginal products: each sector's marginal
+        product of labor (capital), valued at the good's implicit home price,
+        averaged across sectors by the allocation.
+
+        Physical marginal products alone (alpha * Y / L) depend only on how a
+        country allocates its factors, so trade could never move them -- and
+        averaging cloth-units with machinery-units is not meaningful. Valuing
+        them at home prices fixes both: the units are common, and opening trade
+        raises the price of the export good and with it the return to the
+        factor that good uses intensively.
+        """
         config = self.countries[country_name]
+        prices = self._shadow_prices(consumption)
         wages = {}
         capital_returns = {}
 
@@ -1402,9 +1460,10 @@ class IPESimulation:
             tech = config["tech"][good]
 
             if L > 0 and q > 0:
-                wages[good] = tech["labor_share"] * q / L
+                wages[good] = prices[good] * tech["labor_share"] * q / L
             if K > 0 and q > 0:
-                capital_returns[good] = tech["capital_share"] * q / K
+                capital_returns[good] = (prices[good] * tech["capital_share"]
+                                         * q / K)
 
         # Average factor prices across sectors (weighted by allocation)
         total_L = sum(
@@ -1432,6 +1491,7 @@ class IPESimulation:
             "capital_returns_by_sector": capital_returns,
             "avg_wage": avg_wage,
             "avg_capital_return": avg_return,
+            "home_prices": prices,
         }
 
     # ── Validation ────────────────────────────────────────────────
@@ -2581,6 +2641,16 @@ class IPESimulation:
         """
         return self._classroom().load_round(self, path)
 
+    def export_calculator(self, path: str = None):
+        """
+        Write the students' production calculator (calculator.py): one static
+        web page, a button per country in play, allocation in, output out.
+        Defaults to docs/index.html for GitHub Pages. Re-export only after a
+        shock that changes technology or endowments.
+        """
+        import calculator
+        return calculator.export_calculator(self, path)
+
     # ── Display ───────────────────────────────────────────────────
 
     def print_results(self, round_num: int = None):
@@ -2879,11 +2949,17 @@ class IPESimulation:
 
     # ── Visualization ─────────────────────────────────────────────
 
-    def plot_welfare(self, figsize=(10, 5)):
+    def plot_welfare(self, figsize=(10, 5), indexed=False):
         """
         Line chart of welfare. Splits into one subplot per phase, because
         Cobb-Douglas utility with different numbers of goods is not
         comparable across phases.
+
+        indexed : bool
+            Plot each country as an index, 100 = its first round in the phase.
+            Absolute levels bury the small economies -- a 23% fall from 11 to
+            9 is a sliver on a 10-60 axis next to a big country's gain -- so
+            the index puts every country's percentage swing on one footing.
         """
         if not self.history:
             print("No rounds to plot.")
@@ -2902,15 +2978,27 @@ class IPESimulation:
             rounds = [h["round"] for h in ph_hist]
             ph_names = list(ph_hist[-1]["results"].keys())
             for name in ph_names:
-                welfares = [
-                    h["results"][name]["welfare"]
-                    for h in ph_hist if name in h["results"]
-                ]
-                ax.plot(rounds, welfares, marker="o", linewidth=2, label=name)
+                pts = [(h["round"], h["results"][name]["welfare"])
+                       for h in ph_hist if name in h["results"]]
+                xs = [r for r, _ in pts]
+                welfares = [w for _, w in pts]
+                if indexed:
+                    # base on the first positive value; a zero-welfare round
+                    # (e.g. an all-in-one-good autarky) cannot anchor an index
+                    base = next((w for w in welfares if w > 0), None)
+                    if base is None:
+                        continue
+                    welfares = [100.0 * w / base for w in welfares]
+                ax.plot(xs, welfares, marker="o", linewidth=2, label=name)
+            if indexed:
+                ax.axhline(100, color="black", linewidth=0.8, alpha=0.5)
             ax.set_xlabel("Round", fontsize=12)
-            ax.set_ylabel("Welfare (utility index)", fontsize=12)
+            ax.set_ylabel(
+                "Welfare index (first round of phase = 100)" if indexed
+                else "Welfare (utility index)", fontsize=12)
             ax.set_title(
-                f"Phase {ph} -- Welfare Over Time",
+                f"Phase {ph} -- Welfare "
+                + ("Indexed" if indexed else "Over Time"),
                 fontsize=14, fontweight="bold",
             )
             ax.legend(loc="best", fontsize=10)

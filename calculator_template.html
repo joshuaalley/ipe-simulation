@@ -1,0 +1,408 @@
+<!doctype html>
+<!--
+  Template for the students' production calculator. Do not publish this file:
+  sim.export_calculator() fills in the data block (the application/json script
+  near the end) from the live simulation and writes docs/index.html, which is
+  what GitHub Pages serves.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Production calculator</title>
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --card: #ffffff;
+    --ink: #1d1d1f;
+    --muted: #63615c;
+    --line: #dcd9d0;
+    --field: #ffffff;
+    --field-line: #bdb9ae;
+    --accent: #1f5fa8;
+    --accent-ink: #ffffff;
+    --ok: #1a7f37;
+    --left: #8a5a00;
+    --over: #b3261e;
+    --banner-bg: #fde8e7;
+    --banner-ink: #8c1d18;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141414;
+      --card: #1e1e1e;
+      --ink: #ececec;
+      --muted: #a3a09a;
+      --line: #34332f;
+      --field: #141414;
+      --field-line: #57544d;
+      --accent: #7fb0ff;
+      --accent-ink: #0c1b30;
+      --ok: #5fd07a;
+      --left: #e8b54a;
+      --over: #ff8a80;
+      --banner-bg: #3a1614;
+      --banner-ink: #ffb4ab;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 34rem; margin: 0 auto; padding: 1.25rem 1rem 2.5rem; }
+  h1 { font-size: 1.5rem; line-height: 1.2; margin: 0 0 .3rem; }
+  .lede { color: var(--muted); margin: 0 0 1rem; }
+  .countries {
+    display: grid; gap: .5rem; margin: 0 0 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(4.75rem, 1fr));
+  }
+  .countries button {
+    font: inherit; font-weight: 600;
+    min-height: 44px; padding: .5rem .4rem;
+    border: 1.5px solid var(--line); border-radius: 10px;
+    background: var(--card); color: var(--ink); cursor: pointer;
+  }
+  .countries button[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+  }
+  .countries button:focus-visible, .linkbtn:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .pick { color: var(--muted); margin: 0 0 1rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1rem .9rem .75rem;
+  }
+  .endow { margin: 0 0 .6rem; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: .4rem .3rem; text-align: right; vertical-align: middle; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: .75rem; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  tbody th { font-weight: 600; }
+  tbody tr > * { border-top: 1px solid var(--line); }
+  tfoot tr > * { border-top: 2px solid var(--line); font-weight: 600; }
+  input {
+    font: inherit; width: 4.4rem; padding: .45rem .5rem;
+    border: 1.5px solid var(--field-line); border-radius: 8px;
+    background: var(--field); color: var(--ink);
+    text-align: right; font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield; appearance: textfield;
+  }
+  input::-webkit-outer-spin-button, input::-webkit-inner-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  input.bad { border-color: var(--over); }
+  .out { font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; min-width: 3.2rem; }
+  .num { font-variant-numeric: tabular-nums; }
+  .ok { color: var(--ok); }
+  .left { color: var(--left); }
+  .over { color: var(--over); }
+  .status { margin: .7rem 0 0; font-weight: 600; }
+  .status div + div { margin-top: .15rem; }
+  .actions { display: flex; justify-content: flex-end; }
+  .linkbtn {
+    font: inherit; font-size: .9rem; color: var(--accent);
+    background: none; border: 0; padding: .4rem .2rem;
+    text-decoration: underline; cursor: pointer;
+  }
+  .note { color: var(--muted); font-size: .9rem; margin: .9rem 0 .4rem; }
+  footer { color: var(--muted); font-size: .8rem; }
+  .banner {
+    background: var(--banner-bg); color: var(--banner-ink);
+    border-radius: 10px; padding: .8rem 1rem; font-weight: 600; margin: 0 0 1rem;
+  }
+  @media (max-width: 360px) {
+    main { padding: 1rem .6rem 2rem; }
+    .card { padding: .8rem .5rem .6rem; }
+    input { width: 3.9rem; padding: .45rem .35rem; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Production calculator</h1>
+  <p class="lede">Pick your country, then enter where your workers and capital go.</p>
+
+  <noscript><p class="banner">This calculator needs JavaScript turned on.</p></noscript>
+  <div id="broken" class="banner" role="alert" hidden>
+    These numbers don’t match the simulation, so don’t use them. Tell your instructor.
+  </div>
+
+  <div id="app" hidden>
+    <div class="countries" id="countries" role="group" aria-label="Your country"></div>
+    <p class="pick" id="pick">Choose your country to start.</p>
+
+    <section class="card" id="calc" hidden>
+      <p class="endow" id="endow"></p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Good</th>
+            <th scope="col">Workers</th>
+            <th scope="col" class="k">Capital</th>
+            <th scope="col">Output</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Total</th>
+            <td id="totL" class="num"></td>
+            <td id="totK" class="num k"></td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="status" id="status" aria-live="polite"></div>
+      <div class="actions"><button type="button" class="linkbtn" id="clear">Clear</button></div>
+    </section>
+
+    <p class="note">What your own workers and capital produce this round, before trade.
+      Output from firms located in your country (from Phase 3) comes on top and isn’t counted here.</p>
+    <footer id="stamp"></footer>
+  </div>
+</main>
+
+<script type="application/json" id="sim-data">__SIM_DATA__</script>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var STORE = "ipe-calculator:v1";
+
+  function broken(why) {
+    $("broken").hidden = false;
+    $("app").hidden = true;
+    if (why) console.error("Production calculator: " + why);
+  }
+
+  var data;
+  try {
+    data = JSON.parse($("sim-data").textContent);
+  } catch (e) {
+    broken("could not read the simulation data (" + e + ")");
+    return;
+  }
+
+  // The engine's production function -- engine.py, _compute_production().
+  function output(t, L, K) {
+    if (L > 0 && K > 0) {
+      return t.tfp * Math.pow(L, t.labor_share) * Math.pow(K, t.capital_share);
+    }
+    if (L > 0 && t.capital_share === 0) return t.tfp * Math.pow(L, t.labor_share);
+    return 0;
+  }
+  window.ipeCalculator = { data: data, output: output };   // for checking by hand
+
+  var byName = {};
+  data.countries.forEach(function (c) { byName[c.name] = c; });
+
+  // Self-check: recompute the values the engine produced when this page was
+  // written. Any disagreement means the page's formula and the engine's have
+  // drifted apart -- so show nothing rather than wrong numbers.
+  for (var i = 0; i < data.checks.length; i++) {
+    var chk = data.checks[i], c0 = byName[chk.country];
+    for (var j = 0; j < data.goods.length; j++) {
+      var g0 = data.goods[j];
+      var got = output(c0.tech[g0], chk.labor[g0] || 0, (chk.capital || {})[g0] || 0);
+      var want = chk.expected[g0];
+      if (!(Math.abs(got - want) <= 1e-9 * Math.max(1, Math.abs(want)))) {
+        broken("self-check failed for " + chk.country + " " + g0 +
+               ": page " + got + ", engine " + want);
+        return;
+      }
+    }
+  }
+
+  var usesK = data.uses_capital;
+  var cap = function (s) { return s.charAt(0).toUpperCase() + s.slice(1); };
+  var fmt = function (x) { return Number.isInteger(x) ? String(x) : x.toFixed(1); };
+
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { saved = {}; }
+  var alloc = (saved.alloc && typeof saved.alloc === "object") ? saved.alloc : {};
+  var current = byName[saved.country] ? saved.country : null;
+
+  function save() {
+    try {
+      localStorage.setItem(STORE, JSON.stringify({ country: current, alloc: alloc }));
+    } catch (e) { /* private mode: the page still works, it just forgets */ }
+  }
+
+  if (!usesK) {
+    Array.prototype.forEach.call(document.querySelectorAll(".k"),
+                                 function (el) { el.hidden = true; });
+  }
+
+  // One button per country in the simulation.
+  var bar = $("countries");
+  data.countries.forEach(function (c) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = c.name;
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", function () { choose(c.name); });
+    bar.appendChild(b);
+  });
+
+  // One row per good: workers, capital, output.
+  var inputs = {}, outs = {};
+  data.goods.forEach(function (g) {
+    var tr = document.createElement("tr");
+    var th = document.createElement("th");
+    th.scope = "row";
+    th.textContent = cap(g);
+    tr.appendChild(th);
+    inputs[g] = {};
+    [["L", "workers"], ["K", "capital"]].forEach(function (pair) {
+      var f = pair[0];
+      if (f === "K" && !usesK) return;
+      var td = document.createElement("td");
+      var inp = document.createElement("input");
+      inp.type = "number";
+      inp.inputMode = "decimal";
+      inp.min = "0";
+      inp.step = "1";
+      inp.placeholder = "0";
+      inp.setAttribute("aria-label", cap(g) + " " + pair[1]);
+      inp.addEventListener("input", function () {
+        var a = alloc[current] || (alloc[current] = { L: {}, K: {} });
+        (a[f] = a[f] || {})[g] = inp.value;
+        save();
+        update();
+      });
+      td.appendChild(inp);
+      tr.appendChild(td);
+      inputs[g][f] = inp;
+    });
+    var out = document.createElement("td");
+    out.className = "out";
+    tr.appendChild(out);
+    outs[g] = out;
+    $("rows").appendChild(tr);
+  });
+
+  function read(inp) {
+    if (!inp) return 0;
+    if (inp.validity && inp.validity.badInput) return NaN;
+    var raw = String(inp.value).trim();
+    if (raw === "") return 0;
+    var x = Number(raw);
+    return (isFinite(x) && x >= 0) ? x : NaN;
+  }
+
+  // Same rule the engine applies before it will run a round: each factor
+  // must add up to the endowment (within 0.5).
+  function factorLine(total, endow, one, many) {
+    var d = total - endow;
+    if (Math.abs(d) <= 0.5) {
+      return { cls: "ok", text: "✓ All " + fmt(endow) + " " + (endow === 1 ? one : many) + " placed" };
+    }
+    if (d < 0) {
+      return { cls: "left", text: fmt(-d) + " " + (-d === 1 ? one : many) + " still to place" };
+    }
+    return { cls: "over", text: fmt(d) + " " + (d === 1 ? one : many) +
+             " too many (you have " + fmt(endow) + ")" };
+  }
+
+  function update() {
+    var c = byName[current];
+    if (!c) return;
+    var totL = 0, totK = 0, bad = false;
+    data.goods.forEach(function (g) {
+      var L = read(inputs[g].L), K = usesK ? read(inputs[g].K) : 0;
+      inputs[g].L.classList.toggle("bad", isNaN(L));
+      if (usesK) inputs[g].K.classList.toggle("bad", isNaN(K));
+      if (isNaN(L) || isNaN(K)) {
+        bad = true;
+        outs[g].textContent = "—";
+        return;
+      }
+      totL += L;
+      totK += K;
+      outs[g].textContent = output(c.tech[g], L, K).toFixed(1);
+    });
+
+    var status = $("status");
+    status.textContent = "";
+    function say(line) {
+      var d = document.createElement("div");
+      d.className = line.cls;
+      d.textContent = line.text;
+      status.appendChild(d);
+    }
+    if (bad) {
+      $("totL").textContent = "—";
+      $("totK").textContent = "—";
+      $("totL").className = $("totK").className = "num";
+      if (!usesK) $("totK").hidden = true;
+      say({ cls: "over", text: "Use numbers of 0 or more." });
+      return;
+    }
+    var lineL = factorLine(totL, c.labor, "worker", "workers");
+    $("totL").textContent = fmt(totL);
+    $("totL").className = "num " + lineL.cls;
+    say(lineL);
+    if (usesK) {
+      var lineK = factorLine(totK, c.capital, "unit of capital", "units of capital");
+      $("totK").textContent = fmt(totK);
+      $("totK").className = "num k " + lineK.cls;
+      say(lineK);
+    }
+  }
+
+  function strong(text) {
+    var s = document.createElement("strong");
+    s.textContent = text;
+    return s;
+  }
+
+  function choose(name) {
+    current = name;
+    Array.prototype.forEach.call(bar.children, function (b) {
+      b.setAttribute("aria-pressed", String(b.textContent === name));
+    });
+    var c = byName[name];
+    var endow = $("endow");
+    endow.textContent = "";
+    endow.appendChild(document.createTextNode(name + " has "));
+    endow.appendChild(strong(fmt(c.labor) + " workers"));
+    if (usesK) {
+      endow.appendChild(document.createTextNode(" and "));
+      endow.appendChild(strong(fmt(c.capital) + " units of capital"));
+    }
+    endow.appendChild(document.createTextNode("."));
+
+    var a = alloc[name] || {};
+    data.goods.forEach(function (g) {
+      inputs[g].L.value = (a.L && a.L[g] != null) ? a.L[g] : "";
+      if (usesK) inputs[g].K.value = (a.K && a.K[g] != null) ? a.K[g] : "";
+    });
+    $("pick").hidden = true;
+    $("calc").hidden = false;
+    save();
+    update();
+  }
+
+  $("clear").addEventListener("click", function () {
+    alloc[current] = { L: {}, K: {} };
+    choose(current);
+  });
+
+  $("stamp").textContent = "Numbers last updated " + data.updated +
+    ". They change only when an announced shock hits a country, and this page is updated when one does.";
+
+  $("app").hidden = false;
+  if (current) choose(current);
+})();
+</script>
+</body>
+</html>

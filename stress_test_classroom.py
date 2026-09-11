@@ -295,6 +295,56 @@ def test_play_round():
     shutil.rmtree(d, ignore_errors=True)
 
 
+# ────────────────────────────────────────────────────────────────────
+# 7. configuration drift: the simulation, not the spreadsheet, is wrong
+# ────────────────────────────────────────────────────────────────────
+def test_phase_mismatch_diagnosed():
+    print("\n[11] a Phase-2 workbook loaded at Phase 1 blames the phase")
+    # build a Phase 2 template, then try to load it from a Phase 1 sim --
+    # exactly what happens when a kernel restart skips the upgrade cell
+    countries = {k: PHASE2_COUNTRIES[k] for k in KEEP}
+    p2 = IPESimulation(countries, PHASE2_GOODS, phase=2)
+    path = os.path.join(TMP, "phase_mismatch.xlsx")
+    p2.write_round_template(path)
+
+    p1 = p1_sim()
+    err = load_error(p1, path)
+    check("  raises", err is not None)
+    if err:
+        check("  names both phases",
+              "Phase 2" in err and "Phase 1" in err, err[:140])
+        check("  exonerates the headers",
+              "headers are fine" in err, err[:140])
+        check("  says to run the upgrade cell",
+              "upgrade cell" in err, err[:140])
+        check("  does NOT blame missing columns",
+              "missing column" not in err, err[:140])
+
+
+def test_country_metadata_does_not_block_valid_rows():
+    print("\n[12] a template made by a bigger sim still loads valid rows")
+    # Exactly the real case: round01.xlsx was generated while the notebook
+    # still built a six-country sim, then filled in for the four in play.
+    six = IPESimulation(PHASE1_COUNTRIES, PHASE1_GOODS, phase=1)
+    path = os.path.join(TMP, "six_country_template.xlsx")
+    six.write_round_template(path)
+    book = pd.read_excel(path, sheet_name=None)
+    book["production"] = pd.DataFrame(p1_production())      # four rows only
+    write(path, book)
+
+    four = p1_sim()
+    err = load_error(four, path)
+    check("  loads without error", err is None, (err or "")[:180])
+
+    # ...while a genuinely wrong country in the ROWS is still caught
+    book["production"] = pd.DataFrame(
+        p1_production() + [{"country": "Pecos", "cloth": 25, "wine": 25}])
+    write(path, book)
+    err = load_error(four, path)
+    check("  a dropped country typed into the rows is still rejected",
+          err is not None and "Pecos" in err, (err or "")[:180])
+
+
 def main():
     for t in [test_round_trip, test_valid_trade_parses,
               test_empty_and_blank_trades_tolerated,
@@ -303,7 +353,8 @@ def main():
               test_dropped_country_rows_rejected,
               test_missing_countries_reported,
               test_phase7_round_trip, test_scoreboard,
-              test_play_round]:
+              test_play_round, test_phase_mismatch_diagnosed,
+              test_country_metadata_does_not_block_valid_rows]:
         try:
             t()
         except Exception:
