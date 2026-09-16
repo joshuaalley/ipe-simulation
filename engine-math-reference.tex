@@ -243,18 +243,30 @@ ledger supplies that political return without touching the utility function.
 \textbf{Engine} (\code{\_update\_approval}, \code{\_resolve\_governments}).
 For country $i$, with $M_i$ the value of imports actually received,
 $\bar t_i$ the import-weighted mean tariff levied on them, $C_i$ consumption
-capacity at world prices, $S_i$ side payments received, and $A_i$ approval:
+capacity at world prices, $c_i$ the share of consumption paid to the groups
+trade displaced, $S_i$ the \emph{net} goods another country sent
+(received minus sent), and $A_i$ approval:
 \begin{align*}
 \text{exposure } x_i &= M_i / C_i, \qquad \bar t_i = \text{(tariff-weighted)}\\
 \Delta A_i &= \underbrace{\pi\,\bar t_i x_i}_{\text{protection}}
  - \underbrace{\varepsilon\, x_i}_{\text{openness}}
  + \underbrace{\text{clip}\!\left(\rho \tfrac{U_i - U_i'}{U_i'}\right)}_{\text{prosperity}}
- + \underbrace{\kappa\, S_i / C_i}_{\text{compensation}}
+ + \underbrace{\kappa\,(c_i + S_i / C_i)}_{\text{compensation}}
  + \underbrace{\delta\,(A_0 - A_i)}_{\text{drift}}\\
 A_i &\leftarrow \operatorname{clip}\left(A_i + \Delta A_i,\; 0,\; 100\right)
 \end{align*}
 with $\pi=35$, $\varepsilon=14$, $\rho=35$ (clipped to $\pm 15$), $\kappa=25$,
 $\delta=0.10$, $A_0=50$, and $U_i'$ last round's welfare.
+
+\textbf{Buying off the losers.} $c_i \le 0.25$ is a decision, taken on the same
+form as tariffs and available in every phase. It costs welfare ---
+$U_i \mathrel{\times}= (1 - 0.20\,c_i)$, the deadweight on taxing and transferring
+--- but leaves trade open, so at a typical import exposure it buys about the
+approval a 20\% tariff does for roughly two-thirds of the welfare, and without
+shrinking anyone's trade. That is the ``compensate rather than protect'' move of
+Block 7 made playable. Side payments ($S_i$) are goods one country hands another,
+also available from Phase 1 on; only the \emph{net} counts, so two countries
+cannot pass the same crate back and forth and both bank approval for it.
 
 \textbf{The endogenous backlash.} If $A_i < 30$ for two consecutive rounds the
 government falls: \code{inject\_populist\_backlash} fires automatically (20\%
@@ -291,9 +303,12 @@ scoreboard, deliberately in tension with the first.
 simultaneously run a fixed exchange rate, open capital markets, and independent
 monetary policy. Pushing all three invites a speculative attack.
 
-\textbf{Engine} (\code{\_apply\_monetary\_decisions}, \code{\_compute\_fx\_friction}).
-Let $s$ be the stress counter and $d$ the depreciation factor. Overreach is
-peg $\wedge$ open-capital $\wedge$ independent-money. Per round:
+\textbf{Engine} (\code{\_apply\_monetary\_decisions}, \code{\_compute\_fx\_friction},
+\code{\_weak\_fx\_cost}). Each round a country picks a regime (peg or float), capital
+controls (on or off) and money growth $g\in\{0,2,5,10\%\}$. Printing ($g>0$)
+\emph{is} independent monetary policy; $g=0$ follows the anchor. Let $s$ be the
+stress counter and $d$ the FX index (depreciation factor, $1=$ par). Overreach is
+peg $\wedge$ open capital $\wedge$ $g>0$. Per round:
 \[
 \text{overreach} \Rightarrow s \mathrel{+}= 1; \qquad \text{else } s = 0 .
 \]
@@ -301,19 +316,56 @@ peg $\wedge$ open-capital $\wedge$ independent-money. Per round:
 s = 1:\ d \mathrel{\times}= 0.90\ \text{(warning)};\qquad
 s = 2:\ d \mathrel{\times}= 0.70,\ U \mathrel{\times}= 0.90,\ s \to 0\ \text{(crisis)} .
 \]
-Money-supply decay: if independent, $d \mathrel{\times}= (1-g)$ with
-$g\in\{0,2,5,10\%\}$. FX friction on a trade leg (\code{\_compute\_fx\_friction}):
-$0$ if the reserve-currency holder is a party or the two share a monetary union;
-otherwise \code{BASE\_FX\_FRICTION} $=0.02$, halved if both peg, plus
-\code{WARNING\_FRICTION\_BUMP} $=0.03$ if either was just warned. Friction stacks
-on tariffs multiplicatively: $\text{loss} = 1-(1-t)(1-\mathrm{fx})$.
+What each choice buys or costs:
+\begin{align*}
+\text{printing } g>0:&\quad d \mathrel{\times}= (1-g), \qquad
+  U \mathrel{\times}= (1 + \sigma\, g\, d), \quad \sigma = 1 \\
+\text{weak currency:}&\quad \text{each import received} \times
+  \big(1 - \lambda\,(1-d_{\text{receiver}})\big), \quad \lambda = 0.5 \\
+  &\quad U \mathrel{\times}= \big(1 - \mu\,(1-d)\big) \text{ every round}, \quad \mu = 0.10 \\
+\text{capital controls:}&\quad \text{hosted firms' output} \times (1-0.15),
+  \ \text{no foreign borrowing} \\
+\text{FX friction:}&\quad \mathrm{fx} = 0.02 \ (+0.03 \text{ just after a warning})
+\end{align*}
+FX friction is zero with the reserve holder, inside a monetary union, or between
+two pegged currencies. Friction and the weak-currency cut stack on tariffs
+multiplicatively:
+$\text{received} = \text{qty}\,(1-t)(1-\mathrm{fx})\big(1-\lambda(1-d)\big)$. The
+stimulus and the drag are applied after the gains-from-trade measure (neither is a
+gain from trade); the drag hits any currency below par, printer or crisis victim.
+Crisis targeting (\code{fx\_vulnerability}) scores overreach, stress, a
+recent warning, an open peg, loose money, open capital and a weak currency; a dead
+heat at the top, or no exposure at all, fires nothing. \code{"managed"} is accepted
+as a synonym for \code{"float"}.
+
+\textbf{Why this form.} Under the original rules printing only depreciated the
+currency, independence only enabled printing, capital controls cost nothing, and
+\code{managed} behaved exactly like \code{float} --- so peg $+$ controls $+$ 0\%
+was never worse than any other choice, and the trilemma never bit. Each option now
+buys something. The stimulus is scaled by $d$ because a flat stimulus made printing
+10\% every round the best strategy even as the currency sank to a quarter of par;
+the import cost falls on the printer itself, because a cost borne only by foreign
+firm owners would not deter it; and the welfare drag exists because, in a world
+with little or no trade, the import cost barely bites and printing forever won
+again. \code{stress\_test\_money\_balance.py} plays six quite different worlds
+(class-like, heavy, light and no trade, specialized, six countries) and fails if
+printing forever or peg $+$ controls $+$ 0\% is ever a country's best choice, if
+one choice is best for everybody in a world, or if controls fall more than 12\%
+behind. The constants sit in the middle of the passing range (it holds with
+$\sigma$ and $\mu$ both scaled by $\pm 25\%$ and with $\lambda$ from 0.35 to 0.65),
+so a real class's trade pattern should not need a re-tune. In that test, printing
+every round pays only for economies that barely trade; in trading worlds the best
+fixed stance is a peg or a float at 0\%, depending on partners --- the
+small-open-economy lesson --- and printing is a one-off tool.
 
 \textbf{Divergence.} $d$ is a \emph{reduced-form currency-strength index} driven by
 policy choices and shocks --- there is no money supply/demand, no interest parity,
-no PPP, no modeled exchange-rate market. The trilemma is operationalized as a
-stress accumulator, not derived from an open-economy equilibrium. A monetary union
-shares one $(s,d,\text{policy})$ state across members (individual debts, shared
-currency --- the Eurozone analogy).
+no PPP, no modeled exchange-rate market. The stimulus is a reduced-form short-run
+gain from monetary expansion (no Phillips curve, no output gap); scaling it by $d$
+stands in for lost credibility. The trilemma is operationalized as a stress
+accumulator, not derived from an open-economy equilibrium. A monetary union shares
+one $(s,d,\text{policy})$ state across members (individual debts, shared currency
+--- the Eurozone analogy).
 
 \section{Phase 6 --- Sovereign debt}
 \textbf{Theory.} Debt is sustainable while the interest burden stays within
@@ -325,16 +377,33 @@ $C = \sum_g c_g\, p_g$ (goods at world prices). Then:
 \begin{align*}
 \text{rate} &= \underbrace{0.05}_{\text{base}} + \underbrace{0.15}_{\text{premium}}\cdot \frac{D}{C}, \qquad
 \text{interest} = D\cdot\text{rate} \\
-\text{borrow } B:&\quad U \mathrel{\times}= \Big(1 + \tfrac{B}{C}\Big), \quad B \le C \\
+\text{borrow } B:&\quad U \mathrel{\times}= \Big(1 + \tfrac{B}{C}\Big), \quad
+  B \le 0.25\,C, \quad B = 0 \text{ under capital controls} \\
 \text{service } (\text{interest}+\text{repay}):&\quad
 U \mathrel{\times}= \max\!\Big(0,\ 1 - \tfrac{\text{service}/d}{C}\Big), \qquad
-D \leftarrow D + B - \text{repay}
+D \leftarrow D + B - \text{repay} \\
+\text{default}:&\quad U \mathrel{\times}= 1 - \min\!\Big(1, 1.25\,\tfrac{D}{C}\Big),
+  \qquad D \to 0
 \end{align*}
 The division of service by $d$ \emph{is} original sin: a weak currency ($d<1$)
-inflates the real burden of hard-currency debt. \textbf{Default} wipes the stock
-($D\to 0$), bans borrowing for 2 rounds, and adds trade friction, but skips the
-service hit that round. \textbf{IMF bailout}: $D \mathrel{\times}= 0.5$ now, in
-exchange for $U \mathrel{\times}= 0.92$ for 2 rounds (austerity).
+inflates the real burden of hard-currency debt. \textbf{Default} costs 1.25 times
+the debt's face value (\emph{not} divided by $d$), bans borrowing for 2 rounds and
+adds trade friction. At par it therefore costs more than repaying; after a large
+devaluation ($1/d$ well above 1.25, a fall of roughly 20\% or more) it escapes the
+magnification --- which is when walking away pays. In \code{final\_round} there is no new borrowing and the
+whole stock is repaid (or defaulted on). \textbf{IMF bailout}:
+$D \mathrel{\times}= 0.5$ now, in exchange for $U \mathrel{\times}= 0.92$ for 2
+rounds (austerity).
+
+\textbf{Why this form.} Borrowing used to be capped at $C$ (enough to double a
+round's welfare) and default cost only the ban and the friction: in a six-round
+test, a country that borrowed the maximum and defaulted whenever it could beat
+never borrowing by a third, and borrowing in the final round was free. With the
+25\% cap, the 1.25$\times$ default cost and the final-round settlement, in all five
+trading test worlds serial default loses 1.5--3\% to never borrowing, repaying beats
+defaulting at par by about 1\% of the six-round total, and after a 40\%
+devaluation default beats repaying in full --- the Round 22 lesson
+(\code{stress\_test\_money\_balance.py}).
 
 \textbf{Divergence.} No inter-temporal optimization (no Euler equation, no
 forward-looking default decision); the borrow/service welfare scaling is a

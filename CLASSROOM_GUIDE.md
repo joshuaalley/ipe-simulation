@@ -187,9 +187,10 @@ Sheets map onto the engine's decisions:
 
 | Sheet | Holds | Notes |
 |---|---|---|
-| `production` | labor (and capital, Phase 2+) per good | endowments shown for checking |
+| `production` | labor (and capital, Phase 2+) per good, plus `compensation_pct` | endowments shown for checking; `10` and `0.10` both mean 10% |
 | `trades` | `exporter, importer, good_out, qty_out, good_in, qty_in` | one row per agreed swap — mirrors the paper form |
 | `tariffs` | `importer, partner, good, tariff` | only non-zero rows; `0.25` and `25` both mean 25% |
+| `side_payments` | `donor, recipient, good, qty` | goods one country hands another; blank in most rounds |
 | `firms` | scale, relocate_to, export | Phase 3+; blank `relocate_to` = stay |
 | `finance` | FX regime, capital controls, money growth, borrow/repay/default, WTO | Phase 5+; pre-filled with current settings |
 
@@ -327,7 +328,8 @@ most exposed country from the countries' **own policy choices**:
 
 ```python
 sim.trigger_speculative_attack()          # Phase 5+ currency crisis
-sim.trigger_capital_flight(severity=0.6)  # Phase 6+ debt / BOP shock
+sim.trigger_capital_flight(severity=0.6)  # Phase 5: most exposed currency;
+                                          # Phase 6+: most exposed debtor
 ```
 
 Both print a scored exposure table before firing, so you can project exactly
@@ -335,9 +337,10 @@ why a country was hit:
 
 | Score component | Currency attack | Debt shock |
 |---|---|---|
-| trilemma overreach (peg + open capital + own money) | 3.0 | — |
+| trilemma overreach (peg + open capital + printing) | 3.0 | — |
 | accumulated stress | 2.0 each | — |
 | post-warning jitters | 1.0 | — |
+| open peg (a peg with open capital) | 1.0 | — |
 | loose money | 10 × growth rate | — |
 | leverage (debt ÷ consumption) | — | 4.0 × ratio |
 | original sin (weak currency) | — | 2.0 × depreciation |
@@ -346,8 +349,12 @@ why a country was hit:
 | post-default ban | — | 1.0 |
 
 Ranking is fully deterministic — the same decisions always produce the same
-target (ties break on weakest currency, then the larger secondary exposure,
-then name), so nothing depends on your judgement or on dict ordering.
+target (ties break on weakest currency, then the larger secondary exposure),
+so nothing depends on your judgement or on dict ordering. If two countries are
+*still* tied at the top, or nobody has any exposure, **nothing fires**: the
+table says there is no single weakest link, and the call returns `None`.
+Breaking that tie by name would look like your pick. That is most likely when
+every group plays it safe the same way, which is a result worth pointing out.
 
 **The selection is the lesson.** Project `sim.print_vulnerability("fx")` (or
 `"debt"`) *before* firing and ask the room to predict who gets hit. The country
@@ -356,6 +363,54 @@ market comes for — which is precisely the trilemma, made personal.
 
 You can also project the table on its own, without firing anything, as a
 mid-phase warning shot.
+
+### Compensating the losers (every phase)
+
+Trade costs a country approval through the openness term, and Block 7 offers
+three answers: protect, grow, or compensate. All three are now playable.
+
+- **Compensation** is a line on the trade form and a `compensation_pct` column
+  in the workbook: the share of your consumption (up to 25%) paid to the groups
+  trade displaced. It buys approval (25 points per unit share, so 10% is about
+  +2.5 a round) and costs 20% of what you pay in welfare. At a typical import
+  exposure that is roughly what a 20% tariff buys, for about two-thirds of the
+  welfare — and your trade stays open, so the gains from trade survive.
+- **Side payments** are goods one country hands another (`side_payments` sheet,
+  or a line on the trade form): a partner who profits from your openness can
+  keep your government alive. They work from Phase 1 on, not just Phase 7, and
+  only the *net* counts, so two countries can't pass the same crate back and
+  forth and both bank the approval.
+
+Debrief question when someone uses it: *who paid, and who did the paying buy
+off?* When nobody uses it — the usual case — that reluctance is the lesson.
+Compensating losers is politically thankless, which is why protection wins so
+often in the real world.
+
+### What the money and debt choices buy
+
+Every Phase 5 and 6 choice has an upside and a downside, and the finance form
+(`handouts/forms-finance.pdf`) prints them with their numbers, so students
+never need a calculator for these: a peg trades friction-free with other pegs
+but is what speculators attack; capital controls keep speculators out but cost
+foreign firms 15% of their output and close off borrowing; printing money buys
+a stimulus now and a weaker currency for good (smaller imports, 1% of welfare
+a round per 10 points below par, heavier debt). Borrowing is capped at a
+quarter of consumption; default costs 1.25 times the debt, so defaulting in a
+calm round is a visible mistake and it pays only after a big devaluation; and
+in `sim.final_round` (set in the Phase 6 upgrade cell) everything still owed
+falls due.
+
+Expect trading countries to settle on a peg or a float at 0%: printing every
+round pays only for an economy that barely trades, and otherwise works as a
+one-off boost. That is the small-open-economy lesson, not a flaw.
+
+`stress_test_money_balance.py` plays six quite different trading worlds
+(class-like, heavy, light and no trade, specialized, six countries) against
+every fixed strategy, and fails if any one of them wins everywhere or serial
+default starts paying again. The constants sit in the middle of the range that
+passes all six, so your class's real trade pattern shouldn't need a re-tune.
+It runs with the regression suite; re-run it after changing any money or debt
+constant.
 
 ## Phase transitions
 

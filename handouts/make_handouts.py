@@ -226,6 +226,29 @@ def trade_block():
 current_goods = P1_GOODS  # rebound per builder
 
 
+def politics_block():
+    """Compensation + side payments: the alternatives to closing the border."""
+    cap = _pct(engine.COMPENSATION_MAX_SHARE)
+    dead = _pct(engine.COMPENSATION_DEADWEIGHT * 0.10)      # cost of a 10% payment
+    buys = f"{engine.APPROVAL_COMPENSATION * 0.10:.1f}"     # what it buys
+    return (
+        r"{\bfseries Compensation} --- buy off the groups trade displaced, "
+        r"instead of taxing imports:\par" "\n"
+        r"\begin{itemize}[nosep,leftmargin=1.4em]" "\n"
+        rf"  \item This round we compensate: \blank{{1.4cm}}\% of our consumption "
+        rf"\quad \textit{{(0--{cap}\%)}}" "\n"
+        r"  \item Side payment to another country: \blank{1.6cm} units of "
+        r"\blank{2cm} to \blank{2.2cm}." "\n"
+        r"\end{itemize}" "\n"
+        rf"\textit{{Compensating 10\% buys about +{buys} approval a round and costs "
+        rf"{dead}\% of your welfare --- roughly what a 20\% tariff buys, for less, "
+        rf"and your trade stays open. A side payment does the same for whoever "
+        rf"receives it (only the net counts).}}"
+    )
+
+
+
+
 # ── Phase 1 decision form ─────────────────────────────────────────────
 
 def phase1_form_page(name):
@@ -247,6 +270,9 @@ Labor endowment: \textbf{{{p1['labor']}}} workers \quad|\quad Productivity: {pro
 
 \vspace{{4pt}}
 {tariff_block(name)}
+
+\vspace{{4pt}}
+{politics_block()}
 
 \vspace{{4pt}}
 {trade_block()}
@@ -293,6 +319,9 @@ Labor: \textbf{{{L}}} \quad|\quad Capital: \textbf{{{K}}}
 
 \vspace{{4pt}}
 {tariff_block(name)}
+
+\vspace{{4pt}}
+{politics_block()}
 
 \vspace{{4pt}}
 {trade_block()}
@@ -344,29 +373,70 @@ def build_firm_forms():
 
 # ── Finance add-on form (monetary / debt / institutions) ──────────────
 
+def _pct(x):
+    """0.15 -> '15' (a rule's number, straight from the engine)."""
+    return f"{x * 100:.0f}"
+
+
 def finance_form_page(name):
     pct = " \\quad ".join(rf"\boxx\ {g*100:.0f}\%" for g in MONEY_CHOICES)
+    fric, cut = _pct(engine.BASE_FX_FRICTION), _pct(engine.CONTROLS_FIRM_CUT)
+    stim = f"{engine.STIMULUS_PER_POINT:g}"
+    half = {0.5: "half", 1.0: "all"}.get(engine.WEAK_FX_IMPORT_COST,
+                                          f"{engine.WEAK_FX_IMPORT_COST:g} times")
+    eg = _pct(engine.WEAK_FX_IMPORT_COST * 0.10)
+    drag = f"{engine.WEAK_FX_WELFARE_DRAG * 10:g}"          # % per 10 points
+    dcost = f"{engine.DEBT_DEFAULT_COST:g}"
+    warn, crisis = _pct(1 - engine.WARNING_DEVALUATION), _pct(1 - engine.CRISIS_DEVALUATION)
+    hit = _pct(engine.CRISIS_WELFARE_HIT)
+    cap, base = _pct(engine.BORROW_CAP_SHARE), _pct(engine.DEBT_BASE_RATE)
+    prem, ban = _pct(engine.DEBT_RISK_PREMIUM), engine.DEBT_DEFAULT_BAN_ROUNDS
+    dfric = _pct(engine.DEBT_DEFAULT_FRICTION)
     return rf"""
 {{\large\bfseries ROUND \blank{{1cm}} --- {esc(name)}}} \hfill (Finance \& institutions add-on)\par
 \textit{{Attach this to your trade form once the relevant phase opens.}}
 \hr
 
-{{\bfseries Monetary policy}} (Phase 5+)\par
+{{\bfseries Money}} (Phase 5+) \hfill \textit{{one box in each row}}\par
 \begin{{itemize}}[nosep,leftmargin=1.4em]
-  \item Exchange-rate regime: \quad \boxx\ Peg \quad \boxx\ Managed \quad \boxx\ Float
-  \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls (closed)
-  \item Independent monetary policy: \quad \boxx\ Yes \quad \boxx\ No
-  \item Money-supply growth: \quad {pct}
+  \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
+  \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
+  \item Money growth: \quad {pct} \quad \textit{{(0\% = follow the anchor)}}
 \end{{itemize}}
-\textit{{Trilemma: peg + open capital + independent policy together build stress toward a crisis.}}
+{{\small
+\begin{{description}}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Peg] No currency friction on trades with other pegged currencies; other
+    cross-currency trades lose {fric}\%. Trades with the reserve country are always
+    friction-free. An open peg is what speculators attack.
+  \item[Controls] Foreign firms in your country produce {cut}\% less, and (Phase 6)
+    you cannot borrow abroad. Speculators cannot run on a closed account.
+  \item[Printing] +{stim}\% welfare this round for each point printed, times your FX
+    index. Your FX index falls by the same \% for good. A weak currency shrinks every
+    import you receive by {half} the drop, and costs {drag}\% of welfare every round
+    for each 10 points below 1.00 (FX 0.90 $\to$ imports $-${eg}\%, welfare $-${drag}\%).
+  \item[Trilemma] Peg + open + printing: a warning (FX $-${warn}\%). Again next round:
+    a crisis (FX $-${crisis}\%, welfare $-${hit}\%).
+\end{{description}}}}
 
 \vspace{{4pt}}
 {{\bfseries Sovereign debt}} (Phase 6+)\par
 \begin{{itemize}}[nosep,leftmargin=1.4em]
   \item Borrow this round: \blank{{2.5cm}} \quad Repay this round: \blank{{2.5cm}}
-  \item Default on the debt stock? \quad \boxx\ Yes \quad \boxx\ No
+  \item Default on the debt? \quad \boxx\ Yes \quad \boxx\ No
 \end{{itemize}}
-\textit{{Borrowing lifts consumption now; a weak currency makes hard-currency debt heavier (original sin). Default wipes the stock but bans borrowing and adds friction.}}
+{{\small
+\begin{{description}}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Borrow] Up to {cap}\% of your consumption a round; welfare rises by the same
+    share this round. Not under capital controls.
+  \item[Interest] {base}\% + {prem}\% $\times$ (debt $\div$ consumption), every round.
+    Debt is owed in the reserve currency, so payments are divided by your FX index
+    (FX 0.70 $\to$ 43\% heavier).
+  \item[Default] The debt disappears, but welfare falls by {dcost} $\times$
+    (debt $\div$ consumption) that round --- more than repaying would cost at par;
+    no borrowing for {ban} rounds and +{dfric}\% friction on your trades meanwhile.
+    It only pays after a big fall in your currency.
+  \item[Last round] Everything still owed is repaid.
+\end{{description}}}}
 
 \vspace{{4pt}}
 {{\bfseries Institutions \& power}} (Phase 7+)\par

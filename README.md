@@ -13,7 +13,7 @@ economy, driven from a Jupyter notebook and projected for the room.
 | `calculator.py`, `calculator_template.html` | Students' production calculator: `sim.export_calculator()` writes it. |
 | `docs/` | The published calculator page (GitHub Pages). Generated; don't edit by hand. |
 | `engine-math-reference.pdf` | Instructor-only: the math behind each phase. |
-| `stress_test*.py`, `notebook_e2e_test.py` | Regression suite (510 checks). |
+| `stress_test*.py`, `notebook_e2e_test.py` | Regression suite (649 checks), including `stress_test_money_balance.py`, which plays six different trading worlds and fails if any fixed money strategy, or serial default, starts winning everywhere. |
 
 ## Quick start
 
@@ -66,5 +66,6 @@ changes technology or endowments. See *Student production calculator* in
 python stress_test.py && python stress_test_phase3.py && python stress_test_phase4.py \
   && python stress_test_phase5.py && python stress_test_phase6.py \
   && python stress_test_phase7.py && python stress_test_approval.py && python stress_test_classroom.py \
-  && python stress_test_calculator.py && python notebook_e2e_test.py
+  && python stress_test_calculator.py && python stress_test_money_balance.py \
+  && python notebook_e2e_test.py
 ```

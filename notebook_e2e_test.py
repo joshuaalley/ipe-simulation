@@ -225,10 +225,10 @@ sim.run_round(r4_dec, [], firm_decisions=r9_firm_dec, monetary_decisions=md18)
 check("R18 Sabine currency depreciated",
       sim.history[-1]["results"]["Sabine"]["monetary"]["depreciation_factor"] < 1.0)
 
-# R19: drive Pecos into a crisis over two overreach rounds
+# R19: drive Pecos into a crisis over two overreach rounds (peg + open + print)
 over = safe_md()
 over["Pecos"] = {"fx_regime": "peg", "capital_controls": False,
-                 "independent_monetary": True, "money_supply_growth": 0.0}
+                 "money_supply_growth": 0.05}
 sim.run_round(r4_dec, [], firm_decisions=r9_firm_dec, monetary_decisions=over)
 check("R19a Pecos warned", sim.history[-1]["results"]["Pecos"]["monetary"]["warning"])
 sim.run_round(r4_dec, [], firm_decisions=r9_firm_dec, monetary_decisions=over)
@@ -272,10 +272,13 @@ sim.upgrade_to_phase6()
 check("Phase 6 (debt) active", sim.phase == 6)
 check("debt stock initialized", all(sim.countries[c]["debt_stock"] == 0.0 for c in sim.countries))
 
-# R21: borrowing introduced
+# R21: borrowing introduced (capped at a quarter of consumption)
 sim.run_round(r4_dec, [], firm_decisions=r9_firm_dec, monetary_decisions=safe_md(),
               debt_decisions={"Bosque": {"borrow": 30}})
-check("R21 Bosque borrowed (stock 30)", abs(sim.countries["Bosque"]["debt_stock"] - 30) < 0.01)
+got = sim.history[-1]["results"]["Bosque"]["debt"]["borrow"]
+check("R21 Bosque borrowed (within the cap)",
+      0 < got <= 30 and abs(sim.countries["Bosque"]["debt_stock"] - got) < 0.01,
+      f"borrowed {got:.1f}")
 
 # R22: debt crisis -> default
 sim.run_round(r4_dec, [], firm_decisions=r9_firm_dec, monetary_decisions=safe_md(),

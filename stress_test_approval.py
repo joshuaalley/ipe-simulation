@@ -20,6 +20,7 @@ from engine import (
     PHASE1_COUNTRIES, PHASE1_GOODS,
     PHASE2_COUNTRIES, PHASE2_GOODS,
     APPROVAL_START, APPROVAL_CRISIS_FLOOR, APPROVAL_CRISIS_ROUNDS,
+    APPROVAL_COMPENSATION, COMPENSATION_MAX_SHARE, COMPENSATION_DEADWEIGHT,
 )
 
 PASS, FAIL = [], []
@@ -39,7 +40,7 @@ def check(name, cond, detail=""):
         print(f"  FAIL  {name} -- {detail}")
 
 
-def play(tariff, rounds=20, side_payments=None, quiet=True):
+def play(tariff, rounds=20, side_payments=None, quiet=True, compensation=None):
     """Everyone runs the same flat tariff for `rounds` rounds."""
     sim = IPESimulation({c: PHASE1_COUNTRIES[c] for c in C},
                         PHASE1_GOODS, phase=1)
@@ -50,9 +51,10 @@ def play(tariff, rounds=20, side_payments=None, quiet=True):
         for _ in range(rounds):
             tar = {c: {p: {g: tariff for g in PHASE1_GOODS}
                        for p in C if p != c} for c in C}
-            sim.run_round({c: {"production": PROD[c], "tariffs": tar[c]}
-                           for c in C}, SWAPS,
-                          side_payments=side_payments or [])
+            dec = {c: {"production": PROD[c], "tariffs": tar[c]} for c in C}
+            for c, share in (compensation or {}).items():
+                dec[c]["compensation"] = share
+            sim.run_round(dec, SWAPS, side_payments=side_payments or [])
             fell += sim.history[-1].get("governments_fallen", [])
     return sim, fell
 
@@ -140,6 +142,63 @@ def test_compensation_helps():
           f"plain {a_plain['Sabine']:.1f} vs compensated {a_comp['Sabine']:.1f}")
 
 
+def test_paying_your_own_losers():
+    print("\n[5b] a country can compensate its own losers")
+    plain, _ = play(0.0, rounds=1)
+    comp, _ = play(0.0, rounds=1, compensation={"Sabine": 0.10})
+    a_plain, a_comp = final(plain)[0], final(comp)[0]
+    got = a_comp["Sabine"] - a_plain["Sabine"]
+    check("  10% compensation buys about 2.5 approval",
+          abs(got - APPROVAL_COMPENSATION * 0.10) < 0.2, f"got {got:+.2f}")
+    w_plain = plain.history[-1]["results"]["Sabine"]["welfare"]
+    w_comp = comp.history[-1]["results"]["Sabine"]["welfare"]
+    want = 1 - COMPENSATION_DEADWEIGHT * 0.10
+    check("  ...and costs 2% of welfare (the deadweight on the transfer)",
+          abs(w_comp / w_plain - want) < 1e-9, f"ratio {w_comp / w_plain:.4f}")
+    check("  recorded on the round",
+          comp.history[-1]["results"]["Sabine"]["compensation"]["share"] == 0.10)
+    # ...and it is cheaper per approval point than closing the border
+    tariff, _ = play(0.20, rounds=1)
+    a_tar = final(tariff)[0]["Sabine"] - a_plain["Sabine"]
+    w_tar = tariff.history[-1]["results"]["Sabine"]["welfare"]
+    check("  compensation costs less welfare per approval point than a 20% tariff",
+          (w_plain - w_comp) / max(got, 1e-9) < (w_plain - w_tar) / max(a_tar, 1e-9),
+          f"compensation {got:+.2f} approval for {w_plain - w_comp:.2f} welfare; "
+          f"tariff {a_tar:+.2f} for {w_plain - w_tar:.2f}")
+
+
+def test_compensation_cap_is_enforced():
+    print("\n[5c] the compensation cap is enforced")
+    for bad in (COMPENSATION_MAX_SHARE + 0.05, -0.05):
+        try:
+            play(0.0, rounds=1, compensation={"Sabine": bad})
+            check(f"  {bad:+.2f} is rejected", False, "no error")
+        except ValueError as e:
+            check(f"  {bad:+.2f} is rejected", "compensation" in str(e), str(e)[:80])
+
+
+def test_side_payments_are_net_and_move_goods():
+    print("\n[5d] side payments: goods move from Phase 1, and swaps buy nothing")
+    plain, _ = play(0.0, rounds=1)
+    swap, _ = play(0.0, rounds=1, side_payments=[("Trinity", "Sabine", "cloth", 10),
+                                                 ("Sabine", "Trinity", "cloth", 10)])
+    a_plain, a_swap = final(plain)[0], final(swap)[0]
+    check("  swapping the same goods back and forth buys no approval",
+          abs(a_swap["Sabine"] - a_plain["Sabine"]) < 1e-9
+          and abs(a_swap["Trinity"] - a_plain["Trinity"]) < 1e-9,
+          f"Sabine {a_swap['Sabine']:.2f} vs {a_plain['Sabine']:.2f}")
+    paid, _ = play(0.0, rounds=1, side_payments=[("Trinity", "Sabine", "cloth", 10)])
+    a_paid = final(paid)[0]
+    check("  a one-way payment still does", a_paid["Sabine"] > a_plain["Sabine"] + 1.0)
+    r = paid.history[-1]
+    moved = (r["results"]["Sabine"]["consumption"]["cloth"]
+             - plain.history[-1]["results"]["Sabine"]["consumption"]["cloth"])
+    check("  and the goods actually move before Phase 7", abs(moved - 10) < 1e-6,
+          f"cloth moved {moved:.2f}")
+    check("  the transfer is logged",
+          any("side payment" in l for l in r.get("side_payment_log", [])))
+
+
 def test_survives_upgrade_and_restore():
     print("\n[6] approval survives phase upgrades and save/restore")
     sim, _ = play(0.30, rounds=4)
@@ -170,6 +229,8 @@ def test_bounds():
 
 def main():
     for t in [test_seeded_and_separate, test_protection_buys_approval,
+              test_paying_your_own_losers, test_compensation_cap_is_enforced,
+              test_side_payments_are_net_and_move_goods,
               test_openness_topples_a_government, test_backlash_is_endogenous,
               test_compensation_helps, test_survives_upgrade_and_restore,
               test_bounds]:

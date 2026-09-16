@@ -377,12 +377,20 @@ def write_round_template(sim, path, round_num=None):
             prod[f"capital_{g}"] = 0
         prod["labor_available"] = [sim.countries[n]["labor"] for n in names]
         prod["capital_available"] = [sim.countries[n]["capital"] for n in names]
+    # Buying off the groups trade displaced: a percent of your consumption.
+    # Blank or 0 = none. Buys approval, costs a little welfare, border stays open.
+    prod["compensation_pct"] = 0
     sheets["production"] = prod
 
     # -- trades (blank; one row per agreed swap) -------------------
     sheets["trades"] = pd.DataFrame(
         columns=["exporter", "importer", "good_out", "qty_out",
                  "good_in", "qty_in"]
+    )
+
+    # -- side payments (blank; goods one country sends another) ----
+    sheets["side_payments"] = pd.DataFrame(
+        columns=["donor", "recipient", "good", "qty"]
     )
 
     # -- tariffs (blank; only non-zero rows needed) ----------------
@@ -407,11 +415,11 @@ def write_round_template(sim, path, round_num=None):
     if phase >= 5:
         fin = pd.DataFrame({"country": names})
         mon = [sim._mon(n) for n in names]
-        fin["fx_regime"] = [m.get("fx_regime", "float") for m in mon]
+        # peg | float ; yes | no ; 0, 2, 5 or 10 (percent -- 0 follows the
+        # anchor, anything above is printing money)
+        fin["fx_regime"] = [sim._regime(m.get("fx_regime", "float")) for m in mon]
         fin["capital_controls"] = [
             "yes" if m.get("capital_controls") else "no" for m in mon]
-        fin["independent_monetary"] = [
-            "yes" if m.get("independent_monetary", True) else "no" for m in mon]
         fin["money_supply_growth"] = [
             m.get("money_supply_growth", 0.0) for m in mon]
         if phase >= 6:
@@ -625,6 +633,11 @@ def load_round(sim, path):
                 "capital": {g: _as_num(row.get(f"capital_{g}"), 0.0, where)
                             for g in goods},
             }}
+        comp = _as_num(row.get("compensation_pct"), 0.0, where)
+        if comp > 1:                       # typed as a percent: 10 -> 0.10
+            comp = comp / 100
+        if comp:
+            decisions[country]["compensation"] = comp
     for missing in set(names) - seen:
         problems.append(f"production: no row for {missing}")
 
@@ -690,7 +703,37 @@ def load_round(sim, path):
                            g_in,
                            _as_num(row.get("qty_in"), 0.0, where)))
 
+    # -- side payments (goods one country sends another) -----------
+    side_payments = []
+    sp_df = _read(path, "side_payments")
+    sp_cols = ["donor", "recipient", "good", "qty"]
+    sp_ok = True
+    if sp_df is not None and len(sp_df):
+        sp_ok = _require_columns(sp_df, "side_payments", sp_cols, problems)
+    if sp_df is not None and sp_ok:
+        for i, row in sp_df.iterrows():
+            donor = _as_text(row.get("donor"))
+            recipient = _as_text(row.get("recipient"))
+            if donor is None and recipient is None:
+                continue
+            where = f"side_payments row {i + 2}"
+            good = _as_text(row.get("good"))
+            if donor not in sim.countries:
+                problems.append(f"{where}: unknown donor {donor!r}")
+                continue
+            if recipient not in sim.countries:
+                problems.append(f"{where}: unknown recipient {recipient!r}")
+                continue
+            if good not in goods:
+                problems.append(
+                    f"{where}: good must be one of {goods}; got {good!r}")
+                continue
+            side_payments.append(
+                (donor, recipient, good, _as_num(row.get("qty"), 0.0, where)))
+
     kwargs = {"decisions": decisions, "trades": trades}
+    if side_payments:
+        kwargs["side_payments"] = side_payments
 
     # -- firms (Phase 3+) ------------------------------------------
     if phase >= 3 and sim.firms:
@@ -729,7 +772,7 @@ def load_round(sim, path):
     if phase >= 5:
         fin_df = _read(path, "finance")
         fin_need = ["country", "fx_regime", "capital_controls",
-                    "independent_monetary", "money_supply_growth"]
+                    "money_supply_growth"]
         if phase >= 6:
             fin_need += ["borrow", "repay", "default"]
         if fin_df is None:
@@ -747,19 +790,23 @@ def load_round(sim, path):
                     problems.append(f"{where}: unknown country")
                     continue
                 cur = sim._mon(country)
+                growth = _as_num(row.get("money_supply_growth"),
+                                 cur.get("money_supply_growth", 0.0), where)
+                if growth > 1:                       # typed as a percent: 5 -> 0.05
+                    growth = growth / 100
+                regime = _as_text(row.get("fx_regime"), cur.get("fx_regime", "float"))
                 monetary[country] = {
-                    "fx_regime": _as_text(row.get("fx_regime"),
-                                          cur.get("fx_regime", "float")),
+                    "fx_regime": regime.lower() if isinstance(regime, str) else regime,
                     "capital_controls": _as_bool(
                         row.get("capital_controls"),
                         bool(cur.get("capital_controls")), where),
-                    "independent_monetary": _as_bool(
-                        row.get("independent_monetary"),
-                        bool(cur.get("independent_monetary", True)), where),
-                    "money_supply_growth": _as_num(
-                        row.get("money_supply_growth"),
-                        cur.get("money_supply_growth", 0.0), where),
+                    "money_supply_growth": growth,
                 }
+                # Older workbooks carry an independent_monetary column. Pass
+                # it through so a contradiction ("no" while printing) is caught.
+                if not _blank(row.get("independent_monetary")):
+                    monetary[country]["independent_monetary"] = _as_bool(
+                        row.get("independent_monetary"), True, where)
                 if phase >= 6:
                     debt[country] = {
                         "borrow": _as_num(row.get("borrow"), 0.0, where),

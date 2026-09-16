@@ -14,10 +14,13 @@ import sys, json, traceback
 import matplotlib
 matplotlib.use("Agg")
 
+import copy
+
 from engine import (
     IPESimulation, PHASE2_COUNTRIES, PHASE2_GOODS, PHASE3_FIRMS,
     DEBT_BASE_RATE, DEBT_RISK_PREMIUM, DEBT_DEFAULT_BAN_ROUNDS,
     DEBT_DEFAULT_FRICTION, IMF_DEBT_RELIEF, IMF_AUSTERITY,
+    BORROW_CAP_SHARE, DEBT_DEFAULT_COST,
 )
 
 PASS, FAIL = [], []
@@ -35,7 +38,11 @@ BAL = {
     "Pecos":   {"production": {"labor":{"cloth":10,"wine":15,"machinery":25},"capital":{"cloth":20,"wine":30,"machinery":70}}, "tariffs":{}},
     "Sabine":  {"production": {"labor":{"cloth":50,"wine":35,"machinery":15},"capital":{"cloth":15,"wine":12,"machinery":8}}, "tariffs":{}},
 }
-def md(): return {c:{"fx_regime":"managed","capital_controls":False,"independent_monetary":True,"money_supply_growth":0.0} for c in PHASE2_COUNTRIES}
+def md(): return {c:{"fx_regime":"float","capital_controls":False,"money_supply_growth":0.0} for c in PHASE2_COUNTRIES}
+def capacity(r, c):
+    """Consumption capacity C at world prices -- the base for the borrow cap."""
+    from engine import WORLD_PRICES
+    return sum(q * WORLD_PRICES[g] for g, q in r["results"][c]["consumption"].items())
 def fd(s): return {f:{"scale":30,"relocate_to":None,"export":False} for f in s.firms}
 
 def fresh_phase6():
@@ -102,17 +109,17 @@ def test_interest_and_rate():
 def test_service_lowers_welfare_and_stock():
     print("\n[4] servicing/repay lowers welfare + stock")
     s = fresh_phase6()
-    run6(s, debt={"Bosque": {"borrow": 30}})          # stock 30
+    run6(s, debt={"Bosque": {"borrow": 16}})          # stock 16 (under the cap)
     # Compare repay vs no-repay welfare in the next round
-    s_no = fresh_phase6(); run6(s_no, debt={"Bosque": {"borrow": 30}})
+    s_no = fresh_phase6(); run6(s_no, debt={"Bosque": {"borrow": 16}})
     r_no = run6(s_no, debt={"Bosque": {"borrow": 0}})           # service interest only
-    r_re = run6(s,    debt={"Bosque": {"borrow": 0, "repay": 15}})
+    r_re = run6(s,    debt={"Bosque": {"borrow": 0, "repay": 8}})
     check("  repaying lowers welfare vs not repaying",
           r_re["results"]["Bosque"]["welfare"] < r_no["results"]["Bosque"]["welfare"],
           f"repay={r_re['results']['Bosque']['welfare']:.2f}, "
           f"norepay={r_no['results']['Bosque']['welfare']:.2f}")
-    check("  stock reduced by repayment (30 -> 15)",
-          abs(s.countries["Bosque"]["debt_stock"] - 15) < 0.01,
+    check("  stock reduced by repayment (16 -> 8)",
+          abs(s.countries["Bosque"]["debt_stock"] - 8) < 0.01,
           f"got {s.countries['Bosque']['debt_stock']}")
 
 
@@ -145,13 +152,14 @@ def test_original_sin():
 def test_default():
     print("\n[6] default wipes stock, sets ban, counts")
     s = fresh_phase6()
-    run6(s, debt={"Bosque": {"borrow": 50}})   # stock 50
+    r0 = run6(s, debt={"Bosque": {"borrow": 50}})   # capped at a quarter of C
+    borrowed = r0["results"]["Bosque"]["debt"]["borrow"]
     r = run6(s, debt={"Bosque": {"default": True}})
     d = r["results"]["Bosque"]["debt"]
     check("  default flagged", d["defaulted"])
     check("  stock wiped to 0", s.countries["Bosque"]["debt_stock"] == 0.0)
-    check("  wiped amount recorded (~50+interest borrowed=50)", d["wiped"] >= 50,
-          f"got {d['wiped']}")
+    check("  wiped amount recorded (the whole stock)",
+          abs(d["wiped"] - borrowed) < 1e-9, f"got {d['wiped']}, borrowed {borrowed}")
     check("  default counter incremented", s.countries["Bosque"]["defaults"] == 1)
     check("  ban set forward", s.countries["Bosque"]["borrow_ban_until"] == s.round_num + DEBT_DEFAULT_BAN_ROUNDS)
     check("  appears in round defaults list", "Bosque" in r["debt_defaults"])
@@ -180,14 +188,13 @@ def test_ban_blocks_borrow_and_adds_friction():
 
 # ───────────────────────────────────────────────────────────────
 def test_borrow_cap():
-    print("\n[8] borrow capped at consumption capacity")
+    print("\n[8] borrow capped at a quarter of consumption capacity")
     s = fresh_phase6()
-    # Borrow an absurd amount; stock should be capped at C (consumption value)
     r = run6(s, debt={"Bosque": {"borrow": 99999}})
     d = r["results"]["Bosque"]["debt"]
-    # Capacity C = sum(consumption*world_price); borrow should equal C (the cap), not 99999
-    check("  borrow capped well below 99999", d["borrow"] < 9999,
-          f"got {d['borrow']}")
+    cap = BORROW_CAP_SHARE * capacity(r, "Bosque")
+    check(f"  borrow = {BORROW_CAP_SHARE:.0%} of C", abs(d["borrow"] - cap) < 1e-9,
+          f"got {d['borrow']}, cap {cap}")
     check("  capped borrow > 0", d["borrow"] > 0)
 
 
@@ -263,12 +270,78 @@ def test_validation_ordering():
           f"before={dep_before}, after={s._mon('Bosque')['depreciation_factor']}")
 
 
+# ───────────────────────────────────────────────────────────────
+def test_default_costs_face_value():
+    print(f"\n[13] default costs {DEBT_DEFAULT_COST:g}x the debt -- punished at par, "
+          f"worth it only after a devaluation")
+    s = fresh_phase6()
+    run6(s, debt={"Bosque": {"borrow": 16}})
+    stock = s.countries["Bosque"]["debt_stock"]
+    clean = copy.deepcopy(s)
+    clean.countries["Bosque"]["debt_stock"] = 0.0          # same world, no debt
+    r_clean = run6(clean)
+    r_def = run6(s, debt={"Bosque": {"default": True}})
+    C = capacity(r_def, "Bosque")
+    want = 1 - DEBT_DEFAULT_COST * stock / C
+    got = r_def["results"]["Bosque"]["welfare"] / r_clean["results"]["Bosque"]["welfare"]
+    check(f"  welfare x (1 - {DEBT_DEFAULT_COST:g} x debt/C) in the default round",
+          abs(got - want) < 1e-9, f"ratio {got:.6f}, want {want:.6f}")
+    check("  default cost recorded",
+          abs(r_def["results"]["Bosque"]["debt"]["default_cost"]
+              - DEBT_DEFAULT_COST * stock / C) < 1e-9)
+    # At par, defaulting costs more than repaying in full (a quarter more than
+    # the debt, against the debt plus one round's interest) -- and the ban and
+    # friction come on top. Only a weak currency (repayment divided by FX)
+    # makes walking away worth it.
+    par = copy.deepcopy(clean); par.countries["Bosque"]["debt_stock"] = stock
+    r_rep = run6(par, debt={"Bosque": {"repay": stock}})
+    i = r_rep["results"]["Bosque"]["debt"]["interest"]
+    want = (1 - DEBT_DEFAULT_COST * stock / C) / (1 - (stock + i) / C)
+    got = r_def["results"]["Bosque"]["welfare"] / r_rep["results"]["Bosque"]["welfare"]
+    check("  at par, defaulting costs more than repaying in full",
+          abs(got - want) < 1e-9 and got < 1, f"ratio {got:.6f}, want {want:.6f}")
+
+
+def test_controls_block_borrowing():
+    print("\n[14] capital controls close the door to foreign borrowing")
+    s = fresh_phase6()
+    mon = md()
+    mon["Bosque"]["capital_controls"] = True
+    r = run6(s, debt={"Bosque": {"borrow": 10}}, mon=mon)
+    d = r["results"]["Bosque"]["debt"]
+    check("  no borrowing under controls", d["borrow"] == 0.0
+          and s.countries["Bosque"]["debt_stock"] == 0.0, f"got {d['borrow']}")
+    check("  flagged", d["blocked_by_controls"])
+    r = run6(s, debt={"Bosque": {"borrow": 10}})
+    check("  reopening lets it borrow again", r["results"]["Bosque"]["debt"]["borrow"] > 0)
+
+
+def test_final_round_settlement():
+    print("\n[15] the final round settles every debt")
+    s = fresh_phase6()
+    s.final_round = s.round_num + 2
+    run6(s, debt={"Bosque": {"borrow": 16}, "Llano": {"borrow": 16}})
+    r = run6(s, debt={"Bosque": {"borrow": 16}, "Trinity": {"borrow": 20}})
+    b, t = r["results"]["Bosque"]["debt"], r["results"]["Trinity"]["debt"]
+    check("  final round flagged", b["final_settlement"])
+    check("  no new borrowing in the final round",
+          b["borrow"] == 0.0 and t["borrow"] == 0.0)
+    check("  the whole stock is repaid",
+          s.countries["Bosque"]["debt_stock"] == 0.0 and b["repay"] > 0)
+    check("  Llano, which said nothing, settles too",
+          s.countries["Llano"]["debt_stock"] == 0.0)
+    check("  save/restore keeps final_round",
+          IPESimulation.from_state(json.loads(json.dumps(s.get_state()))).final_round
+          == s.final_round)
+
+
 def main():
     for t in [test_upgrade, test_borrow_grows_welfare_and_stock, test_interest_and_rate,
               test_service_lowers_welfare_and_stock, test_original_sin, test_default,
               test_ban_blocks_borrow_and_adds_friction, test_borrow_cap,
               test_imf_bailout, test_save_restore, test_display,
-              test_validation_ordering]:
+              test_validation_ordering, test_default_costs_face_value,
+              test_controls_block_borrowing, test_final_round_settlement]:
         try:
             t()
         except Exception:

@@ -332,7 +332,14 @@ APPROVAL_PROTECTION = 35.0       # x mean tariff x import exposure
 APPROVAL_EXPOSURE = 14.0         # x import exposure (openness irritates)
 APPROVAL_PROSPERITY = 35.0       # x proportional welfare change
 APPROVAL_PROSPERITY_CAP = 15.0   # ...clamped, so one boom can't buy immunity
-APPROVAL_COMPENSATION = 25.0     # x side payments received / capacity
+APPROVAL_COMPENSATION = 25.0     # x (compensation paid at home + net side
+                                 #    payments received) / capacity
+COMPENSATION_MAX_SHARE = 0.25    # compensate at most this share of a round's
+                                 # consumption capacity
+COMPENSATION_DEADWEIGHT = 0.20   # ...and this much of it is burned on the way:
+                                 # taxing and transferring is not free, so
+                                 # compensation costs welfare while keeping the
+                                 # border open (a tariff costs more and closes it)
 APPROVAL_DRIFT = 0.10            # mean reversion toward APPROVAL_START
 
 APPROVAL_CRISIS_FLOOR = 30.0     # below this...
@@ -343,11 +350,40 @@ APPROVAL_CRISIS_ROUNDS = 2       # ...for this many rounds -> backlash fires
 #  PHASE 5 MONETARY & FX PARAMETERS
 # ═══════════════════════════════════════════════════════════════════
 # The trilemma: a country cannot simultaneously run a fixed exchange rate,
-# open capital markets, and independent monetary policy without accumulating
+# open capital markets, and its own monetary policy without accumulating
 # stress that eventually triggers a currency crisis.
+#
+# Every round a country makes three choices, and each one buys something:
+#   exchange rate  peg | float     peg: no currency friction with other peggers
+#   capital        open | controls controls: foreign firms here produce less,
+#                                  and (Phase 6) no borrowing abroad
+#   money growth   0 | 2 | 5 | 10% printing: a stimulus now, a weaker currency
+#                                  for good (smaller imports, a welfare drag,
+#                                  heavier debt)
+# Printing money IS running your own monetary policy; 0% follows the anchor.
+# Peg + open capital + printing is the overreach that builds stress.
 
-# Discrete money-supply growth choices (only meaningful if independent_monetary).
+# Discrete money-supply growth choices. Anything above 0 is "printing".
 PHASE5_MONEY_GROWTH_CHOICES = [0.0, 0.02, 0.05, 0.10]
+PHASE5_REGIMES = ("peg", "float")
+# Older saves and workbooks may say "managed"; it behaves exactly like "float".
+REGIME_ALIASES = {"managed": "float"}
+
+# What each choice buys or costs. Chosen from the middle of the range that
+# passes stress_test_money_balance.py in six quite different trading worlds
+# (class-like, heavy, light and no trade, specialized, six countries), so a
+# real class's trade pattern shouldn't need a re-tune. That test runs with the
+# regression suite and fails if any fixed strategy starts winning everywhere:
+# re-run it after changing any of these.
+STIMULUS_PER_POINT = 1.0       # printing g: welfare x (1 + 1.0 x g x FX) this
+                               # round -- a debased currency stimulates less
+WEAK_FX_IMPORT_COST = 0.5      # imports you receive shrink by 0.5 x (1 - FX)
+WEAK_FX_WELFARE_DRAG = 0.10    # ...and welfare falls by 0.10 x (1 - FX) every
+                               # round (savers' money buys less): -1% for each
+                               # 10 points below par. Keeps printing costly
+                               # even for a country that barely trades.
+CONTROLS_FIRM_CUT = 0.15       # foreign firms under capital controls: -15% output
+PEG_PEG_FRICTION = 0.0         # friction multiplier when both sides peg (was 0.5)
 
 # Graduated stress consequences:
 WARNING_DEVALUATION = 0.90     # stress=1: currency drops 10%
@@ -369,6 +405,13 @@ BASE_FX_FRICTION = 0.02        # 2% baseline on cross-currency, non-union, non-r
 
 DEBT_BASE_RATE = 0.05          # base interest rate on the debt stock
 DEBT_RISK_PREMIUM = 0.15       # premium scaling with debt/capacity ratio
+BORROW_CAP_SHARE = 0.25        # borrow at most 25% of consumption per round
+DEBT_DEFAULT_COST = 1.25       # default: welfare falls by 1.25 x debt/consumption
+                               # -- a quarter more than repaying at par would
+                               # cost, so defaulting in a calm round is a visible
+                               # mistake. Walking away pays only once a weak
+                               # currency has inflated the real cost of repaying
+                               # by more than that (a fall of roughly 20%+).
 DEBT_DEFAULT_BAN_ROUNDS = 2    # rounds a defaulter cannot borrow (tunable)
 DEBT_DEFAULT_FRICTION = 0.05   # extra FX friction on a defaulter's trades during the ban
 DEBT_DIVIDEND_PENALTY = 0.5    # WTO dividend halved (not zeroed) during the ban
@@ -440,6 +483,11 @@ class IPESimulation:
         self.hegemon_provides = True   # does the hegemon supply the public good?
         self._pending_global_crisis = None  # severity, consumed next run_round
 
+        # The last round of the term (e.g. 26). When set, all outstanding
+        # debt falls due in that round, so borrowing at the end isn't free.
+        self.final_round = None
+        self._no_clear_target = False     # set by each exposure ranking
+
     # ── Core round logic ──────────────────────────────────────────
 
     def run_round(self, decisions: dict, trades: list,
@@ -463,6 +511,9 @@ class IPESimulation:
                            "tariffs": {partner: {good: rate, ...}, ...}}}
 
             Tariffs are optional (default 0). Rates are fractions (0.1 = 10%).
+            "compensation" is optional: the share of your consumption paid
+            to the groups trade displaced (0 to COMPENSATION_MAX_SHARE).
+            It buys approval and costs some welfare, with the border open.
 
         trades : list of tuples
             Each tuple: (exporter, importer, good_out, qty_out, good_in, qty_in)
@@ -476,10 +527,13 @@ class IPESimulation:
             scale clamped to [0, max_scale]. export only matters in Phase 4+.
 
         monetary_decisions : dict, Phase 5+ only
-            {country: {"fx_regime": "peg"|"managed"|"float",
+            {country: {"fx_regime": "peg"|"float",
                        "capital_controls": bool,
-                       "independent_monetary": bool,
                        "money_supply_growth": one of PHASE5_MONEY_GROWTH_CHOICES}}
+            Growth above 0 is printing money -- running your own monetary
+            policy. "managed" is accepted and treated as "float"; an old
+            "independent_monetary" key is accepted, but False with growth
+            above 0 is a contradiction and is rejected.
             Omitted countries keep their current monetary policy. Monetary
             decisions are applied BEFORE production/trade so this round's
             trades feel any crisis devaluation immediately.
@@ -593,8 +647,11 @@ class IPESimulation:
 
         # Step 3b: Side payments (Phase 7+) — goods transfers applied after
         # trade, before welfare. Donor consumption drops; recipient's rises.
+        # Side payments are just goods moving between countries, so they
+        # work from Phase 2 on -- that is how one country compensates another
+        # for staying open.
         side_payment_log = []
-        if self.phase >= 7 and side_payments:
+        if side_payments:
             side_payment_log = self._apply_side_payments(
                 consumption, varieties, side_payments
             )
@@ -636,6 +693,36 @@ class IPESimulation:
             else:
                 gains_pct = 0.0
 
+            # Phase 5+: printing money buys a stimulus this round, scaled by
+            # the currency's remaining credibility (its FX index) -- a strong
+            # currency stimulates, a debased one barely does. Applied after
+            # the gains metric (it is not a gain from trade); its bill is the
+            # weaker currency, which shrinks imports from now on.
+            stimulus = fx_drag = 0.0
+            if self.phase >= 5:
+                mon = self._mon(name)
+                growth = mon.get("money_supply_growth", 0.0)
+                dep = mon.get("depreciation_factor", 1.0)
+                if growth > 0:
+                    stimulus = welfare * STIMULUS_PER_POINT * growth * dep
+                    welfare += stimulus
+                # A currency below par erodes savings whether or not you
+                # trade -- so printing is never free.
+                if dep < 1.0:
+                    fx_drag = welfare * WEAK_FX_WELFARE_DRAG * (1.0 - dep)
+                    welfare -= fx_drag
+
+            # Compensating your own losers costs welfare (the transfer is
+            # taxed and administered, not free) and buys approval below.
+            # Applied after the gains metric: it is domestic politics, not
+            # a gain from trade.
+            comp_share = min(float(decisions[name].get("compensation", 0.0) or 0.0),
+                             COMPENSATION_MAX_SHARE)
+            comp_cost = 0.0
+            if comp_share > 0:
+                comp_cost = welfare * COMPENSATION_DEADWEIGHT * comp_share
+                welfare -= comp_cost
+
             # Phase 6+: sovereign debt — borrowing lifts welfare now,
             # service/repay/default move it later (original sin via the
             # currency's depreciation factor). Applied AFTER the gains metric
@@ -658,8 +745,12 @@ class IPESimulation:
                 # Separate ledger: approval never enters the utility function.
                 "approval": self._update_approval(
                     name, welfare, consumption[name], trade_records,
-                    side_payments
+                    side_payments, comp_share
                 ),
+                "compensation": {
+                    "share": comp_share,
+                    "welfare_cost": comp_cost,
+                },
             }
             if self.phase >= 6:
                 results[name]["debt"] = debt_info
@@ -677,6 +768,8 @@ class IPESimulation:
                     "warning": ev.get("warning", False),
                     "crisis": ev.get("crisis", False),
                     "crisis_welfare_loss": crisis_welfare_loss,
+                    "stimulus": stimulus,
+                    "fx_drag": fx_drag,
                     "union_id": self.countries[name].get("union_id"),
                 }
 
@@ -734,11 +827,12 @@ class IPESimulation:
                 n for n in self.countries
                 if results[n].get("debt", {}) and results[n]["debt"]["defaulted"]
             )
+        if side_payment_log:
+            round_result["side_payment_log"] = side_payment_log
         if self.phase >= 7:
             round_result["hegemon"] = self.hegemon
             round_result["hegemon_provides"] = self.hegemon_provides
             round_result["defected"] = sorted(defected)
-            round_result["side_payment_log"] = side_payment_log
             round_result["global_crisis_factor"] = crisis_factor
             # Crisis is one-shot: consume it
             self._pending_global_crisis = None
@@ -782,7 +876,8 @@ class IPESimulation:
         """
         Return {firm_id: output_qty}. Relocating firms produce 0 this round
         and update their host. Output = scale * productivity, scale clamped
-        to [0, max_scale].
+        to [0, max_scale]. Phase 5+: a host with capital controls scares
+        investors -- its foreign firms produce CONTROLS_FIRM_CUT less.
         """
         output = {}
         for fid, fcfg in self.firm_config.items():
@@ -795,6 +890,9 @@ class IPESimulation:
                 continue
             scale = max(0.0, min(dec.get("scale", 0), fcfg["max_scale"]))
             output[fid] = scale * fcfg["productivity"]
+            if self.phase >= 5 and \
+                    self._mon(self.firms[fid]["host"]).get("capital_controls"):
+                output[fid] *= (1 - CONTROLS_FIRM_CUT)
         return output
 
     def _build_variety_bundles(self, production, firm_output):
@@ -926,30 +1024,54 @@ class IPESimulation:
                 entities.append((c, self.countries[c], [c]))
         return entities
 
+    @staticmethod
+    def _regime(fx_regime):
+        """Normalize a regime name ('managed' behaves as 'float')."""
+        return REGIME_ALIASES.get(fx_regime, fx_regime)
+
+    @staticmethod
+    def _overreach(state):
+        """
+        The trilemma violation: a peg, open capital, AND printing money at
+        once. Following the anchor (0% growth) under a peg with open capital
+        is sustainable; so is printing behind a float or behind controls.
+        """
+        return (
+            IPESimulation._regime(state.get("fx_regime")) == "peg"
+            and not state.get("capital_controls", False)
+            and state.get("money_supply_growth", 0.0) > 0
+        )
+
     def _validate_monetary_decisions(self, monetary_decisions):
         errors = []
-        valid_regimes = {"peg", "managed", "float"}
+        valid_regimes = set(PHASE5_REGIMES) | set(REGIME_ALIASES)
         for c, md in monetary_decisions.items():
             if c not in self.countries:
                 errors.append(f"Unknown country in monetary_decisions: {c}")
                 continue
             if md.get("fx_regime") not in valid_regimes:
                 errors.append(
-                    f"{c}: fx_regime must be one of {sorted(valid_regimes)}"
+                    f"{c}: fx_regime must be 'peg' or 'float'"
                 )
             if not isinstance(md.get("capital_controls"), bool):
                 errors.append(f"{c}: capital_controls must be True/False")
-            if not isinstance(md.get("independent_monetary"), bool):
-                errors.append(f"{c}: independent_monetary must be True/False")
             g = md.get("money_supply_growth", 0.0)
             if g not in PHASE5_MONEY_GROWTH_CHOICES:
                 errors.append(
                     f"{c}: money_supply_growth {g} not in "
                     f"{PHASE5_MONEY_GROWTH_CHOICES}"
                 )
+            indep = md.get("independent_monetary")
+            if indep is not None and not isinstance(indep, bool):
+                errors.append(f"{c}: independent_monetary must be True/False")
+            elif indep is False and g > 0:
+                errors.append(
+                    f"{c}: money growth {g:.0%} is printing money -- that IS "
+                    f"running your own monetary policy. Set money growth to 0 "
+                    f"to follow the anchor, or drop independent_monetary."
+                )
         # Monetary-union consistency: members must decide together, identically
-        keys = ("fx_regime", "capital_controls",
-                "independent_monetary", "money_supply_growth")
+        keys = ("fx_regime", "capital_controls", "money_supply_growth")
         for uid, union in self.monetary_unions.items():
             members = union["members"]
             present = [m for m in members if m in monetary_decisions]
@@ -962,9 +1084,13 @@ class IPESimulation:
                     f"(missing: {sorted(missing)})"
                 )
                 continue
-            ref = {k: monetary_decisions[present[0]].get(k) for k in keys}
+            def norm(md):
+                out = {k: md.get(k) for k in keys}
+                out["fx_regime"] = self._regime(out["fx_regime"])
+                return out
+            ref = norm(monetary_decisions[present[0]])
             for m in present[1:]:
-                cur = {k: monetary_decisions[m].get(k) for k in keys}
+                cur = norm(monetary_decisions[m])
                 if cur != ref:
                     errors.append(
                         f"Union {uid}: {m}'s decisions differ from "
@@ -975,10 +1101,11 @@ class IPESimulation:
     def _apply_monetary_decisions(self, monetary_decisions):
         """
         Apply per-round monetary choices, then run the trilemma:
-          - overreach (peg + open capital + independent monetary) raises stress
+          - overreach (peg + open capital + printing money) raises stress
           - stress=1 -> warning crisis (10% devaluation, friction bump)
           - stress=2 -> full crisis (30% devaluation, welfare hit), reset
-          - money-supply growth decays the currency each round
+          - printing money decays the currency each round (and buys this
+            round's stimulus -- applied in the welfare step)
 
         Returns events: {country: {warning, crisis, stress,
                                     depreciation_factor, warning_active}}.
@@ -994,10 +1121,11 @@ class IPESimulation:
             if key in applied:
                 continue
             state = self._mon(c)
-            state["fx_regime"] = md["fx_regime"]
+            g = md.get("money_supply_growth", 0.0)
+            state["fx_regime"] = self._regime(md["fx_regime"])
             state["capital_controls"] = md["capital_controls"]
-            state["independent_monetary"] = md["independent_monetary"]
-            state["money_supply_growth"] = md["money_supply_growth"]
+            state["money_supply_growth"] = g
+            state["independent_monetary"] = g > 0     # printing = own policy
             applied.add(key)
 
         # 2. Trilemma resolution per monetary entity
@@ -1011,11 +1139,7 @@ class IPESimulation:
                 for m in members:
                     events[m]["crisis"] = True
         for key, state, members in self._monetary_entities():
-            overreach = (
-                state.get("fx_regime") == "peg"
-                and not state.get("capital_controls", False)
-                and state.get("independent_monetary", True)
-            )
+            overreach = self._overreach(state)
             if overreach:
                 state["stress"] = state.get("stress", 0) + 1
             else:
@@ -1034,11 +1158,10 @@ class IPESimulation:
                 for m in members:
                     events[m]["warning"] = True
 
-            # Money-supply decay (gradual depreciation)
-            if state.get("independent_monetary", True):
-                state["depreciation_factor"] *= (
-                    1 - state.get("money_supply_growth", 0.0)
-                )
+            # Money-supply decay (gradual depreciation) -- printing only
+            growth = state.get("money_supply_growth", 0.0)
+            if growth > 0:
+                state["depreciation_factor"] *= (1 - growth)
 
         # 3. Snapshot resolved state per country
         for c in self.countries:
@@ -1065,10 +1188,11 @@ class IPESimulation:
         if ex_uid and ex_uid == im_uid:
             return 0.0
         friction = BASE_FX_FRICTION
-        # Pegging to the reserve currency imports credibility: half friction
-        if self._mon(exporter).get("fx_regime") == "peg" and \
-           self._mon(importer).get("fx_regime") == "peg":
-            friction *= 0.5
+        # Two currencies pegged to the same anchor are fixed against each
+        # other too: no exchange-rate risk left to price in.
+        if self._regime(self._mon(exporter).get("fx_regime")) == "peg" and \
+           self._regime(self._mon(importer).get("fx_regime")) == "peg":
+            friction *= PEG_PEG_FRICTION
         # Warning jitters add friction if either party was just warned
         if self._mon(exporter).get("warning_active") or \
            self._mon(importer).get("warning_active"):
@@ -1108,9 +1232,14 @@ class IPESimulation:
         Borrowing of B lifts welfare by (1 + B/C); servicing interest+repay
         lowers it by (1 - service_real/C), where C is consumption capacity at
         world prices and service_real = service / depreciation_factor
-        (a weak currency makes hard-currency debt more painful). Default wipes
-        the stock but triggers ban + friction penalties; IMF austerity (if
-        active) applies a flat welfare cut.
+        (a weak currency makes hard-currency debt more painful). Borrowing is
+        capped at BORROW_CAP_SHARE of C, and closed to countries with capital
+        controls. Default wipes the stock at a welfare cost equal to its face
+        value (DEBT_DEFAULT_COST x stock/C), plus the ban + friction
+        penalties -- so it pays only when a weak currency has inflated the
+        real cost of repaying. In self.final_round everything falls due: no
+        new borrowing, and the whole stock is repaid (or defaulted on).
+        IMF austerity (if active) applies a flat welfare cut.
         """
         cfg = self.countries[name]
         stock = cfg.get("debt_stock", 0.0)
@@ -1120,9 +1249,12 @@ class IPESimulation:
         rate = DEBT_BASE_RATE + DEBT_RISK_PREMIUM * (stock / C)
         interest = stock * rate
         banned = self._is_debt_banned(name)
+        controls = bool(self._mon(name).get("capital_controls"))
+        final = (self.final_round is not None
+                 and self.round_num >= self.final_round)
         austerity_active = self.round_num <= cfg.get("imf_austerity_until", 0)
 
-        borrow = repay = service = 0.0
+        borrow = repay = service = default_cost = 0.0
         defaulted = False
         wiped = 0.0
         w = welfare
@@ -1130,15 +1262,19 @@ class IPESimulation:
         if dd.get("default") and stock > 1e-9:
             defaulted = True
             wiped = stock
+            default_cost = min(1.0, DEBT_DEFAULT_COST * stock / C)
+            w *= (1 - default_cost)
             cfg["debt_stock"] = 0.0
             cfg["borrow_ban_until"] = self.round_num + DEBT_DEFAULT_BAN_ROUNDS
             cfg["defaults"] = cfg.get("defaults", 0) + 1
         else:
             borrow = max(0.0, dd.get("borrow", 0.0))
-            if banned:
-                borrow = 0.0                      # no borrowing during a ban
-            borrow = min(borrow, C)               # cap: at most double consumption
+            if banned or controls or final:
+                borrow = 0.0                      # ban / closed account / term over
+            borrow = min(borrow, BORROW_CAP_SHARE * C)
             repay = max(0.0, dd.get("repay", 0.0))
+            if final:
+                repay = stock                     # the bill comes due
             repay = min(repay, stock + borrow)
             service = interest + repay
             w = w * (1 + borrow / C)
@@ -1161,7 +1297,10 @@ class IPESimulation:
             "service": service,
             "defaulted": defaulted,
             "wiped": wiped,
+            "default_cost": default_cost,
             "banned": banned,
+            "blocked_by_controls": controls and not defaulted,
+            "final_settlement": final,
             "austerity_active": austerity_active,
             "austerity_cut": austerity_cut,
             "depreciation_factor": dep,
@@ -1273,8 +1412,12 @@ class IPESimulation:
                 )
             if self.phase >= 6:
                 fx = max(0.0, min(fx, 1.0))
-            loss_importer = 1 - (1 - t_importer) * (1 - fx)  # on good_out
-            loss_exporter = 1 - (1 - t_exporter) * (1 - fx)  # on good_in
+            # A weak currency buys less abroad: each side's imports shrink
+            # with its OWN currency's weakness (Phase 5+).
+            wfx_importer = self._weak_fx_cost(importer, exporter)  # on good_out
+            wfx_exporter = self._weak_fx_cost(exporter, importer)  # on good_in
+            loss_importer = 1 - (1 - t_importer) * (1 - fx) * (1 - wfx_importer)
+            loss_exporter = 1 - (1 - t_exporter) * (1 - fx) * (1 - wfx_exporter)
 
             received_by_importer = qty_out * (1 - loss_importer)
             received_by_exporter = qty_in * (1 - loss_exporter)
@@ -1312,10 +1455,14 @@ class IPESimulation:
                     f"{t_exporter:.0%} on {good_in}]"
                 )
             fx_str = f" [FX friction: {fx:.0%}]" if fx > 0 else ""
+            weak = [f"{c} {w:.0%}" for c, w in
+                    ((importer, wfx_importer), (exporter, wfx_exporter))
+                    if w > 0.0005]
+            weak_str = f" [weak currency: {', '.join(weak)}]" if weak else ""
             trade_log.append(
                 f"  {exporter} -> {importer}: "
                 f"{qty_out:.0f} {good_out} for {qty_in:.0f} {good_in}"
-                f"{tot_str}{tariff_str}{fx_str}"
+                f"{tot_str}{tariff_str}{fx_str}{weak_str}"
             )
             trade_records.append({
                 "exporter": exporter,
@@ -1329,10 +1476,27 @@ class IPESimulation:
                 "qty_in_received": received_by_exporter,
                 "tariff_exporter": t_exporter,
                 "fx_friction": fx,
+                "weak_fx_importer": wfx_importer,
+                "weak_fx_exporter": wfx_exporter,
                 "tot": qty_in / qty_out if qty_out > 0 else 0.0,
             })
 
         return trade_log, tariff_losses, trade_records
+
+    def _weak_fx_cost(self, receiver, sender):
+        """
+        Share of an import the receiver loses because its own currency is
+        weak: a currency worth 0.90 of par buys 10% less abroad, and
+        WEAK_FX_IMPORT_COST of that shows up as a smaller shipment (0.5 ->
+        5%). Zero before Phase 5 and between members of one monetary union.
+        """
+        if self.phase < 5:
+            return 0.0
+        r_uid = self.countries[receiver].get("union_id")
+        if r_uid and r_uid == self.countries[sender].get("union_id"):
+            return 0.0
+        dep = self._mon(receiver).get("depreciation_factor", 1.0)
+        return max(0.0, min(1.0, WEAK_FX_IMPORT_COST * (1.0 - dep)))
 
     def _transfer_varieties(self, varieties, src, dst, good, qty, tariff):
         """
@@ -1533,6 +1697,20 @@ class IPESimulation:
                         f"!= endowment ({config['capital']})"
                     )
 
+            # Validate compensation (a share of consumption capacity)
+            comp = dec.get("compensation", 0.0)
+            try:
+                comp = float(comp)
+            except (TypeError, ValueError):
+                errors.append(f"{name}: compensation {comp!r} is not a number")
+                comp = 0.0
+            if not (0 <= comp <= COMPENSATION_MAX_SHARE + 1e-9):
+                errors.append(
+                    f"{name}: compensation {comp:.2f} outside "
+                    f"0-{COMPENSATION_MAX_SHARE:.2f} (a share of consumption; "
+                    f"0.10 and 10 both mean 10%)"
+                )
+
             # Validate tariff rates
             for partner, goods_tariffs in dec.get("tariffs", {}).items():
                 for good, rate in goods_tariffs.items():
@@ -1642,8 +1820,8 @@ class IPESimulation:
 
         Requires award_reserve_currency() to have been run (the winner's
         currency becomes the default invoicing unit). Each country gets a
-        currency and default monetary policy (managed float, open capital,
-        independent monetary, 0% money growth). Firms and country endowments
+        currency and default monetary policy (float, open capital, 0% money
+        growth -- i.e. following the anchor). Firms and country endowments
         carry over from Phase 4.
         """
         if self.reserve_currency_holder is None:
@@ -1654,9 +1832,9 @@ class IPESimulation:
         for c in self.countries:
             cfg = self.countries[c]
             cfg.setdefault("currency", f"{c} peso")
-            cfg["fx_regime"] = "managed"          # peg | managed | float
+            cfg["fx_regime"] = "float"            # peg | float
             cfg["capital_controls"] = False        # open capital by default
-            cfg["independent_monetary"] = True     # runs own monetary policy
+            cfg["independent_monetary"] = False    # = printing; derived each round
             cfg["money_supply_growth"] = 0.0
             cfg["stress"] = 0
             cfg["depreciation_factor"] = 1.0
@@ -1874,8 +2052,7 @@ class IPESimulation:
         for c in self.countries:
             m = self._mon(c)
             cap = "controls" if m.get("capital_controls") else "open"
-            mon = f"{m.get('money_supply_growth', 0):.0%}" \
-                if m.get("independent_monetary") else "passive"
+            mon = f"{m.get('money_supply_growth', 0):.0%}"
             union = self.countries[c].get("union_id")
             cur = m.get("currency", self.countries[c].get("currency", "?"))
             tag = f" [{union}]" if union else ""
@@ -2061,8 +2238,18 @@ class IPESimulation:
     def _rank(self, rows):
         """Sort scored rows deterministically: score, then weakest currency,
         then the larger secondary exposure, then name. Never depends on dict
-        ordering, so the same decisions always produce the same target."""
+        ordering, so the same decisions always produce the same target.
+
+        Also records whether there is a clear target. If the top two tie on
+        everything but their names -- or nobody has any exposure at all --
+        there is no weakest link, and naming one alphabetically would look
+        like the instructor's pick. The triggers then stand down."""
         rows.sort(key=lambda r: (-r[1], r[3], -r[4], r[0]))
+        same = (len(rows) > 1
+                and abs(rows[0][1] - rows[1][1]) < 1e-9
+                and abs(rows[0][3] - rows[1][3]) < 1e-9
+                and abs(rows[0][4] - rows[1][4]) < 1e-9)
+        self._no_clear_target = same or rows[0][1] <= 1e-9
         return [(n, s, p) for n, s, p, _dep, _sec in rows]
 
     def fx_vulnerability(self):
@@ -2080,15 +2267,15 @@ class IPESimulation:
             m = self._mon(name)
             dep = m.get("depreciation_factor", 1.0)
             growth = m.get("money_supply_growth", 0.0)
-            overreach = (
-                m.get("fx_regime") == "peg"
-                and not m.get("capital_controls", False)
-                and m.get("independent_monetary", True)
-            )
+            overreach = self._overreach(m)
+            pegged_open = (self._regime(m.get("fx_regime")) == "peg"
+                           and not m.get("capital_controls", False))
             parts = {
                 "trilemma overreach": 3.0 if overreach else 0.0,
                 "accumulated stress": 2.0 * m.get("stress", 0),
                 "post-warning jitters": 1.0 if m.get("warning_active") else 0.0,
+                # A float has no promise to break; an open peg is a target.
+                "peg to defend": 1.0 if pegged_open else 0.0,
                 "loose money": 10.0 * growth,
                 "open capital account": 0.0 if m.get("capital_controls") else 1.0,
                 "already-weak currency": 2.0 * max(0.0, 1.0 - dep),
@@ -2134,6 +2321,7 @@ class IPESimulation:
         "trilemma overreach": "trilemma",
         "accumulated stress": "stress",
         "post-warning jitters": "warned",
+        "peg to defend": "open peg",
         "loose money": "loose money",
         "open capital account": "open capital",
         "already-weak currency": "weak FX",
@@ -2160,12 +2348,19 @@ class IPESimulation:
               "".join(f"{self.SHORT_LABELS.get(c, c)[:col-1]:>{col}s}"
                       for c in components))
         print(f"  {'-'*(width - 2)}")
+        clear = not self._no_clear_target
         for name, score, parts in ranked:
-            mark = "*" if name == ranked[0][0] else " "
+            mark = "*" if clear and name == ranked[0][0] else " "
             print(f"{mark} {name:10s}{score:7.2f}  " +
                   "".join(f"{parts[c]:{col}.2f}" for c in components))
-        print(f"\n  Most exposed: {ranked[0][0]} "
-              f"(score {ranked[0][1]:.2f}) -- by its own policy choices.\n")
+        if clear:
+            print(f"\n  Most exposed: {ranked[0][0]} "
+                  f"(score {ranked[0][1]:.2f}) -- by its own policy choices.\n")
+        elif ranked[0][1] <= 1e-9:
+            print("\n  Nobody is exposed -- there is nothing to attack.\n")
+        else:
+            print(f"\n  No single weakest link: the top scores are tied "
+                  f"({ranked[0][1]:.2f}). Speculators hold off.\n")
         return ranked
 
     def trigger_speculative_attack(self, show: bool = True,
@@ -2174,11 +2369,15 @@ class IPESimulation:
         Fire a currency crisis on the MOST EXPOSED country, chosen by the
         countries' own monetary choices rather than by you. Prints the
         exposure table first (unless show=False) so the class can see why.
+        If there is no clear target (a dead heat, or no exposure at all), no
+        attack happens and None is returned.
 
-        Returns the targeted country.
+        Returns the targeted country, or None.
         """
         ranked = self.print_vulnerability("fx") if show \
             else self.fx_vulnerability()
+        if self._no_clear_target:
+            return None
         target = ranked[0][0]
         if description is None:
             description = (
@@ -2192,17 +2391,26 @@ class IPESimulation:
     def trigger_capital_flight(self, severity: float = 0.6,
                                show: bool = True, description: str = None):
         """
-        Fire a balance-of-payments shock on the MOST EXPOSED debtor, chosen by
-        the countries' own borrowing and monetary choices rather than by you.
+        Fire a balance-of-payments shock on the MOST EXPOSED country, chosen
+        by the countries' own choices rather than by you: from Phase 6 the
+        debt exposure table (leverage, original sin, open capital); before
+        that -- the Round 20 slot in Phase 5 -- the currency exposure table,
+        since there is no debt yet to run from. No clear target (a dead heat,
+        or no exposure at all) means no capital flight, and None is returned.
 
-        Returns the targeted country.
+        Returns the targeted country, or None.
         """
-        ranked = self.print_vulnerability("debt") if show \
-            else self.debt_vulnerability()
+        kind = "debt" if self.phase >= 6 else "fx"
+        ranked = self.print_vulnerability(kind) if show else (
+            self.debt_vulnerability() if kind == "debt"
+            else self.fx_vulnerability())
+        if self._no_clear_target:
+            return None
         target = ranked[0][0]
+        who = "debtor" if kind == "debt" else "currency"
         if description is None:
             description = (
-                f"Capital flight from {target}: the most exposed debtor "
+                f"Capital flight from {target}: the most exposed {who} "
                 f"(score {ranked[0][1]:.2f}) loses "
                 f"{1 - severity:.0%} of its currency's value"
             )
@@ -2214,7 +2422,7 @@ class IPESimulation:
         Merge two or more countries into a monetary union with shared currency,
         monetary policy, stress counter, and depreciation factor. The union's
         initial state is seeded from the average depreciation factor of members
-        and a managed-float / open-capital / independent-monetary default.
+        and a float / open-capital / 0%-growth default.
         """
         members = list(countries)
         if len(members) < 2:
@@ -2231,9 +2439,9 @@ class IPESimulation:
             "members": members,
             "state": {
                 "currency": name,
-                "fx_regime": "managed",
+                "fx_regime": "float",
                 "capital_controls": False,
-                "independent_monetary": True,
+                "independent_monetary": False,
                 "money_supply_growth": 0.0,
                 "stress": 0,
                 "depreciation_factor": avg_dep,
@@ -2484,7 +2692,7 @@ class IPESimulation:
         return None
 
     def _update_approval(self, name, welfare, consumption, trade_records,
-                         side_payments):
+                         side_payments, comp_share=0.0):
         """
         Move one country's approval and return the component breakdown.
 
@@ -2496,7 +2704,10 @@ class IPESimulation:
                       the diffuse cost, felt by whoever loses
         prosperity    a rising standard of living is popular (clamped, so one
                       good round cannot buy permanent immunity)
-        compensation  side payments received buy political peace
+        compensation  buying off the losers keeps the peace: what you pay
+                      your own displaced groups, plus the NET goods another
+                      country sends you (net, so two countries cannot swap
+                      the same goods back and forth for free approval)
         drift         gentle mean reversion, so scores stay live
         """
         cfg = self.countries[name]
@@ -2519,14 +2730,20 @@ class IPESimulation:
         exposure = imported / capacity
         mean_tariff = (taxed / imported) if imported > 1e-9 else 0.0
 
-        received = 0.0
+        received = sent = 0.0
         for sp in (side_payments or []):
             try:
                 donor, recipient, good, qty = sp
             except (TypeError, ValueError):
                 continue
-            if recipient == name and good in self.world_prices:
-                received += qty * self.world_prices[good]
+            if good not in self.world_prices:
+                continue
+            value = qty * self.world_prices[good]
+            if recipient == name:
+                received += value
+            elif donor == name:
+                sent += value
+        net_received = max(0.0, received - sent)
 
         prev = self._prev_welfare(name)
         prosperity = 0.0
@@ -2537,7 +2754,8 @@ class IPESimulation:
 
         protection = APPROVAL_PROTECTION * mean_tariff * exposure
         openness = APPROVAL_EXPOSURE * exposure
-        compensation = APPROVAL_COMPENSATION * (received / capacity)
+        compensation = APPROVAL_COMPENSATION * (
+            net_received / capacity + max(0.0, comp_share))
         drift = APPROVAL_DRIFT * (APPROVAL_START - approval)
 
         delta = protection - openness + prosperity + compensation + drift
@@ -2556,6 +2774,8 @@ class IPESimulation:
             "openness": -openness,
             "prosperity": prosperity,
             "compensation": compensation,
+            "compensation_share": max(0.0, comp_share),
+            "net_side_payments": net_received,
             "drift": drift,
             "mean_tariff": mean_tariff,
             "exposure": exposure,
@@ -2797,6 +3017,12 @@ class IPESimulation:
                             f"  {n:16s}{this_round:14.2f}{cumulative:14.2f}"
                         )
 
+        # Side payments, from Phase 2 on
+        if rd.get("side_payment_log"):
+            print(f"\n  SIDE PAYMENTS")
+            for line in rd["side_payment_log"]:
+                print(line)
+
         # Monetary regimes + crisis events (Phase 5+)
         if phase >= 5:
             print(f"\n  MONETARY  (regime / capital / money | stress, FX index)")
@@ -2808,8 +3034,7 @@ class IPESimulation:
             for n in names:
                 m = res[n].get("monetary", {})
                 cap = "ctrl" if m.get("capital_controls") else "open"
-                mon = f"{m.get('money_supply_growth', 0):.0%}" \
-                    if m.get("independent_monetary") else "pass"
+                mon = f"{m.get('money_supply_growth', 0):.0%}"
                 print(
                     f"  {n:12s}{m.get('fx_regime', '?'):>9s}{cap:>6s}{mon:>7s}"
                     f"{m.get('stress', 0):8d}"
@@ -2875,10 +3100,6 @@ class IPESimulation:
             if defectors:
                 print(f"  ** Defected on bindings this round: {defectors} "
                       f"(lost the WTO dividend) **")
-            if rd.get("side_payment_log"):
-                print(f"\n  SIDE PAYMENTS")
-                for line in rd["side_payment_log"]:
-                    print(line)
             cf = rd.get("global_crisis_factor", 1.0)
             if cf < 1.0:
                 print(f"\n  ** GLOBAL CRISIS: welfare scaled x{cf:.2f} "
@@ -3570,6 +3791,7 @@ class IPESimulation:
             "hegemon": self.hegemon,
             "hegemon_provides": self.hegemon_provides,
             "_pending_global_crisis": self._pending_global_crisis,
+            "final_round": self.final_round,
         }
 
     @classmethod
@@ -3593,4 +3815,5 @@ class IPESimulation:
         sim.hegemon = state.get("hegemon", None)
         sim.hegemon_provides = state.get("hegemon_provides", True)
         sim._pending_global_crisis = state.get("_pending_global_crisis", None)
+        sim.final_round = state.get("final_round", None)
         return sim

@@ -240,6 +240,97 @@ def test_phase7_round_trip():
     check("  Phase 7 round runs", sim.round_num == 5)
 
 
+def test_compensation_and_side_payments_round_trip():
+    print("\n[8c] compensation and side payments through the workbook (Phase 2)")
+    countries = {k: PHASE2_COUNTRIES[k] for k in KEEP}
+    sim = IPESimulation(countries, PHASE2_GOODS, phase=2)
+    path = os.path.join(TMP, "comp.xlsx")
+    sim.write_round_template(path)
+    book = pd.read_excel(path, sheet_name=None)
+    check("  template has a side_payments sheet", "side_payments" in book,
+          str(list(book)))
+    check("  ...and a compensation column on production",
+          "compensation_pct" in book["production"].columns,
+          str(list(book["production"].columns)))
+    rows = []
+    for n, c in countries.items():
+        r = {"country": n, "compensation_pct": 10 if n == "Llano" else 0}
+        for g in PHASE2_GOODS:
+            r[f"labor_{g}"] = c["labor"] / 3
+            r[f"capital_{g}"] = c["capital"] / 3
+        rows.append(r)
+    book["production"] = pd.DataFrame(rows)
+    book["side_payments"] = pd.DataFrame(
+        [{"donor": "Trinity", "recipient": "Llano", "good": "wine", "qty": 5}])
+    write(path, book)
+    kw = sim.load_round(path)
+    check("  compensation typed as 10 read as 10%",
+          abs(kw["decisions"]["Llano"]["compensation"] - 0.10) < 1e-12)
+    check("  countries that left it blank have none",
+          "compensation" not in kw["decisions"]["Bosque"])
+    check("  side payment parsed",
+          kw.get("side_payments") == [("Trinity", "Llano", "wine", 5.0)],
+          str(kw.get("side_payments")))
+    r = sim.run_round(**kw)
+    appr = r["results"]["Llano"]["approval"]
+    check("  the round runs and both reach approval",
+          appr["compensation_share"] == 0.10 and appr["net_side_payments"] == 5.0)
+    bad = pd.read_excel(path, sheet_name=None)
+    bad["side_payments"] = pd.DataFrame(
+        [{"donor": "Atlantis", "recipient": "Llano", "good": "wine", "qty": 5}])
+    write(path, bad)
+    err = load_error(sim, path)
+    check("  an unknown donor is named, not dropped",
+          err is not None and "Atlantis" in err, str(err)[:90])
+
+
+def test_phase5_finance_sheet():
+    print("\n[8b] Phase 5 finance sheet: three choices, typed the way people type")
+    countries = {k: PHASE2_COUNTRIES[k] for k in KEEP}
+    firms = build_firm_roster(KEEP, n_firms=11, verbose=False)
+    sim = IPESimulation(countries, PHASE2_GOODS, phase=2)
+    bal = {n: {"production": {
+        "labor": {g: c["labor"] / 3 for g in PHASE2_GOODS},
+        "capital": {g: c["capital"] / 3 for g in PHASE2_GOODS}}}
+        for n, c in countries.items()}
+    sim.run_round(bal, [])
+    sim.upgrade_to_phase3(firms)
+    fd = {f: {"scale": 10, "relocate_to": None, "export": False} for f in sim.firms}
+    sim.run_round(bal, [], firm_decisions=fd)
+    sim.award_reserve_currency()
+    sim.upgrade_to_phase5()
+
+    path = os.path.join(TMP, "p5.xlsx")
+    sim.write_round_template(path)
+    fin = pd.read_excel(path, sheet_name="finance")
+    check("  template has no independent_monetary column",
+          "independent_monetary" not in fin.columns, str(list(fin.columns)))
+    check("  regimes pre-filled as float", set(fin["fx_regime"]) == {"float"})
+
+    book = pd.read_excel(path, sheet_name=None)
+    book["production"] = pd.DataFrame([{
+        "country": n,
+        **{f"labor_{g}": c["labor"] / 3 for g in PHASE2_GOODS},
+        **{f"capital_{g}": c["capital"] / 3 for g in PHASE2_GOODS}}
+        for n, c in countries.items()])
+    book["firms"] = pd.DataFrame([
+        {"firm": f, "scale": 10, "relocate_to": "", "export": "no"}
+        for f in sim.firm_config])
+    rows = [{"country": n, "fx_regime": "float", "capital_controls": "no",
+             "money_supply_growth": 0} for n in countries]
+    rows[0].update({"fx_regime": "Peg", "capital_controls": "yes",
+                    "money_supply_growth": 5})          # typed as a percent
+    book["finance"] = pd.DataFrame(rows)
+    write(path, book)
+    kw = sim.load_round(path)
+    first = kw["monetary_decisions"][rows[0]["country"]]
+    check("  'Peg' read as peg", first["fx_regime"] == "peg")
+    check("  money growth typed as 5 read as 5%",
+          abs(first["money_supply_growth"] - 0.05) < 1e-12)
+    sim.run_round(**kw)
+    check("  the round runs", sim.round_num == 3)
+
+
 # ────────────────────────────────────────────────────────────────────
 # 5. scoreboard
 # ────────────────────────────────────────────────────────────────────
@@ -352,7 +443,8 @@ def main():
               test_wrong_phase_headers_rejected,
               test_dropped_country_rows_rejected,
               test_missing_countries_reported,
-              test_phase7_round_trip, test_scoreboard,
+              test_phase7_round_trip, test_phase5_finance_sheet,
+              test_compensation_and_side_payments_round_trip, test_scoreboard,
               test_play_round, test_phase_mismatch_diagnosed,
               test_country_metadata_does_not_block_valid_rows]:
         try:
