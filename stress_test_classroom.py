@@ -7,6 +7,8 @@ do not match the phase. Every one of those used to fail silently or with a
 message that blamed the data instead of the headers.
 """
 import atexit
+import contextlib
+import io
 import os
 import shutil
 import sys
@@ -233,7 +235,9 @@ def test_phase7_round_trip():
           set(kw) == {"decisions", "trades", "firm_decisions",
                       "monetary_decisions", "debt_decisions",
                       "institutional_decisions"}, str(sorted(kw)))
-    check("  firm sheet honoured", len(kw["firm_decisions"]) == 11)
+    check("  firm sheet honoured",
+          len(kw["firm_decisions"]) == len(sim.firm_config),
+          f"{len(kw['firm_decisions'])} of {len(sim.firm_config)}")
     check("  'yes' parses as a bool",
           kw["firm_decisions"][list(kw["firm_decisions"])[0]]["export"] is True)
     sim.run_round(**kw)
@@ -282,6 +286,116 @@ def test_compensation_and_side_payments_round_trip():
     err = load_error(sim, path)
     check("  an unknown donor is named, not dropped",
           err is not None and "Atlantis" in err, str(err)[:90])
+
+
+def filled(sim, folder, n):
+    """A workbook for round n, production filled in, inside `folder`."""
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"round{n:02d}.xlsx")
+    sim.write_round_template(path)
+    book = pd.read_excel(path, sheet_name=None)
+    book["production"] = pd.DataFrame(p1_production())
+    write(path, book)
+    return path
+
+
+def test_autosave_and_resume():
+    print("\n[8d] every round saves itself; resume picks up the newest")
+    sim = p1_sim()
+    folder = os.path.join(TMP, "auto", "rounds")
+    path = filled(sim, folder, 1)
+    quiet = io.StringIO()
+    with contextlib.redirect_stdout(quiet):
+        sim.play_round(path)
+    snap = classroom.state_path(path)
+    check("  a snapshot lands beside the workbook",
+          os.path.exists(snap)
+          and os.path.dirname(snap) == os.path.join(folder, "state"), snap)
+    check("  and the round says so", "saved:" in quiet.getvalue(),
+          quiet.getvalue()[:80])
+    back = classroom.resume(os.path.join(folder, "state"), verbose=False)
+    check("  restores the same state",
+          back.round_num == sim.round_num and back.phase == sim.phase
+          and len(back.history) == len(sim.history)
+          and all(abs(back.countries[c]["approval"]
+                      - sim.countries[c]["approval"]) < 1e-12 for c in KEEP))
+
+    # a second round: resume takes the higher number, not the older file
+    path2 = filled(sim, folder, 2)
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.play_round(path2)
+    newest = classroom.latest_state(os.path.join(folder, "state"))
+    check("  latest_state picks the highest round", newest.endswith("round02.json"),
+          str(newest))
+    check("  resume lands on round 2",
+          classroom.resume(os.path.join(folder, "state"), verbose=False).round_num == 2)
+    check("  one specific round can be reopened",
+          classroom.resume(os.path.join(folder, "state", "round01.json"),
+                           verbose=False).round_num == 1)
+    with open(os.path.join(folder, "state", "notes.json"), "w") as f:
+        f.write("{}")
+    check("  an unnumbered file doesn't hijack the pick",
+          classroom.latest_state(os.path.join(folder, "state")).endswith("round02.json"))
+
+
+def test_resume_without_a_snapshot():
+    print("\n[8e] the first class of a term has nothing to resume")
+    fresh = p1_sim()
+    got = classroom.resume(os.path.join(TMP, "empty", "state"), default=fresh,
+                           verbose=False)
+    check("  returns the simulation from the setup cell", got is fresh)
+    check("  and says nothing is there",
+          classroom.latest_state(os.path.join(TMP, "empty", "state")) is None)
+
+
+def test_a_failed_save_never_costs_the_round():
+    print("\n[8f] a failed snapshot does not cost the round")
+    sim = p1_sim()
+    folder = os.path.join(TMP, "blocked", "rounds")
+    path = filled(sim, folder, 1)
+    with open(os.path.join(folder, "state"), "w") as f:   # a FILE where the dir goes
+        f.write("in the way")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        result = sim.play_round(path)
+    out = buf.getvalue()
+    check("  the round still played", result is not None and sim.round_num == 1)
+    check("  the scoreboard still showed", "ROUND 1" in out, out[:120])
+    check("  and it warns instead of raising", "could not save" in out,
+          out[:200])
+
+    sim2 = p1_sim()
+    path2 = filled(sim2, os.path.join(TMP, "off", "rounds"), 1)
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim2.play_round(path2, autosave=False)
+    check("  autosave=False writes nothing",
+          not os.path.exists(classroom.state_path(path2)))
+
+
+def test_run_all_after_resume_is_safe():
+    print("\n[8g] running the notebook from the top after a resume is safe")
+    sim = p1_sim()
+    folder = os.path.join(TMP, "runall", "rounds")
+    for n in (1, 2):
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim.play_round(filled(sim, folder, n))
+    with contextlib.redirect_stdout(io.StringIO()):
+        back = classroom.resume(os.path.join(folder, "state"))
+        # the notebook re-runs every round cell from the top, flags and all
+        back.play_round(os.path.join(folder, "round01.xlsx"), replay=True)
+        back.play_round(os.path.join(folder, "round02.xlsx"))
+    check("  earlier rounds re-project instead of replaying", back.round_num == 2)
+    check("  history is unchanged", len(back.history) == 2)
+    path4 = filled(back, folder, 4)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        back.play_round(path4)
+    check("  a round from further ahead waits its turn",
+          back.round_num == 2 and "comes first" in buf.getvalue(),
+          buf.getvalue()[-120:])
+    with contextlib.redirect_stdout(io.StringIO()):
+        back.play_round(filled(back, folder, 3))
+    check("  the next round plays normally", back.round_num == 3)
 
 
 def test_phase5_finance_sheet():
@@ -377,7 +491,17 @@ def test_play_round():
     check("  accidental re-run does not double-play", sim.round_num == 1)
 
     sim.play_round(wb, replay=True)
-    check("  replay=True plays it again on purpose", sim.round_num == 2)
+    check("  replay=True cannot rewrite history (round01 stays round 1)",
+          sim.round_num == 1)
+
+    other = os.path.join(d, "demo.xlsx")        # not named roundNN
+    sim.write_round_template(other)
+    book = pd.read_excel(other, sheet_name=None)
+    book["production"] = pd.DataFrame(p1_production())
+    write(other, book)
+    sim.play_round(other)
+    sim.play_round(other, replay=True)
+    check("  for other names, replay=True still plays it again", sim.round_num == 3)
 
     before = pd.read_excel(wb, sheet_name="production").to_dict()
     sim.play_round(wb)
@@ -444,7 +568,10 @@ def main():
               test_dropped_country_rows_rejected,
               test_missing_countries_reported,
               test_phase7_round_trip, test_phase5_finance_sheet,
-              test_compensation_and_side_payments_round_trip, test_scoreboard,
+              test_compensation_and_side_payments_round_trip,
+              test_autosave_and_resume, test_resume_without_a_snapshot,
+              test_a_failed_save_never_costs_the_round,
+              test_run_all_after_resume_is_safe, test_scoreboard,
               test_play_round, test_phase_mismatch_diagnosed,
               test_country_metadata_does_not_block_valid_rows]:
         try:

@@ -194,6 +194,13 @@ class World:
                                   debt_decisions={who: dd} if dd else {})
                 total += r["results"][who]["welfare"]
                 rows.append(r["results"][who]["debt"])
+                # Hold approval still. Borrowing lifts welfare, which lifts the
+                # prosperity term, which can stave off a populist backlash --
+                # a real channel, but a political one. These checks are about
+                # whether the DEBT mechanics pay for themselves.
+                for c in self.countries:
+                    sim.countries[c]["approval"] = 50.0
+                    sim.countries[c]["low_approval_rounds"] = 0
         return total, rows
 
 

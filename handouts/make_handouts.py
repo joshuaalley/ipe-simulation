@@ -7,7 +7,7 @@ endowment, firm, or parameter and the PDFs stay in sync.
     python make_handouts.py          # all six countries, full firm roster
 
     # ...or match a smaller class:
-    python make_handouts.py --countries Sabine Bosque Llano Trinity --firms 11
+    python make_handouts.py --countries Sabine Bosque Llano Trinity
     # then compile (twice is unnecessary; no cross-refs):
     #   pdflatex -interaction=nonstopmode <file>.tex
 
@@ -343,19 +343,26 @@ def build_phase2_forms():
 
 def firm_form_block(fid):
     cfg = FIRMS[fid]
+    price = engine.WORLD_PRICES[cfg["industry"]]
     return rf"""
 \noindent\fbox{{\begin{{minipage}}{{0.95\linewidth}}
-{{\bfseries ROUND \blank{{1cm}} --- FIRM {esc(fid)}: {esc(cfg['variety'])}}}\par
+{{\bfseries ROUND \blank{{1cm}} --- FIRM {esc(fid)}: {esc(cfg['variety'])}}}
+\hfill Owner(s): \blank{{4.5cm}}\par
 Industry: \textbf{{{esc(cfg['industry'])}}} \quad
 Productivity: \textbf{{{cfg['productivity']:.1f}}} \quad
 Starting host: \textbf{{{esc(cfg['default_host'])}}}\par
-Max scale: \textbf{{{cfg['max_scale']:.0f}}} \quad
+Price per unit sold: \textbf{{{price:.2f}}} \quad
 Unit cost: \textbf{{{cfg['unit_cost']:.2f}}} \quad
+Max scale: \textbf{{{cfg['max_scale']:.0f}}} \quad
 Export fixed cost: \textbf{{{cfg['fixed_export_cost']:.0f}}}\par
 \vspace{{3pt}}
 SCALE (0--{cfg['max_scale']:.0f}): \blank{{2cm}} \qquad
 RELOCATE TO: \blank{{3cm}} \textit{{(blank = stay)}}\par
-EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{{(Phase 4+; pays the fixed cost)}}
+EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{{(Phase 4+; pays the fixed cost)}}\par
+\vspace{{2pt}}
+{{\small You make \textbf{{scale $\times$ productivity}} units and sell them at the price
+above. \textbf{{Profit}} $=$ units sold $\times$ price $-$ scale $\times$ unit cost
+$-$ export fixed cost (only if you export) $-$ your host's MNC tax (Phase 4+).}}
 \end{{minipage}}}}
 \vspace{{8pt}}
 """
@@ -363,10 +370,12 @@ EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{{(Phase 4+; pays the
 
 def build_firm_forms():
     intro = (r"{\large\bfseries MNC Decision Forms} \hfill (Phase 3+)\par " + "\n"
-             r"You own this firm even though it sits in another country. "
-             r"Each round: choose how much to produce (\emph{scale}), whether to "
-             r"\emph{relocate} to a new host, and (Phase 4+) whether to pay the "
-             r"fixed cost to \emph{export}. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7." + "\n\\hr\n")
+             r"You own this firm -- alone or with a partner -- even though it "
+             r"sits in another country. Each round: choose how much to produce "
+             r"(\emph{scale}), whether to \emph{relocate} to a new host, and "
+             r"(Phase 4+) whether to pay the fixed cost to \emph{export}. The "
+             r"profit is yours; the output counts for whichever country hosts you. "
+             r"Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7." + "\n\\hr\n")
     blocks = [firm_form_block(fid) for fid in FIRMS]
     return write_tex("forms-firms.tex", intro + "\n".join(blocks))
 

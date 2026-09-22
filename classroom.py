@@ -16,7 +16,9 @@ Kept out of engine.py so the engine stays focused on mechanics, and so the
 engine keeps working if pandas/openpyxl are ever missing.
 """
 
+import json
 import os
+import re
 
 import pandas as pd
 
@@ -491,7 +493,104 @@ def _require_columns(df, sheet, required, problems):
     return True
 
 
-def play_round(sim, path, scale=1.0, **show_kwargs):
+# ═══════════════════════════════════════════════════════════════════
+#  3. STATE SNAPSHOTS (so nobody has to remember to save)
+# ═══════════════════════════════════════════════════════════════════
+#
+# play_round writes one after every round it plays, beside the workbook:
+#   rounds/round07.xlsx -> rounds/state/round07.json
+# Next class, IPESimulation.resume(default=sim) picks up the newest. The
+# workbooks stay the source of truth; these are the convenience copy, and
+# they carry what a replay cannot: the shocks, unions and bailouts you
+# triggered by hand, already applied.
+
+STATE_DIRNAME = "state"
+DEFAULT_STATE_DIR = os.path.join("rounds", STATE_DIRNAME)
+
+
+def state_path(workbook):
+    """rounds/round07.xlsx -> rounds/state/round07.json"""
+    folder, name = os.path.split(os.path.abspath(workbook))
+    stem = os.path.splitext(name)[0]
+    return os.path.join(folder, STATE_DIRNAME, stem + ".json")
+
+
+def save_state(sim, path):
+    """Write the whole simulation state as JSON. Returns the path written."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(sim.get_state(), f, indent=2)
+    return path
+
+
+def _rel(path):
+    """A short path for printing: relative when that is actually shorter."""
+    try:
+        rel = os.path.relpath(path)
+    except ValueError:                      # a different drive on Windows
+        return path
+    return path if rel.startswith("..") else rel
+
+
+def latest_state(folder=None):
+    """
+    The newest snapshot in `folder`: the highest round number in a filename,
+    or -- if none are numbered -- the most recently modified. None when there
+    are no snapshots at all.
+    """
+    folder = DEFAULT_STATE_DIR if folder is None else folder
+    if not os.path.isdir(folder):
+        return None
+    files = [os.path.join(folder, n) for n in os.listdir(folder)
+             if n.lower().endswith(".json")]
+    if not files:
+        return None
+    numbered = []
+    for f in files:
+        m = re.search(r"(\d+)", os.path.splitext(os.path.basename(f))[0])
+        if m:
+            numbered.append((int(m.group(1)), f))
+    if numbered:
+        return max(numbered)[1]
+    return max(files, key=os.path.getmtime)
+
+
+def resume(folder=None, default=None, verbose=True):
+    """
+    Pick up where the last class left off. Pass a folder of snapshots (the
+    default is rounds/state) or a single .json file. Returns `default` when
+    nothing is saved yet, so the first class of a term keeps the fresh
+    simulation from the setup cell:
+
+        sim = IPESimulation.resume(default=sim)
+    """
+    from engine import IPESimulation          # local: engine imports us too
+    folder = DEFAULT_STATE_DIR if folder is None else folder
+    if str(folder).lower().endswith(".json") and os.path.isfile(folder):
+        path = folder
+    else:
+        path = latest_state(folder)
+    if path is None:
+        if verbose:
+            print(f"  No snapshot in {_rel(folder)} yet -- keeping the "
+                  f"simulation from the setup cell.")
+        return default
+    with open(path, encoding="utf-8") as f:
+        sim = IPESimulation.from_state(json.load(f))
+    if verbose:
+        print(f"\n  Resumed round {sim.round_num}, Phase {sim.phase} -- "
+              f"{', '.join(sim.countries)}")
+        print(f"  (from {_rel(path)})\n")
+    return sim
+
+
+def _round_number(path):
+    """round07.xlsx -> 7; None for a workbook not named that way."""
+    m = re.fullmatch(r"round(\d+)\.xlsx", os.path.basename(path), flags=re.I)
+    return int(m.group(1)) if m else None
+
+
+def play_round(sim, path, scale=1.0, autosave=True, **show_kwargs):
     """
     The whole round in one call. Run the same cell twice:
 
@@ -504,10 +603,16 @@ def play_round(sim, path, scale=1.0, **show_kwargs):
     Safe to run at any time: it never overwrites a workbook you have filled in,
     and it never fails just because a future round's file isn't there yet.
     Re-running a cell whose round has already been played is refused rather
-    than silently advancing the clock a second time -- pass ``replay=True`` if
-    you really mean to play the same workbook again.
+    than silently advancing the clock a second time. A workbook named
+    roundNN.xlsx only ever plays as round NN: an earlier one re-projects its
+    own board, even with ``replay=True``, and one further ahead waits its turn.
+    (To redo a round, resume the snapshot from before it and play it again.)
 
         sim.play_round("rounds/round05.xlsx", scale=1.4)
+
+    After the round plays, the whole state is saved beside the workbook
+    (rounds/state/round05.json), so the end of class needs no ceremony. Pass
+    autosave=False to skip it.
     """
     replay = show_kwargs.pop("replay", False)
     if not os.path.exists(path):
@@ -515,6 +620,21 @@ def play_round(sim, path, scale=1.0, **show_kwargs):
         print(f"\n  Blank workbook written to: {path}")
         print("  Fill in the sheets from the paper forms, then re-run this "
               "cell to play the round.\n")
+        return None
+
+    # A workbook named roundNN.xlsx can only ever be played as round NN.
+    # This is what makes running the notebook from the top safe after a
+    # resume: the earlier round cells re-project their boards instead of
+    # replaying on top of the restored state.
+    n = _round_number(path)
+    if n is not None and n <= sim.round_num:
+        print(f"\n  {os.path.basename(path)} is already in history "
+              f"(you're on round {sim.round_num}). Showing round {n}.\n")
+        show(sim, round_num=n, scale=scale, **show_kwargs)
+        return None
+    if n is not None and n > sim.round_num + 1:
+        print(f"\n  {os.path.basename(path)} is ahead: you're on round "
+              f"{sim.round_num}, so round {sim.round_num + 1} comes first.\n")
         return None
 
     key = os.path.abspath(path)
@@ -533,6 +653,14 @@ def play_round(sim, path, scale=1.0, **show_kwargs):
 
     result = sim.run_round(**load_round(sim, path))
     played.add(key)
+    if autosave:
+        # A failed save must never cost the round: the workbook is still the
+        # record and the result is already in sim.history.
+        try:
+            print(f"  saved: {_rel(save_state(sim, state_path(path)))}")
+        except Exception as e:
+            print(f"  could not save the snapshot ({e}) -- your workbook is "
+                  f"still the record.")
     show(sim, scale=scale, **show_kwargs)
     return result
 

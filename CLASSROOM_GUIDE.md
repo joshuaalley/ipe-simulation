@@ -17,8 +17,8 @@ could react inside a round and that tension would disappear.)
 
 ## Setting up for your class size
 
-The engine ships with six countries and thirteen firms. Neither is fixed — size
-both to your enrollment before the first session.
+The engine ships with six countries, and hosts two MNCs in each. Neither is
+fixed — size both to your enrollment before the first session.
 
 ### How many students per country
 
@@ -75,30 +75,38 @@ bare `KeyError` mid-round, in front of the class.
 sim.upgrade_to_phase3(PHASE3_FIRMS)   # 4-country game -> ValueError naming F6, F8, F9
 ```
 
-Build a roster that matches instead — **one firm per student**:
+Build a roster that matches instead — **two firms per country**:
 
 ```python
 from engine import build_firm_roster
-firms = build_firm_roster(["Sabine", "Bosque", "Llano", "Trinity"], n_firms=11)
+firms = build_firm_roster(["Sabine", "Bosque", "Llano", "Trinity"])
 sim.upgrade_to_phase3(firms)
 ```
 
+Two per host is the cap. Three MNCs in a four-country world crowd the room:
+every host ends up looking the same, the firm reveal runs long, and a country's
+own production stops being the thing that decides its welfare. With more
+students than firms, **pair them as co-owners** — they settle scale,
+relocation and exporting between them, which is one more small negotiation
+rather than one more form. Ask for more firms than the cap allows and the
+builder trims to the cap and says so.
+
 `build_firm_roster` keeps firms already hosted in surviving countries, rehomes
-orphans to the least-loaded host, and trims to `n_firms` by dropping MED-tier
-firms first — so the HIGH/LOW productivity spread that drives Melitz selection in
-Phase 4 stays intact. It prints what it produced:
+orphans to the least-loaded host, holds every host to two, and trims by dropping
+MED-tier firms first — so the HIGH/LOW productivity spread that drives Melitz
+selection in Phase 4 stays intact. It prints what it produced:
 
 ```
-  FIRM ROSTER BUILT  --  11 firms, 4 countries
+  FIRM ROSTER BUILT  --  8 firms, 4 countries
   Rehomed off-map firms: F6, F8, F9
   Host          Firms   Mean prod.
-  Sabine            3         0.80
+  Sabine            2         0.85
   Bosque            2         1.00
-  Llano             3         1.10
-  Trinity           3         1.00
+  Llano             2         1.15
+  Trinity           2         1.00
 
-  By industry: cloth 4, machinery 4, wine 3
-  By tier:     HIGH 3, MED 4, LOW 4
+  By industry: cloth 3, machinery 2, wine 3
+  By tier:     HIGH 3, MED 2, LOW 3
 ```
 
 **Read that table before committing.** The shipped roster is tuned so no country
@@ -113,10 +121,10 @@ regenerated whenever the country set changes:
 
 ```
 cd handouts
-python make_handouts.py --countries Sabine Bosque Llano Trinity --firms 11
+python make_handouts.py --countries Sabine Bosque Llano Trinity
 ```
 
-Omit both flags for the full six-country, thirteen-firm set. The generator uses
+Omit the flag for the full six-country set. The generator uses
 the same `build_firm_roster`, so the printed MNC forms always match what the
 engine will accept.
 
@@ -172,9 +180,11 @@ sim.play_round("rounds/round07.xlsx", scale=1.4)
   round, and projects the scoreboard.
 
 It never overwrites a workbook you have filled in, never fails just because a
-future round's file isn't there yet, and refuses to play the same workbook twice
-by accident — a stray re-run reprojects the existing result instead of advancing
-the round. Pass `replay=True` if you genuinely mean to replay it.
+future round's file isn't there yet, and never plays a round twice: a workbook
+named `roundNN.xlsx` only ever plays as round NN. Re-running an earlier round's
+cell re-projects that round's board instead, so running the notebook from the
+top after a Resume is safe. To redo a round, resume the snapshot from before it
+(`IPESimulation.resume("rounds/state/round04.json")`) and play it again.
 
 Give every round its own file. Two cells pointing at the same workbook will
 collide, because a template written at one phase is missing the sheets a later
@@ -431,27 +441,49 @@ upgrade_to_phase6()                # sovereign debt
 upgrade_to_phase7()                # institutions & capstone
 ```
 
-## Between sessions (do not skip)
+## Between sessions
 
-At the **end of every class**, run the Save cell:
+**Saving is automatic.** Every round `play_round` plays is written to
+`rounds/state/roundNN.json` right after it resolves, before the scoreboard
+appears, and the round prints `saved: rounds/state/round07.json`. There is
+nothing to run at the end of class.
 
-```python
-import json
-with open("simulation_state.json", "w") as f:
-    json.dump(sim.get_state(), f, indent=2)
-```
-
-Next class, run the Restore cell **first thing**:
+**Next class, run the top two cells.** The first builds a fresh simulation; the
+second picks up where you left off:
 
 ```python
-with open("simulation_state.json") as f:
-    state = json.load(f)
-sim = IPESimulation.from_state(state)
+sim = IPESimulation.resume(default=sim)
+#   Resumed round 6, Phase 2 -- Bosque, Llano, Sabine, Trinity
+#   (from rounds/state/round06.json)
 ```
 
-The full state returns intact — round number, phase, every country's
-debt / currency / WTO status, firm profits, monetary unions, the hegemon.
-You never lose a semester's accumulated history.
+It is always safe to run. On the first class of a term there is no snapshot, so
+it keeps the fresh simulation and says so.
+
+A snapshot holds the whole state: round number, phase, every country's
+approval, debt, currency and WTO status, firm profits and hosts, monetary
+unions, the hegemon. Crucially it also holds **things a replay cannot
+reconstruct** — the shocks, monetary unions, bailouts and challenges you
+triggered by hand are already applied in it. Resuming means never re-running
+them in the right order.
+
+Odds and ends:
+
+- The snapshots are small (about 5 KB per round of history, so ~130 KB by
+  Round 26) and live inside `rounds/`, which is git-ignored. Dropbox versions
+  them.
+- Each round only ever overwrites its own snapshot. If you deliberately
+  *replay* an earlier round, later snapshots are stale; `resume()` takes the
+  highest round number and prints which file it loaded, so a mismatch is
+  visible. Delete the stale ones, or name one explicitly:
+  `IPESimulation.resume("rounds/state/round05.json")`.
+- `play_round(..., autosave=False)` skips it. A failed write (a lock, a
+  permission) prints a warning and the round still plays.
+- **The workbooks remain the source of truth.** They hold every decision, so a
+  state can always be rebuilt by replaying them; the snapshots just save you
+  the replay. Keep `rounds/` backed up — it is the only copy.
+- For an end-of-term archive, `sim.save_state_file("simulation_state.json")`
+  writes one file for the whole run.
 
 ## Practical projection tips
 

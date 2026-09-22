@@ -513,7 +513,18 @@ def test_build_firm_roster():
     print("\n[build_firm_roster rehomes and trims with balance]")
     keep = ["Sabine", "Bosque", "Llano", "Trinity"]
     roster = build_firm_roster(keep, n_firms=11, verbose=False)
-    check("  honours n_firms", len(roster) == 11, str(len(roster)))
+    check("  two firms per country is the cap (11 asked -> 8 built)",
+          len(roster) == 8, str(len(roster)))
+    per_host = {h: sum(1 for c in roster.values() if c["default_host"] == h)
+                for h in keep}
+    check("  ...and every country hosts exactly two", set(per_host.values()) == {2},
+          str(per_host))
+    bigger = build_firm_roster(keep, n_firms=11, verbose=False, max_per_host=3)
+    check("  max_per_host lifts the cap", len(bigger) == 11
+          and max(sum(1 for c in bigger.values() if c["default_host"] == h)
+                  for h in keep) <= 3, str(len(bigger)))
+    check("  n_firms under the cap is still honoured",
+          len(build_firm_roster(keep, n_firms=5, verbose=False)) == 5)
     check("  every host is in play",
           all(c["default_host"] in keep for c in roster.values()),
           str({f: c["default_host"] for f, c in roster.items()}))
@@ -535,8 +546,8 @@ def test_build_firm_roster():
 
     # defaults and guards
     full = build_firm_roster(list(PHASE2_COUNTRIES), verbose=False)
-    check("  n_firms=None keeps the whole base roster",
-          len(full) == len(PHASE3_FIRMS))
+    check("  n_firms=None fills every host to the cap",
+          len(full) == min(len(PHASE3_FIRMS), 2 * len(PHASE2_COUNTRIES)), str(len(full)))
     try:
         build_firm_roster(keep, n_firms=99, verbose=False)
         check("  over-large n_firms raises", False, "no error")

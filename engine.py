@@ -206,7 +206,8 @@ SHADOW_PRICE_CAP = 10.0   # max home price, as a multiple of the price index (1)
 VARIETY_RHO = 0.6
 
 
-def build_firm_roster(countries, n_firms=None, base=None, verbose=True):
+def build_firm_roster(countries, n_firms=None, base=None, verbose=True,
+                      max_per_host=2):
     """
     Build an MNC roster for an arbitrary country set and class size.
 
@@ -218,9 +219,11 @@ def build_firm_roster(countries, n_firms=None, base=None, verbose=True):
       * keeps every firm already hosted in a surviving country,
       * rehomes orphaned firms to the least-loaded surviving host
         (fewest firms first, then lowest total productivity),
-      * trims to `n_firms` -- typically one per student -- dropping
-        MED-tier firms first so the HIGH/LOW productivity spread that
-        drives Melitz selection in Phase 4 survives,
+      * holds every host to `max_per_host` firms (2), moving the extras
+        to a country with room,
+      * trims to `n_firms`, dropping MED-tier firms first so the HIGH/LOW
+        productivity spread that drives Melitz selection in Phase 4
+        survives,
       * prints the resulting balance so you can eyeball fairness before
         committing to it.
 
@@ -230,9 +233,12 @@ def build_firm_roster(countries, n_firms=None, base=None, verbose=True):
 
     Usage
     -----
-        firms = build_firm_roster(["Sabine", "Bosque", "Llano", "Trinity"],
-                                  n_firms=11)
+        firms = build_firm_roster(["Sabine", "Bosque", "Llano", "Trinity"])
         sim.upgrade_to_phase3(firms)
+
+    Four countries at two firms each is eight firms. With more students than
+    that, pair them up as co-owners of a firm -- they decide its scale,
+    relocation and exporting together.
 
     Returns a firms_config dict for upgrade_to_phase3().
     """
@@ -242,9 +248,18 @@ def build_firm_roster(countries, n_firms=None, base=None, verbose=True):
         raise ValueError("countries must be a non-empty list of country names")
 
     roster = deepcopy(base)
+    if max_per_host < 1:
+        raise ValueError("max_per_host must be at least 1")
+    cap_total = len(countries) * max_per_host
+    asked = n_firms
     if n_firms is None:
-        n_firms = len(roster)
-    if n_firms > len(roster):
+        n_firms = min(len(roster), cap_total)
+    n_firms = min(n_firms, cap_total)
+    if asked is not None and asked > cap_total and verbose:
+        print(f"\n  {asked} firms asked for, but {len(countries)} countries at "
+              f"{max_per_host} each is {cap_total}. Building {cap_total} -- "
+              f"pair the remaining students up as co-owners.")
+    if asked is not None and asked > len(roster):
         raise ValueError(
             f"asked for {n_firms} firms but the base roster only defines "
             f"{len(roster)}; add entries to PHASE3_FIRMS first"
@@ -263,20 +278,39 @@ def build_firm_roster(countries, n_firms=None, base=None, verbose=True):
     for fid in orphans:
         roster[fid]["default_host"] = min(countries, key=load)
 
-    # 2. trim to size: heaviest host, most over-represented industry,
-    #    MED tier before HIGH/LOW
-    while len(roster) > n_firms:
-        counts = Counter(c["default_host"] for c in roster.values())
+    def droppable(host):
+        """Firms on `host`, least missed first (over-represented industry,
+        then MED tier before HIGH/LOW)."""
         industries = Counter(c["industry"] for c in roster.values())
-        heaviest = max(sorted(counts), key=lambda h: counts[h])
-        candidates = [f for f, c in roster.items()
-                      if c["default_host"] == heaviest]
-        candidates.sort(key=lambda f: (
+        firms = [f for f, c in roster.items() if c["default_host"] == host]
+        firms.sort(key=lambda f: (
             -industries[roster[f]["industry"]],
             abs(roster[f]["productivity"] - 1.0),
             f,
         ))
-        del roster[candidates[0]]
+        return firms
+
+    # 1b. hold every host to max_per_host: move the extras somewhere with
+    #     room, and only drop one when nowhere has room.
+    while True:
+        counts = Counter(c["default_host"] for c in roster.values())
+        heavy = [h for h in sorted(countries) if counts[h] > max_per_host]
+        if not heavy:
+            break
+        host = max(heavy, key=lambda h: counts[h])
+        fid = droppable(host)[0]
+        room = [h for h in countries if counts[h] < max_per_host]
+        if room:
+            roster[fid]["default_host"] = min(room, key=load)
+        else:
+            del roster[fid]
+
+    # 2. trim to size: heaviest host, most over-represented industry,
+    #    MED tier before HIGH/LOW
+    while len(roster) > n_firms:
+        counts = Counter(c["default_host"] for c in roster.values())
+        heaviest = max(sorted(counts), key=lambda h: counts[h])
+        del roster[droppable(heaviest)[0]]
 
     if verbose:
         by_host = Counter(c["default_host"] for c in roster.values())
@@ -2860,6 +2894,28 @@ class IPESimulation:
             sim.run_round(**sim.load_round("rounds/round07.xlsx"))
         """
         return self._classroom().load_round(self, path)
+
+    @classmethod
+    def resume(cls, folder: str = None, default=None, verbose: bool = True):
+        """
+        Pick up where the last class left off: restore the newest snapshot
+        play_round wrote (rounds/state/roundNN.json). Returns `default` when
+        nothing is saved yet, so the first class of a term keeps the fresh
+        simulation from the setup cell:
+
+            sim = IPESimulation.resume(default=sim)
+
+        Pass a folder of snapshots, or one .json file, to be explicit.
+        """
+        return cls._classroom().resume(folder=folder, default=default,
+                                       verbose=verbose)
+
+    def save_state_file(self, path: str = "simulation_state.json"):
+        """
+        Write the whole state to one file by hand. play_round already saves
+        after every round; this is for an end-of-term archive.
+        """
+        return self._classroom().save_state(self, path)
 
     def export_calculator(self, path: str = None):
         """

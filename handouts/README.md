@@ -37,11 +37,13 @@ pdflatex -interaction=nonstopmode forms-finance.tex
 Two flags size the handouts to your enrollment:
 
 ```
-python make_handouts.py --countries Sabine Bosque Llano Trinity --firms 11
+python make_handouts.py --countries Sabine Bosque Llano Trinity
 ```
 
 - `--countries` prints briefs, trade forms and tariff rows for that subset only.
-- `--firms` prints that many MNC forms — normally **one per student**.
+  Firm forms follow: **two MNCs per country**, so four countries print eight.
+- `--firms` prints fewer MNC forms than that, if you want a thinner roster.
+  Asking for more than two per country trims back to the cap.
 
 The generator routes the firm list through the engine's `build_firm_roster`, so
 the forms you hand out always match a roster `upgrade_to_phase3()` will accept.

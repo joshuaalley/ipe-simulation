@@ -12,8 +12,9 @@ economy, driven from a Jupyter notebook and projected for the room.
 | `handouts/` | Printable country briefs and decision forms. |
 | `calculator.py`, `calculator_template.html` | Students' production calculator: `sim.export_calculator()` writes it. |
 | `docs/` | The published calculator page (GitHub Pages). Generated; don't edit by hand. |
+| `rounds/`, `rounds/state/` | Your class data: one workbook per round, plus the per-round state snapshots `play_round` writes. Git-ignored, and the only copy — back it up. |
 | `engine-math-reference.pdf` | Instructor-only: the math behind each phase. |
-| `stress_test*.py`, `notebook_e2e_test.py` | Regression suite (649 checks), including `stress_test_money_balance.py`, which plays six different trading worlds and fails if any fixed money strategy, or serial default, starts winning everywhere. |
+| `stress_test*.py`, `notebook_e2e_test.py` | Regression suite (670 checks), including `stress_test_money_balance.py`, which plays six different trading worlds and fails if any fixed money strategy, or serial default, starts winning everywhere. |
 
 ## Quick start
 
@@ -27,19 +28,20 @@ sim.play_round("rounds/round01.xlsx", scale=1.4)
 
 ## Sizing it to your class
 
-Six countries and thirteen firms ship by default; both are adjustable. Aim for
-**three students per country**, and give each student one MNC:
+Six countries ship by default, hosting two MNCs each; both are adjustable. Aim
+for **three students per country**, and hand each country's group its two firms
+— with more students than firms, pair them as co-owners:
 
 ```python
 from engine import build_firm_roster
-firms = build_firm_roster(["Sabine", "Bosque", "Llano", "Trinity"], n_firms=11)
+firms = build_firm_roster(["Sabine", "Bosque", "Llano", "Trinity"])   # 8 firms
 sim.upgrade_to_phase3(firms)
 ```
 
 Then regenerate the paper handouts to match:
 
 ```
-cd handouts && python make_handouts.py --countries Sabine Bosque Llano Trinity --firms 11
+cd handouts && python make_handouts.py --countries Sabine Bosque Llano Trinity
 ```
 
 The engine rejects a firm roster hosted in countries that aren't in play, so
