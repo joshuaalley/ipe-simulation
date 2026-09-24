@@ -227,13 +227,36 @@ def test_bounds():
               str([round(v, 1) for v in vals]))
 
 
+def test_phase_change_rebases_prosperity():
+    print("\n[12] a new phase re-bases the prosperity baseline")
+    import contextlib as _cl, io as _io
+    from engine import PHASE2_COUNTRIES, PHASE2_GOODS
+    sim, _ = play(0.0, rounds=2, quiet=True)
+    names = list(sim.countries)
+    with _cl.redirect_stdout(_io.StringIO()):
+        sim.upgrade_to_phase2({c: PHASE2_COUNTRIES[c] for c in names}, PHASE2_GOODS)
+    bal = {n: {"production": {
+        "labor": {g: PHASE2_COUNTRIES[n]["labor"] / 3 for g in PHASE2_GOODS},
+        "capital": {g: PHASE2_COUNTRIES[n]["capital"] / 3 for g in PHASE2_GOODS}}}
+        for n in names}
+    with _cl.redirect_stdout(_io.StringIO()):
+        first = sim.run_round(bal, [])
+        second = sim.run_round(bal, [])
+    check("  first round of a phase: no prosperity term (the model changed)",
+          all(first["results"][n]["approval"]["prosperity"] == 0.0 for n in names),
+          str({n: first["results"][n]["approval"]["prosperity"] for n in names}))
+    check("  second round: prosperity compares like with like again",
+          all(abs(second["results"][n]["approval"]["prosperity"]) < 1e-9
+              for n in names))   # same decisions both rounds -> no change
+
+
 def main():
     for t in [test_seeded_and_separate, test_protection_buys_approval,
               test_paying_your_own_losers, test_compensation_cap_is_enforced,
               test_side_payments_are_net_and_move_goods,
               test_openness_topples_a_government, test_backlash_is_endogenous,
               test_compensation_helps, test_survives_upgrade_and_restore,
-              test_bounds]:
+              test_bounds, test_phase_change_rebases_prosperity]:
         try:
             t()
         except Exception:

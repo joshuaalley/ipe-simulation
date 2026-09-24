@@ -12,13 +12,15 @@
 \newcommand{\hr}{\par\vspace{2pt}\noindent\rule{\linewidth}{0.4pt}\par\vspace{2pt}}
 \pagestyle{empty}
 \begin{document}
-{\large\bfseries MNC Decision Forms} \hfill (Phase 3+)\par 
-You own this firm -- alone or with a partner -- even though it sits in another country. Each round: choose how much to produce (\emph{scale}), whether to \emph{relocate} to a new host, and (Phase 4+) whether to pay the fixed cost to \emph{export}. The profit is yours; the output counts for whichever country hosts you. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7.
-\hr
+{\large\bfseries MNC Decision Form} \hfill (Phase 3+)\par
+You own this firm --- alone or with a partner --- even though it sits in another country. Each round: choose how much to produce (\emph{scale}), whether to \emph{relocate} to a new host, and (Phase 4+) whether to pay the fixed cost to \emph{export}. It can move anywhere except your own country. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7.
+\vspace{6pt}
 
-\noindent\fbox{\begin{minipage}{0.95\linewidth}
-{\bfseries ROUND \blank{1cm} --- FIRM F1: Cloth-A}
-\hfill Owner(s): \blank{4.5cm}\par
+\noindent\fbox{\begin{minipage}{0.97\linewidth}
+\vspace{3pt}
+{\large\bfseries ROUND \blank{1.2cm} --- FIRM F1: Cloth-A}
+\hfill Owner(s): \blank{4.8cm}\par
+\vspace{3pt}
 Industry: \textbf{cloth} \quad
 Productivity: \textbf{1.3} \quad
 Starting host: \textbf{Bosque}\par
@@ -26,21 +28,71 @@ Price per unit sold: \textbf{1.00} \quad
 Unit cost: \textbf{0.60} \quad
 Max scale: \textbf{40} \quad
 Export fixed cost: \textbf{8}\par
-\vspace{3pt}
-SCALE (0--40): \blank{2cm} \qquad
-RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
-EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}\par
-\vspace{2pt}
-{\small You make \textbf{scale $\times$ productivity} units and sell them at the price
-above. \textbf{Profit} $=$ units sold $\times$ price $-$ scale $\times$ unit cost
-$-$ export fixed cost (only if you export) $-$ your host's MNC tax (Phase 4+).}
-\end{minipage}}
 \vspace{8pt}
+SCALE (0--40): \blank{2.2cm} \qquad
+RELOCATE TO: \blank{3.4cm} \textit{(blank = stay)}\par
+{\small\itshape Relocate anywhere except your own country --- no re-shoring.}\par
+\vspace{6pt}
+EXPORT this round? \quad \boxx\ Yes \quad \boxx\ No
+\hfill\textit{(Phase 4+; pays the fixed cost)}\par
+\vspace{3pt}
+\end{minipage}}
 
+\vspace{10pt}
+\noindent\tikz\draw[dashed,gray] (0,0) -- (0.99\linewidth,0);\par
+\vspace{-2pt}
+{\footnotesize\color{gray} Hand in the slip above; keep this half.}\par
+\vspace{8pt}
+{\large\bfseries How the numbers work --- a worked example at scale 23}\par
+\textit{Scale 23 is an illustration, not a recommendation. Redo the table at the
+scale you actually choose.}
 
-\noindent\fbox{\begin{minipage}{0.95\linewidth}
-{\bfseries ROUND \blank{1cm} --- FIRM F3: Cloth-C}
-\hfill Owner(s): \blank{4.5cm}\par
+\vspace{6pt}
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lrr}
+\toprule
+ & \textbf{Stay home} & \textbf{Export} (premium 25\%) \\
+\midrule
+Units made: scale $\times$ productivity & 23 $\times$ 1.3 $=$ 29.9 & 29.9 \\
+Revenue: units $\times$ price & 29.9 $\times$ 1.00 $=$ 29.90
+  & 29.90 $\times$ 1.25 $=$ 37.38 \\
+Production cost: scale $\times$ unit cost & 23 $\times$ 0.60 $=$ 13.80 & 13.80 \\
+Export fixed cost & --- & 8.00 \\
+\midrule
+\textbf{Profit} & \textbf{16.10} & \textbf{15.58} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Verdict:} at scale 23, exporting \textbf{loses 0.52}: the extra revenue (7.48) does not cover the fixed cost (8.00). Stay home.
+
+\vspace{4pt}
+\begin{itemize}[nosep,leftmargin=1.2em]
+  \item \textbf{The rule:} export only if units $\times$ price $\times$ premium
+    $>$ the fixed export cost. The fixed cost is the same whether you ship 5 units
+    or 50, so exporting needs volume.
+  \item \textbf{The premium} is on the board each round. 25\% is the most it
+    can be; tariffs other countries put on your good from your host shrink it.
+  \item \textbf{Your local sales} --- 20\% of your units --- count toward your
+    \emph{host's} welfare, export or not; the rest sells on world markets.
+    \textbf{Your profit} counts every unit, and it is yours alone.
+  \item \textbf{Your host's MNC tax} takes its \% of your revenue (premium
+    included), so a lower-tax host keeps more of your profit --- but moving
+    means producing nothing that round. From Phase 5 your profit is worth what
+    your host's currency is worth.
+\end{itemize}
+
+\newpage
+{\large\bfseries MNC Decision Form} \hfill (Phase 3+)\par
+You own this firm --- alone or with a partner --- even though it sits in another country. Each round: choose how much to produce (\emph{scale}), whether to \emph{relocate} to a new host, and (Phase 4+) whether to pay the fixed cost to \emph{export}. It can move anywhere except your own country. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7.
+\vspace{6pt}
+
+\noindent\fbox{\begin{minipage}{0.97\linewidth}
+\vspace{3pt}
+{\large\bfseries ROUND \blank{1.2cm} --- FIRM F3: Cloth-C}
+\hfill Owner(s): \blank{4.8cm}\par
+\vspace{3pt}
 Industry: \textbf{cloth} \quad
 Productivity: \textbf{0.7} \quad
 Starting host: \textbf{Sabine}\par
@@ -48,21 +100,71 @@ Price per unit sold: \textbf{1.00} \quad
 Unit cost: \textbf{0.60} \quad
 Max scale: \textbf{40} \quad
 Export fixed cost: \textbf{8}\par
-\vspace{3pt}
-SCALE (0--40): \blank{2cm} \qquad
-RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
-EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}\par
-\vspace{2pt}
-{\small You make \textbf{scale $\times$ productivity} units and sell them at the price
-above. \textbf{Profit} $=$ units sold $\times$ price $-$ scale $\times$ unit cost
-$-$ export fixed cost (only if you export) $-$ your host's MNC tax (Phase 4+).}
-\end{minipage}}
 \vspace{8pt}
+SCALE (0--40): \blank{2.2cm} \qquad
+RELOCATE TO: \blank{3.4cm} \textit{(blank = stay)}\par
+{\small\itshape Relocate anywhere except your own country --- no re-shoring.}\par
+\vspace{6pt}
+EXPORT this round? \quad \boxx\ Yes \quad \boxx\ No
+\hfill\textit{(Phase 4+; pays the fixed cost)}\par
+\vspace{3pt}
+\end{minipage}}
 
+\vspace{10pt}
+\noindent\tikz\draw[dashed,gray] (0,0) -- (0.99\linewidth,0);\par
+\vspace{-2pt}
+{\footnotesize\color{gray} Hand in the slip above; keep this half.}\par
+\vspace{8pt}
+{\large\bfseries How the numbers work --- a worked example at scale 23}\par
+\textit{Scale 23 is an illustration, not a recommendation. Redo the table at the
+scale you actually choose.}
 
-\noindent\fbox{\begin{minipage}{0.95\linewidth}
-{\bfseries ROUND \blank{1cm} --- FIRM F4: Wine-A}
-\hfill Owner(s): \blank{4.5cm}\par
+\vspace{6pt}
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lrr}
+\toprule
+ & \textbf{Stay home} & \textbf{Export} (premium 25\%) \\
+\midrule
+Units made: scale $\times$ productivity & 23 $\times$ 0.7 $=$ 16.1 & 16.1 \\
+Revenue: units $\times$ price & 16.1 $\times$ 1.00 $=$ 16.10
+  & 16.10 $\times$ 1.25 $=$ 20.13 \\
+Production cost: scale $\times$ unit cost & 23 $\times$ 0.60 $=$ 13.80 & 13.80 \\
+Export fixed cost & --- & 8.00 \\
+\midrule
+\textbf{Profit} & \textbf{2.30} & \textbf{-1.67} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Verdict:} at scale 23, exporting \textbf{loses 3.97}: the extra revenue (4.03) does not cover the fixed cost (8.00). Stay home.
+
+\vspace{4pt}
+\begin{itemize}[nosep,leftmargin=1.2em]
+  \item \textbf{The rule:} export only if units $\times$ price $\times$ premium
+    $>$ the fixed export cost. The fixed cost is the same whether you ship 5 units
+    or 50, so exporting needs volume.
+  \item \textbf{The premium} is on the board each round. 25\% is the most it
+    can be; tariffs other countries put on your good from your host shrink it.
+  \item \textbf{Your local sales} --- 20\% of your units --- count toward your
+    \emph{host's} welfare, export or not; the rest sells on world markets.
+    \textbf{Your profit} counts every unit, and it is yours alone.
+  \item \textbf{Your host's MNC tax} takes its \% of your revenue (premium
+    included), so a lower-tax host keeps more of your profit --- but moving
+    means producing nothing that round. From Phase 5 your profit is worth what
+    your host's currency is worth.
+\end{itemize}
+
+\newpage
+{\large\bfseries MNC Decision Form} \hfill (Phase 3+)\par
+You own this firm --- alone or with a partner --- even though it sits in another country. Each round: choose how much to produce (\emph{scale}), whether to \emph{relocate} to a new host, and (Phase 4+) whether to pay the fixed cost to \emph{export}. It can move anywhere except your own country. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7.
+\vspace{6pt}
+
+\noindent\fbox{\begin{minipage}{0.97\linewidth}
+\vspace{3pt}
+{\large\bfseries ROUND \blank{1.2cm} --- FIRM F4: Wine-A}
+\hfill Owner(s): \blank{4.8cm}\par
+\vspace{3pt}
 Industry: \textbf{wine} \quad
 Productivity: \textbf{1.3} \quad
 Starting host: \textbf{Llano}\par
@@ -70,21 +172,71 @@ Price per unit sold: \textbf{1.00} \quad
 Unit cost: \textbf{0.60} \quad
 Max scale: \textbf{40} \quad
 Export fixed cost: \textbf{8}\par
-\vspace{3pt}
-SCALE (0--40): \blank{2cm} \qquad
-RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
-EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}\par
-\vspace{2pt}
-{\small You make \textbf{scale $\times$ productivity} units and sell them at the price
-above. \textbf{Profit} $=$ units sold $\times$ price $-$ scale $\times$ unit cost
-$-$ export fixed cost (only if you export) $-$ your host's MNC tax (Phase 4+).}
-\end{minipage}}
 \vspace{8pt}
+SCALE (0--40): \blank{2.2cm} \qquad
+RELOCATE TO: \blank{3.4cm} \textit{(blank = stay)}\par
+{\small\itshape Relocate anywhere except your own country --- no re-shoring.}\par
+\vspace{6pt}
+EXPORT this round? \quad \boxx\ Yes \quad \boxx\ No
+\hfill\textit{(Phase 4+; pays the fixed cost)}\par
+\vspace{3pt}
+\end{minipage}}
 
+\vspace{10pt}
+\noindent\tikz\draw[dashed,gray] (0,0) -- (0.99\linewidth,0);\par
+\vspace{-2pt}
+{\footnotesize\color{gray} Hand in the slip above; keep this half.}\par
+\vspace{8pt}
+{\large\bfseries How the numbers work --- a worked example at scale 23}\par
+\textit{Scale 23 is an illustration, not a recommendation. Redo the table at the
+scale you actually choose.}
 
-\noindent\fbox{\begin{minipage}{0.95\linewidth}
-{\bfseries ROUND \blank{1cm} --- FIRM F5: Wine-B}
-\hfill Owner(s): \blank{4.5cm}\par
+\vspace{6pt}
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lrr}
+\toprule
+ & \textbf{Stay home} & \textbf{Export} (premium 25\%) \\
+\midrule
+Units made: scale $\times$ productivity & 23 $\times$ 1.3 $=$ 29.9 & 29.9 \\
+Revenue: units $\times$ price & 29.9 $\times$ 1.00 $=$ 29.90
+  & 29.90 $\times$ 1.25 $=$ 37.38 \\
+Production cost: scale $\times$ unit cost & 23 $\times$ 0.60 $=$ 13.80 & 13.80 \\
+Export fixed cost & --- & 8.00 \\
+\midrule
+\textbf{Profit} & \textbf{16.10} & \textbf{15.58} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Verdict:} at scale 23, exporting \textbf{loses 0.52}: the extra revenue (7.48) does not cover the fixed cost (8.00). Stay home.
+
+\vspace{4pt}
+\begin{itemize}[nosep,leftmargin=1.2em]
+  \item \textbf{The rule:} export only if units $\times$ price $\times$ premium
+    $>$ the fixed export cost. The fixed cost is the same whether you ship 5 units
+    or 50, so exporting needs volume.
+  \item \textbf{The premium} is on the board each round. 25\% is the most it
+    can be; tariffs other countries put on your good from your host shrink it.
+  \item \textbf{Your local sales} --- 20\% of your units --- count toward your
+    \emph{host's} welfare, export or not; the rest sells on world markets.
+    \textbf{Your profit} counts every unit, and it is yours alone.
+  \item \textbf{Your host's MNC tax} takes its \% of your revenue (premium
+    included), so a lower-tax host keeps more of your profit --- but moving
+    means producing nothing that round. From Phase 5 your profit is worth what
+    your host's currency is worth.
+\end{itemize}
+
+\newpage
+{\large\bfseries MNC Decision Form} \hfill (Phase 3+)\par
+You own this firm --- alone or with a partner --- even though it sits in another country. Each round: choose how much to produce (\emph{scale}), whether to \emph{relocate} to a new host, and (Phase 4+) whether to pay the fixed cost to \emph{export}. It can move anywhere except your own country. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7.
+\vspace{6pt}
+
+\noindent\fbox{\begin{minipage}{0.97\linewidth}
+\vspace{3pt}
+{\large\bfseries ROUND \blank{1.2cm} --- FIRM F5: Wine-B}
+\hfill Owner(s): \blank{4.8cm}\par
+\vspace{3pt}
 Industry: \textbf{wine} \quad
 Productivity: \textbf{1.0} \quad
 Starting host: \textbf{Sabine}\par
@@ -92,21 +244,71 @@ Price per unit sold: \textbf{1.00} \quad
 Unit cost: \textbf{0.60} \quad
 Max scale: \textbf{40} \quad
 Export fixed cost: \textbf{8}\par
-\vspace{3pt}
-SCALE (0--40): \blank{2cm} \qquad
-RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
-EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}\par
-\vspace{2pt}
-{\small You make \textbf{scale $\times$ productivity} units and sell them at the price
-above. \textbf{Profit} $=$ units sold $\times$ price $-$ scale $\times$ unit cost
-$-$ export fixed cost (only if you export) $-$ your host's MNC tax (Phase 4+).}
-\end{minipage}}
 \vspace{8pt}
+SCALE (0--40): \blank{2.2cm} \qquad
+RELOCATE TO: \blank{3.4cm} \textit{(blank = stay)}\par
+{\small\itshape Relocate anywhere except your own country --- no re-shoring.}\par
+\vspace{6pt}
+EXPORT this round? \quad \boxx\ Yes \quad \boxx\ No
+\hfill\textit{(Phase 4+; pays the fixed cost)}\par
+\vspace{3pt}
+\end{minipage}}
 
+\vspace{10pt}
+\noindent\tikz\draw[dashed,gray] (0,0) -- (0.99\linewidth,0);\par
+\vspace{-2pt}
+{\footnotesize\color{gray} Hand in the slip above; keep this half.}\par
+\vspace{8pt}
+{\large\bfseries How the numbers work --- a worked example at scale 23}\par
+\textit{Scale 23 is an illustration, not a recommendation. Redo the table at the
+scale you actually choose.}
 
-\noindent\fbox{\begin{minipage}{0.95\linewidth}
-{\bfseries ROUND \blank{1cm} --- FIRM F7: Mach-A}
-\hfill Owner(s): \blank{4.5cm}\par
+\vspace{6pt}
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lrr}
+\toprule
+ & \textbf{Stay home} & \textbf{Export} (premium 25\%) \\
+\midrule
+Units made: scale $\times$ productivity & 23 $\times$ 1.0 $=$ 23.0 & 23.0 \\
+Revenue: units $\times$ price & 23.0 $\times$ 1.00 $=$ 23.00
+  & 23.00 $\times$ 1.25 $=$ 28.75 \\
+Production cost: scale $\times$ unit cost & 23 $\times$ 0.60 $=$ 13.80 & 13.80 \\
+Export fixed cost & --- & 8.00 \\
+\midrule
+\textbf{Profit} & \textbf{9.20} & \textbf{6.95} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Verdict:} at scale 23, exporting \textbf{loses 2.25}: the extra revenue (5.75) does not cover the fixed cost (8.00). Stay home.
+
+\vspace{4pt}
+\begin{itemize}[nosep,leftmargin=1.2em]
+  \item \textbf{The rule:} export only if units $\times$ price $\times$ premium
+    $>$ the fixed export cost. The fixed cost is the same whether you ship 5 units
+    or 50, so exporting needs volume.
+  \item \textbf{The premium} is on the board each round. 25\% is the most it
+    can be; tariffs other countries put on your good from your host shrink it.
+  \item \textbf{Your local sales} --- 20\% of your units --- count toward your
+    \emph{host's} welfare, export or not; the rest sells on world markets.
+    \textbf{Your profit} counts every unit, and it is yours alone.
+  \item \textbf{Your host's MNC tax} takes its \% of your revenue (premium
+    included), so a lower-tax host keeps more of your profit --- but moving
+    means producing nothing that round. From Phase 5 your profit is worth what
+    your host's currency is worth.
+\end{itemize}
+
+\newpage
+{\large\bfseries MNC Decision Form} \hfill (Phase 3+)\par
+You own this firm --- alone or with a partner --- even though it sits in another country. Each round: choose how much to produce (\emph{scale}), whether to \emph{relocate} to a new host, and (Phase 4+) whether to pay the fixed cost to \emph{export}. It can move anywhere except your own country. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7.
+\vspace{6pt}
+
+\noindent\fbox{\begin{minipage}{0.97\linewidth}
+\vspace{3pt}
+{\large\bfseries ROUND \blank{1.2cm} --- FIRM F7: Mach-A}
+\hfill Owner(s): \blank{4.8cm}\par
+\vspace{3pt}
 Industry: \textbf{machinery} \quad
 Productivity: \textbf{1.3} \quad
 Starting host: \textbf{Trinity}\par
@@ -114,21 +316,71 @@ Price per unit sold: \textbf{1.50} \quad
 Unit cost: \textbf{1.00} \quad
 Max scale: \textbf{40} \quad
 Export fixed cost: \textbf{12}\par
-\vspace{3pt}
-SCALE (0--40): \blank{2cm} \qquad
-RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
-EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}\par
-\vspace{2pt}
-{\small You make \textbf{scale $\times$ productivity} units and sell them at the price
-above. \textbf{Profit} $=$ units sold $\times$ price $-$ scale $\times$ unit cost
-$-$ export fixed cost (only if you export) $-$ your host's MNC tax (Phase 4+).}
-\end{minipage}}
 \vspace{8pt}
+SCALE (0--40): \blank{2.2cm} \qquad
+RELOCATE TO: \blank{3.4cm} \textit{(blank = stay)}\par
+{\small\itshape Relocate anywhere except your own country --- no re-shoring.}\par
+\vspace{6pt}
+EXPORT this round? \quad \boxx\ Yes \quad \boxx\ No
+\hfill\textit{(Phase 4+; pays the fixed cost)}\par
+\vspace{3pt}
+\end{minipage}}
 
+\vspace{10pt}
+\noindent\tikz\draw[dashed,gray] (0,0) -- (0.99\linewidth,0);\par
+\vspace{-2pt}
+{\footnotesize\color{gray} Hand in the slip above; keep this half.}\par
+\vspace{8pt}
+{\large\bfseries How the numbers work --- a worked example at scale 23}\par
+\textit{Scale 23 is an illustration, not a recommendation. Redo the table at the
+scale you actually choose.}
 
-\noindent\fbox{\begin{minipage}{0.95\linewidth}
-{\bfseries ROUND \blank{1cm} --- FIRM F8: Mach-B}
-\hfill Owner(s): \blank{4.5cm}\par
+\vspace{6pt}
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lrr}
+\toprule
+ & \textbf{Stay home} & \textbf{Export} (premium 25\%) \\
+\midrule
+Units made: scale $\times$ productivity & 23 $\times$ 1.3 $=$ 29.9 & 29.9 \\
+Revenue: units $\times$ price & 29.9 $\times$ 1.50 $=$ 44.85
+  & 44.85 $\times$ 1.25 $=$ 56.06 \\
+Production cost: scale $\times$ unit cost & 23 $\times$ 1.00 $=$ 23.00 & 23.00 \\
+Export fixed cost & --- & 12.00 \\
+\midrule
+\textbf{Profit} & \textbf{21.85} & \textbf{21.06} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Verdict:} at scale 23, exporting \textbf{loses 0.79}: the extra revenue (11.21) does not cover the fixed cost (12.00). Stay home.
+
+\vspace{4pt}
+\begin{itemize}[nosep,leftmargin=1.2em]
+  \item \textbf{The rule:} export only if units $\times$ price $\times$ premium
+    $>$ the fixed export cost. The fixed cost is the same whether you ship 5 units
+    or 50, so exporting needs volume.
+  \item \textbf{The premium} is on the board each round. 25\% is the most it
+    can be; tariffs other countries put on your good from your host shrink it.
+  \item \textbf{Your local sales} --- 20\% of your units --- count toward your
+    \emph{host's} welfare, export or not; the rest sells on world markets.
+    \textbf{Your profit} counts every unit, and it is yours alone.
+  \item \textbf{Your host's MNC tax} takes its \% of your revenue (premium
+    included), so a lower-tax host keeps more of your profit --- but moving
+    means producing nothing that round. From Phase 5 your profit is worth what
+    your host's currency is worth.
+\end{itemize}
+
+\newpage
+{\large\bfseries MNC Decision Form} \hfill (Phase 3+)\par
+You own this firm --- alone or with a partner --- even though it sits in another country. Each round: choose how much to produce (\emph{scale}), whether to \emph{relocate} to a new host, and (Phase 4+) whether to pay the fixed cost to \emph{export}. It can move anywhere except your own country. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7.
+\vspace{6pt}
+
+\noindent\fbox{\begin{minipage}{0.97\linewidth}
+\vspace{3pt}
+{\large\bfseries ROUND \blank{1.2cm} --- FIRM F8: Mach-B}
+\hfill Owner(s): \blank{4.8cm}\par
+\vspace{3pt}
 Industry: \textbf{machinery} \quad
 Productivity: \textbf{1.0} \quad
 Starting host: \textbf{Llano}\par
@@ -136,21 +388,71 @@ Price per unit sold: \textbf{1.50} \quad
 Unit cost: \textbf{1.00} \quad
 Max scale: \textbf{40} \quad
 Export fixed cost: \textbf{12}\par
-\vspace{3pt}
-SCALE (0--40): \blank{2cm} \qquad
-RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
-EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}\par
-\vspace{2pt}
-{\small You make \textbf{scale $\times$ productivity} units and sell them at the price
-above. \textbf{Profit} $=$ units sold $\times$ price $-$ scale $\times$ unit cost
-$-$ export fixed cost (only if you export) $-$ your host's MNC tax (Phase 4+).}
-\end{minipage}}
 \vspace{8pt}
+SCALE (0--40): \blank{2.2cm} \qquad
+RELOCATE TO: \blank{3.4cm} \textit{(blank = stay)}\par
+{\small\itshape Relocate anywhere except your own country --- no re-shoring.}\par
+\vspace{6pt}
+EXPORT this round? \quad \boxx\ Yes \quad \boxx\ No
+\hfill\textit{(Phase 4+; pays the fixed cost)}\par
+\vspace{3pt}
+\end{minipage}}
 
+\vspace{10pt}
+\noindent\tikz\draw[dashed,gray] (0,0) -- (0.99\linewidth,0);\par
+\vspace{-2pt}
+{\footnotesize\color{gray} Hand in the slip above; keep this half.}\par
+\vspace{8pt}
+{\large\bfseries How the numbers work --- a worked example at scale 23}\par
+\textit{Scale 23 is an illustration, not a recommendation. Redo the table at the
+scale you actually choose.}
 
-\noindent\fbox{\begin{minipage}{0.95\linewidth}
-{\bfseries ROUND \blank{1cm} --- FIRM F11: Cloth-D}
-\hfill Owner(s): \blank{4.5cm}\par
+\vspace{6pt}
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lrr}
+\toprule
+ & \textbf{Stay home} & \textbf{Export} (premium 25\%) \\
+\midrule
+Units made: scale $\times$ productivity & 23 $\times$ 1.0 $=$ 23.0 & 23.0 \\
+Revenue: units $\times$ price & 23.0 $\times$ 1.50 $=$ 34.50
+  & 34.50 $\times$ 1.25 $=$ 43.13 \\
+Production cost: scale $\times$ unit cost & 23 $\times$ 1.00 $=$ 23.00 & 23.00 \\
+Export fixed cost & --- & 12.00 \\
+\midrule
+\textbf{Profit} & \textbf{11.50} & \textbf{8.13} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Verdict:} at scale 23, exporting \textbf{loses 3.37}: the extra revenue (8.63) does not cover the fixed cost (12.00). Stay home.
+
+\vspace{4pt}
+\begin{itemize}[nosep,leftmargin=1.2em]
+  \item \textbf{The rule:} export only if units $\times$ price $\times$ premium
+    $>$ the fixed export cost. The fixed cost is the same whether you ship 5 units
+    or 50, so exporting needs volume.
+  \item \textbf{The premium} is on the board each round. 25\% is the most it
+    can be; tariffs other countries put on your good from your host shrink it.
+  \item \textbf{Your local sales} --- 20\% of your units --- count toward your
+    \emph{host's} welfare, export or not; the rest sells on world markets.
+    \textbf{Your profit} counts every unit, and it is yours alone.
+  \item \textbf{Your host's MNC tax} takes its \% of your revenue (premium
+    included), so a lower-tax host keeps more of your profit --- but moving
+    means producing nothing that round. From Phase 5 your profit is worth what
+    your host's currency is worth.
+\end{itemize}
+
+\newpage
+{\large\bfseries MNC Decision Form} \hfill (Phase 3+)\par
+You own this firm --- alone or with a partner --- even though it sits in another country. Each round: choose how much to produce (\emph{scale}), whether to \emph{relocate} to a new host, and (Phase 4+) whether to pay the fixed cost to \emph{export}. It can move anywhere except your own country. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7.
+\vspace{6pt}
+
+\noindent\fbox{\begin{minipage}{0.97\linewidth}
+\vspace{3pt}
+{\large\bfseries ROUND \blank{1.2cm} --- FIRM F11: Cloth-D}
+\hfill Owner(s): \blank{4.8cm}\par
+\vspace{3pt}
 Industry: \textbf{cloth} \quad
 Productivity: \textbf{0.7} \quad
 Starting host: \textbf{Trinity}\par
@@ -158,21 +460,71 @@ Price per unit sold: \textbf{1.00} \quad
 Unit cost: \textbf{0.60} \quad
 Max scale: \textbf{40} \quad
 Export fixed cost: \textbf{8}\par
-\vspace{3pt}
-SCALE (0--40): \blank{2cm} \qquad
-RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
-EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}\par
-\vspace{2pt}
-{\small You make \textbf{scale $\times$ productivity} units and sell them at the price
-above. \textbf{Profit} $=$ units sold $\times$ price $-$ scale $\times$ unit cost
-$-$ export fixed cost (only if you export) $-$ your host's MNC tax (Phase 4+).}
-\end{minipage}}
 \vspace{8pt}
+SCALE (0--40): \blank{2.2cm} \qquad
+RELOCATE TO: \blank{3.4cm} \textit{(blank = stay)}\par
+{\small\itshape Relocate anywhere except your own country --- no re-shoring.}\par
+\vspace{6pt}
+EXPORT this round? \quad \boxx\ Yes \quad \boxx\ No
+\hfill\textit{(Phase 4+; pays the fixed cost)}\par
+\vspace{3pt}
+\end{minipage}}
 
+\vspace{10pt}
+\noindent\tikz\draw[dashed,gray] (0,0) -- (0.99\linewidth,0);\par
+\vspace{-2pt}
+{\footnotesize\color{gray} Hand in the slip above; keep this half.}\par
+\vspace{8pt}
+{\large\bfseries How the numbers work --- a worked example at scale 23}\par
+\textit{Scale 23 is an illustration, not a recommendation. Redo the table at the
+scale you actually choose.}
 
-\noindent\fbox{\begin{minipage}{0.95\linewidth}
-{\bfseries ROUND \blank{1cm} --- FIRM F12: Wine-D}
-\hfill Owner(s): \blank{4.5cm}\par
+\vspace{6pt}
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lrr}
+\toprule
+ & \textbf{Stay home} & \textbf{Export} (premium 25\%) \\
+\midrule
+Units made: scale $\times$ productivity & 23 $\times$ 0.7 $=$ 16.1 & 16.1 \\
+Revenue: units $\times$ price & 16.1 $\times$ 1.00 $=$ 16.10
+  & 16.10 $\times$ 1.25 $=$ 20.13 \\
+Production cost: scale $\times$ unit cost & 23 $\times$ 0.60 $=$ 13.80 & 13.80 \\
+Export fixed cost & --- & 8.00 \\
+\midrule
+\textbf{Profit} & \textbf{2.30} & \textbf{-1.67} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Verdict:} at scale 23, exporting \textbf{loses 3.97}: the extra revenue (4.03) does not cover the fixed cost (8.00). Stay home.
+
+\vspace{4pt}
+\begin{itemize}[nosep,leftmargin=1.2em]
+  \item \textbf{The rule:} export only if units $\times$ price $\times$ premium
+    $>$ the fixed export cost. The fixed cost is the same whether you ship 5 units
+    or 50, so exporting needs volume.
+  \item \textbf{The premium} is on the board each round. 25\% is the most it
+    can be; tariffs other countries put on your good from your host shrink it.
+  \item \textbf{Your local sales} --- 20\% of your units --- count toward your
+    \emph{host's} welfare, export or not; the rest sells on world markets.
+    \textbf{Your profit} counts every unit, and it is yours alone.
+  \item \textbf{Your host's MNC tax} takes its \% of your revenue (premium
+    included), so a lower-tax host keeps more of your profit --- but moving
+    means producing nothing that round. From Phase 5 your profit is worth what
+    your host's currency is worth.
+\end{itemize}
+
+\newpage
+{\large\bfseries MNC Decision Form} \hfill (Phase 3+)\par
+You own this firm --- alone or with a partner --- even though it sits in another country. Each round: choose how much to produce (\emph{scale}), whether to \emph{relocate} to a new host, and (Phase 4+) whether to pay the fixed cost to \emph{export}. It can move anywhere except your own country. Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7.
+\vspace{6pt}
+
+\noindent\fbox{\begin{minipage}{0.97\linewidth}
+\vspace{3pt}
+{\large\bfseries ROUND \blank{1.2cm} --- FIRM F12: Wine-D}
+\hfill Owner(s): \blank{4.8cm}\par
+\vspace{3pt}
 Industry: \textbf{wine} \quad
 Productivity: \textbf{0.7} \quad
 Starting host: \textbf{Bosque}\par
@@ -180,14 +532,58 @@ Price per unit sold: \textbf{1.00} \quad
 Unit cost: \textbf{0.60} \quad
 Max scale: \textbf{40} \quad
 Export fixed cost: \textbf{8}\par
-\vspace{3pt}
-SCALE (0--40): \blank{2cm} \qquad
-RELOCATE TO: \blank{3cm} \textit{(blank = stay)}\par
-EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{(Phase 4+; pays the fixed cost)}\par
-\vspace{2pt}
-{\small You make \textbf{scale $\times$ productivity} units and sell them at the price
-above. \textbf{Profit} $=$ units sold $\times$ price $-$ scale $\times$ unit cost
-$-$ export fixed cost (only if you export) $-$ your host's MNC tax (Phase 4+).}
-\end{minipage}}
 \vspace{8pt}
+SCALE (0--40): \blank{2.2cm} \qquad
+RELOCATE TO: \blank{3.4cm} \textit{(blank = stay)}\par
+{\small\itshape Relocate anywhere except your own country --- no re-shoring.}\par
+\vspace{6pt}
+EXPORT this round? \quad \boxx\ Yes \quad \boxx\ No
+\hfill\textit{(Phase 4+; pays the fixed cost)}\par
+\vspace{3pt}
+\end{minipage}}
+
+\vspace{10pt}
+\noindent\tikz\draw[dashed,gray] (0,0) -- (0.99\linewidth,0);\par
+\vspace{-2pt}
+{\footnotesize\color{gray} Hand in the slip above; keep this half.}\par
+\vspace{8pt}
+{\large\bfseries How the numbers work --- a worked example at scale 23}\par
+\textit{Scale 23 is an illustration, not a recommendation. Redo the table at the
+scale you actually choose.}
+
+\vspace{6pt}
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lrr}
+\toprule
+ & \textbf{Stay home} & \textbf{Export} (premium 25\%) \\
+\midrule
+Units made: scale $\times$ productivity & 23 $\times$ 0.7 $=$ 16.1 & 16.1 \\
+Revenue: units $\times$ price & 16.1 $\times$ 1.00 $=$ 16.10
+  & 16.10 $\times$ 1.25 $=$ 20.13 \\
+Production cost: scale $\times$ unit cost & 23 $\times$ 0.60 $=$ 13.80 & 13.80 \\
+Export fixed cost & --- & 8.00 \\
+\midrule
+\textbf{Profit} & \textbf{2.30} & \textbf{-1.67} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Verdict:} at scale 23, exporting \textbf{loses 3.97}: the extra revenue (4.03) does not cover the fixed cost (8.00). Stay home.
+
+\vspace{4pt}
+\begin{itemize}[nosep,leftmargin=1.2em]
+  \item \textbf{The rule:} export only if units $\times$ price $\times$ premium
+    $>$ the fixed export cost. The fixed cost is the same whether you ship 5 units
+    or 50, so exporting needs volume.
+  \item \textbf{The premium} is on the board each round. 25\% is the most it
+    can be; tariffs other countries put on your good from your host shrink it.
+  \item \textbf{Your local sales} --- 20\% of your units --- count toward your
+    \emph{host's} welfare, export or not; the rest sells on world markets.
+    \textbf{Your profit} counts every unit, and it is yours alone.
+  \item \textbf{Your host's MNC tax} takes its \% of your revenue (premium
+    included), so a lower-tax host keeps more of your profit --- but moving
+    means producing nothing that round. From Phase 5 your profit is worth what
+    your host's currency is worth.
+\end{itemize}
 \end{document}

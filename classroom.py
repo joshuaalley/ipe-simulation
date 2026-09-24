@@ -16,9 +16,11 @@ Kept out of engine.py so the engine stays focused on mechanics, and so the
 engine keeps working if pandas/openpyxl are ever missing.
 """
 
+import datetime
 import json
 import os
 import re
+import shutil
 
 import pandas as pd
 
@@ -84,6 +86,7 @@ ALL_COLUMNS = {
     "fx": "FX",
     "stress": "Stress",
     "debt": "Debt",
+    "mnc": "MNC tax",
 }
 CORE_COLUMNS = ["welfare", "gains", "approval"]
 
@@ -111,6 +114,8 @@ def _columns_for_phase(phase, columns=None):
         keys = list(CORE_COLUMNS)
         if phase >= 2:
             keys += ["wage", "ret"]
+        if phase >= 3:
+            keys += ["mnc"]
         if phase >= 5:
             keys += ["fx", "stress"]
         if phase >= 6:
@@ -133,6 +138,7 @@ def _row_values(res_c):
         "fx": mon.get("depreciation_factor"),
         "stress": mon.get("stress"),
         "debt": debt.get("debt_stock"),
+        "mnc": (res_c.get("mnc_tax") or {}).get("rate"),
     }
 
 
@@ -155,6 +161,8 @@ def _fmt(key, val):
         return f"{val:.2f}", "inherit"
     if key == "debt":
         return f"{val:.1f}", (NEGATIVE if val > 0 else MUTED)
+    if key == "mnc":
+        return f"{val * 100:.0f}%", ("inherit" if val else MUTED)
     return f"{val:.1f}", "inherit"
 
 
@@ -360,6 +368,11 @@ def write_round_template(sim, path, round_num=None):
     Returns the path written.
     """
     rnd = (sim.round_num + 1) if round_num is None else round_num
+    return _write_book(path, _template_sheets(sim, rnd))
+
+
+def _template_sheets(sim, rnd):
+    """The blank round workbook as {sheet name: DataFrame}."""
     names = list(sim.countries.keys())
     goods = list(sim.goods)
     phase = sim.phase
@@ -382,6 +395,12 @@ def write_round_template(sim, path, round_num=None):
     # Buying off the groups trade displaced: a percent of your consumption.
     # Blank or 0 = none. Buys approval, costs a little welfare, border stays open.
     prod["compensation_pct"] = 0
+    # Phase 3+: the MNC tax, a percent of foreign firms' revenue. Pre-filled
+    # with the rate in force -- it stands until a country changes it.
+    if phase >= 3:
+        prod["mnc_tax_pct"] = [
+            round(float(sim.countries[n].get("mnc_tax_choice", 0.0) or 0.0) * 100, 1)
+            for n in names]
     sheets["production"] = prod
 
     # -- trades (blank; one row per agreed swap) -------------------
@@ -406,6 +425,9 @@ def write_round_template(sim, path, round_num=None):
             "firm": list(sim.firm_config.keys()),
             "variety": [c["variety"] for c in sim.firm_config.values()],
             "current_host": [sim.firms[f]["host"] for f in sim.firm_config],
+            # reference only (not read back): relocating here is refused
+            "owners": [", ".join(sim.firms[f].get("owners", []))
+                       for f in sim.firm_config],
             "max_scale": [c["max_scale"] for c in sim.firm_config.values()],
         })
         firms["scale"] = 0
@@ -446,7 +468,11 @@ def write_round_template(sim, path, round_num=None):
         "value": [rnd, phase, ", ".join(goods), ", ".join(names),
                   str(sim.reserve_currency_holder), str(sim.hegemon)],
     })
+    return sheets
 
+
+def _write_book(path, sheets):
+    """Write {sheet: DataFrame} as a workbook with readable column widths."""
     d = os.path.dirname(os.path.abspath(path))
     if d:
         os.makedirs(d, exist_ok=True)
@@ -499,7 +525,7 @@ def _require_columns(df, sheet, required, problems):
 #
 # play_round writes one after every round it plays, beside the workbook:
 #   rounds/round07.xlsx -> rounds/state/round07.json
-# Next class, IPESimulation.resume(default=sim) picks up the newest. The
+# Next class, IPESimulation.resume(default=...) picks up the newest. The
 # workbooks stay the source of truth; these are the convenience copy, and
 # they carry what a replay cannot: the shocks, unions and bailouts you
 # triggered by hand, already applied.
@@ -559,10 +585,11 @@ def resume(folder=None, default=None, verbose=True):
     """
     Pick up where the last class left off. Pass a folder of snapshots (the
     default is rounds/state) or a single .json file. Returns `default` when
-    nothing is saved yet, so the first class of a term keeps the fresh
-    simulation from the setup cell:
+    nothing is saved yet, so one setup cell serves every class -- the fresh
+    simulation is only used on the first class of a term:
 
-        sim = IPESimulation.resume(default=sim)
+        sim = IPESimulation.resume(
+            default=IPESimulation(countries, PHASE1_GOODS, phase=1))
     """
     from engine import IPESimulation          # local: engine imports us too
     folder = DEFAULT_STATE_DIR if folder is None else folder
@@ -572,8 +599,8 @@ def resume(folder=None, default=None, verbose=True):
         path = latest_state(folder)
     if path is None:
         if verbose:
-            print(f"  No snapshot in {_rel(folder)} yet -- keeping the "
-                  f"simulation from the setup cell.")
+            print(f"  No snapshot in {_rel(folder)} yet -- starting a fresh "
+                  f"simulation (the first class of a term).")
         return default
     with open(path, encoding="utf-8") as f:
         sim = IPESimulation.from_state(json.load(f))
@@ -582,6 +609,24 @@ def resume(folder=None, default=None, verbose=True):
               f"{', '.join(sim.countries)}")
         print(f"  (from {_rel(path)})\n")
     return sim
+
+
+def _still_blank(path):
+    """
+    True for a workbook nobody has filled in: every production allocation is
+    zero or empty. No real round looks like that -- allocations must add up
+    to the endowments -- so it is a template written ahead of time.
+    """
+    try:
+        prod = pd.read_excel(path, sheet_name="production")
+    except Exception:
+        return False                       # let load_round report the problem
+    alloc = [c for c in prod.columns
+             if c not in ("country", "labor_available", "capital_available",
+                          "compensation_pct", "mnc_tax_pct")]
+    values = pd.to_numeric(pd.Series(prod[alloc].to_numpy().ravel()),
+                           errors="coerce").fillna(0)
+    return bool(alloc) and len(prod) > 0 and bool((values == 0).all())
 
 
 def _round_number(path):
@@ -615,17 +660,12 @@ def play_round(sim, path, scale=1.0, autosave=True, **show_kwargs):
     autosave=False to skip it.
     """
     replay = show_kwargs.pop("replay", False)
-    if not os.path.exists(path):
-        write_round_template(sim, path)
-        print(f"\n  Blank workbook written to: {path}")
-        print("  Fill in the sheets from the paper forms, then re-run this "
-              "cell to play the round.\n")
-        return None
 
     # A workbook named roundNN.xlsx can only ever be played as round NN.
     # This is what makes running the notebook from the top safe after a
     # resume: the earlier round cells re-project their boards instead of
-    # replaying on top of the restored state.
+    # replaying on top of the restored state, and later ones wait -- without
+    # writing a blank workbook built for the wrong phase.
     n = _round_number(path)
     if n is not None and n <= sim.round_num:
         print(f"\n  {os.path.basename(path)} is already in history "
@@ -635,6 +675,31 @@ def play_round(sim, path, scale=1.0, autosave=True, **show_kwargs):
     if n is not None and n > sim.round_num + 1:
         print(f"\n  {os.path.basename(path)} is ahead: you're on round "
               f"{sim.round_num}, so round {sim.round_num + 1} comes first.\n")
+        return None
+
+    # Decision files from the class inbox (rounds/inbox): build the workbook
+    # from them, and rebuild if more arrive before the round is played.
+    inbox = inbox_path(path)
+    since = _last_played_time(sim, path)
+    fresh = [n for n, t in _inbox_listing(inbox) if since is None or t >= since]
+    generated = os.path.exists(path) and _built_from_inbox(path)
+    if fresh and (not os.path.exists(path) or _still_blank(path)
+                  or (generated and _inbox_changed(path, inbox))):
+        build_round_from_inbox(sim, path, inbox)
+        return None
+    if fresh and os.path.exists(path) and not generated:
+        print(f"\n  {len(fresh)} decision file(s) are waiting in {_rel(inbox)}, but "
+              f"{os.path.basename(path)} was typed by hand -- playing the workbook.")
+
+    if not os.path.exists(path):
+        write_round_template(sim, path)
+        print(f"\n  Blank workbook written to: {path}")
+        print("  Fill in the sheets from the paper forms, then re-run this "
+              "cell to play the round.\n")
+        return None
+    if _still_blank(path):
+        print(f"\n  {os.path.basename(path)} is still blank. Fill it in from "
+              f"the paper forms, then re-run this cell to play the round.\n")
         return None
 
     key = os.path.abspath(path)
@@ -653,6 +718,10 @@ def play_round(sim, path, scale=1.0, autosave=True, **show_kwargs):
 
     result = sim.run_round(**load_round(sim, path))
     played.add(key)
+    if generated:
+        dest, moved = _archive_inbox(path, inbox)
+        if moved:
+            print(f"  moved {moved} decision file(s) to {_rel(dest)}")
     if autosave:
         # A failed save must never cost the round: the workbook is still the
         # record and the result is already in sim.history.
@@ -766,6 +835,13 @@ def load_round(sim, path):
             comp = comp / 100
         if comp:
             decisions[country]["compensation"] = comp
+        # MNC tax (Phase 3+). Optional: a blank cell, or a workbook made
+        # before the column existed, keeps the rate already in force.
+        if phase >= 3 and not _blank(row.get("mnc_tax_pct")):
+            tax = _as_num(row.get("mnc_tax_pct"), 0.0, where)
+            if abs(tax) > 1:                   # typed as a percent: 10 -> 0.10
+                tax = tax / 100
+            decisions[country]["mnc_tax"] = tax
     for missing in set(names) - seen:
         problems.append(f"production: no row for {missing}")
 
@@ -964,3 +1040,498 @@ def load_round(sim, path):
             + "\n  - ".join(problems)
         )
     return kwargs
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  4. DECISION FILES FROM THE CLASS INBOX
+# ═══════════════════════════════════════════════════════════════════
+#
+# Students submit a round from the calculator page: it saves one small JSON
+# file per country -- and per firm whose owner changes anything -- which they
+# drop into a Dropbox file request that lands in rounds/inbox. play_round
+# turns those files into the round's workbook and plays that, so the workbook
+# stays the record and paper and files go through the same door.
+#
+#   * the newest file per team wins; files that reached the inbox before the
+#     last round was played are stale and set aside
+#   * a trade counts only when both sides list it with the same terms
+#   * a country with no file repeats last round's production, tariffs and
+#     compensation, with no trades; a firm with no file does what it did
+#   * once the round plays, its files move to rounds/roundNN/
+
+INBOX_DIRNAME = "inbox"
+INBOX_SHEET = "_inbox"
+
+
+def inbox_path(workbook):
+    """rounds/round09.xlsx -> rounds/inbox"""
+    return os.path.join(os.path.dirname(os.path.abspath(workbook)), INBOX_DIRNAME)
+
+
+def _inbox_listing(inbox):
+    """[(file name, modified time)] of the decision files waiting in `inbox`."""
+    if not os.path.isdir(inbox):
+        return []
+    return sorted((n, os.path.getmtime(os.path.join(inbox, n)))
+                  for n in os.listdir(inbox) if n.lower().endswith(".json"))
+
+
+def _last_played_time(sim, path):
+    """
+    When the last round was played (epoch seconds), or None before any round.
+    Rounds played before this was recorded fall back to their snapshot's time.
+    """
+    if not sim.history:
+        return None
+    stamp = sim.history[-1].get("played_at")
+    if stamp:
+        try:
+            return datetime.datetime.fromisoformat(stamp).timestamp()
+        except ValueError:
+            pass
+    folder = os.path.dirname(os.path.abspath(path))
+    snap = state_path(os.path.join(folder, f"round{sim.round_num:02d}.xlsx"))
+    return os.path.getmtime(snap) if os.path.exists(snap) else None
+
+
+def read_inbox(sim, inbox, since=None):
+    """
+    Read the decision files in `inbox`. Returns a dict:
+      teams     {("country", name) or ("firm", fid): {"data", "file", "time"}}
+                -- the newest file for each team
+      replaced  {team: [older entries]}
+      stale     [file names that reached the inbox before `since`]
+      rejected  [(file name, why)]
+      listing   [(file name, time)] -- everything in the inbox
+    """
+    out = {"teams": {}, "replaced": {}, "stale": [], "rejected": [],
+           "listing": _inbox_listing(inbox)}
+    found = {}
+    for name, t in out["listing"]:
+        if since is not None and t < since:
+            out["stale"].append(name)
+            continue
+        try:
+            with open(os.path.join(inbox, name), encoding="utf-8") as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            out["rejected"].append((name, "not a decision file"))
+            continue
+        kind = d.get("kind") if isinstance(d, dict) else None
+        who = d.get(kind) if kind in ("country", "firm") else None
+        if kind not in ("country", "firm"):
+            out["rejected"].append((name, "not a decision file"))
+        elif kind == "country" and who not in sim.countries:
+            out["rejected"].append((name, f"{who!r} is not a country in this game"))
+        elif kind == "firm" and who not in sim.firms:
+            out["rejected"].append((name, f"{who!r} is not a firm in this game"))
+        else:
+            found.setdefault((kind, who), []).append(
+                {"data": d, "file": name, "time": t})
+    for team, entries in found.items():
+        entries.sort(key=lambda e: (e["time"], str(e["data"].get("made", ""))))
+        out["teams"][team] = entries[-1]
+        if len(entries) > 1:
+            out["replaced"][team] = entries[:-1]
+    return out
+
+
+def _number(v, what, problems, lo=None, hi=None, blank=0.0):
+    """A number from a decision file, or `blank` -- noting anything unusable."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return blank
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        problems.append(f"{what} is {v!r}, not a number")
+        return blank
+    if x != x or x in (float("inf"), float("-inf")):
+        problems.append(f"{what} is not a number")
+        return blank
+    if (lo is not None and x < lo) or (hi is not None and x > hi):
+        problems.append(f"{what} is {x:g}, outside {lo:g}-{hi:g}")
+    return x
+
+
+def _trade_legs(country, trades, goods, names, problems):
+    """A country file's trades as (from, to, give_good, give, get_good, get)."""
+    legs = []
+    for i, t in enumerate(trades or [], start=1):
+        what = f"trade {i}"
+        if not isinstance(t, dict):
+            problems.append(f"{what} is unreadable")
+            continue
+        to, gg, rg = t.get("to"), t.get("give_good"), t.get("get_good")
+        give = _number(t.get("give"), f"{what}: amount given", problems, lo=0)
+        get = _number(t.get("get"), f"{what}: amount received", problems, lo=0)
+        if to not in names or to == country:
+            problems.append(f"{what}: partner {to!r} is not another country")
+        elif gg not in goods or rg not in goods:
+            problems.append(f"{what}: goods must be {', '.join(goods)}")
+        elif give > 0 and get > 0:
+            legs.append((country, to, gg, give, rg, get))
+    return legs
+
+
+def _canon(leg):
+    """One orientation per swap: the alphabetically first country exports."""
+    a, b, ga, qa, gb, qb = leg
+    return (a, b, ga, qa, gb, qb) if a < b else (b, a, gb, qb, ga, qa)
+
+
+def _same_swap(s, t):
+    return (s[:3] == t[:3] and s[4] == t[4]
+            and abs(s[3] - t[3]) < 1e-9 and abs(s[5] - t[5]) < 1e-9)
+
+
+def _describe(swap, side):
+    """A swap in words, from `side`'s point of view."""
+    a, b, ga, qa, gb, qb = swap
+    if side == a:
+        return f"{side} gives {qa:g} {ga} to {b} for {qb:g} {gb}"
+    return f"{side} gives {qb:g} {gb} to {a} for {qa:g} {ga}"
+
+
+def match_trades(legs_by_country):
+    """
+    Pair up the swaps both sides listed. Returns (confirmed, unconfirmed,
+    mismatched): confirmed are engine trade tuples; the others are lines for
+    the report. A swap only one side listed doesn't execute.
+    """
+    by_pair = {}
+    for country, legs in legs_by_country.items():
+        for leg in legs:
+            pair = tuple(sorted(leg[:2]))
+            by_pair.setdefault(pair, {}).setdefault(country, []).append(_canon(leg))
+    confirmed, unconfirmed, mismatched = [], [], []
+    for (a, b), sides in sorted(by_pair.items()):
+        left = list(sides.get(b, []))
+        extra_a = []
+        for swap in sides.get(a, []):
+            hit = next((i for i, s in enumerate(left) if _same_swap(swap, s)), None)
+            if hit is None:
+                extra_a.append(swap)
+            else:
+                confirmed.append(swap)
+                left.pop(hit)
+        if extra_a and left:
+            mismatched.append(
+                f"{a} and {b} disagree -- " + "; ".join(_describe(s, a) for s in extra_a)
+                + " / " + "; ".join(_describe(s, b) for s in left))
+        for side, other, swaps in ((a, b, extra_a if not left else []),
+                                   (b, a, left if not extra_a else [])):
+            for s in swaps:
+                unconfirmed.append(f"{_describe(s, side)} -- {other} didn't list it")
+    return confirmed, unconfirmed, mismatched
+
+
+def _standing_orders(prev, country, sim):
+    """
+    Last round's production, tariffs and compensation for `country`, read
+    straight from the previous workbook (it may be from an earlier phase, so
+    it isn't run through load_round). None when there is nothing to repeat.
+    """
+    if prev is None:
+        return None
+    prod = _read(prev, "production")
+    if prod is None or "country" not in prod.columns:
+        return None
+    rows = prod[prod["country"].astype(str).str.strip() == country]
+    if rows.empty:
+        return None
+    row = rows.iloc[0]
+    goods = list(sim.goods)
+    if sim.phase == 1:
+        cols = {g: [g] for g in goods}
+    else:
+        cols = {g: [f"labor_{g}", f"capital_{g}"] for g in goods}
+    if any(c not in prod.columns for cs in cols.values() for c in cs):
+        return None                      # a different era's layout
+    values = {c: _as_num(row.get(c), 0.0) for cs in cols.values() for c in cs}
+    comp = _as_num(row.get("compensation_pct"), 0.0)
+    tariffs = []
+    tar = _read(prev, "tariffs")
+    if tar is not None and len(tar) and "importer" in tar.columns:
+        for _, t in tar.iterrows():
+            if _as_text(t.get("importer")) != country:
+                continue
+            rate = _as_num(t.get("tariff"), 0.0)
+            tariffs.append((_as_text(t.get("partner")), _as_text(t.get("good")),
+                            rate / 100 if rate > 1 else rate))
+    return {"production": values, "compensation": comp / 100 if comp > 1 else comp,
+            "tariffs": tariffs}
+
+
+def _standing_firm(sim, fid):
+    """What a firm with no file does: last round's scale and export, staying."""
+    cfg = sim.firm_config[fid]
+    scale, export = float(cfg["max_scale"]), False
+    for rd in reversed(sim.history):
+        fr = (rd.get("firms") or {}).get(fid)
+        if fr is None:
+            continue
+        export = bool(fr.get("exported"))
+        if not fr.get("relocated"):      # a moving round records scale 0
+            scale = float(fr.get("scale", scale))
+            break
+    return scale, export
+
+
+def _plan_from_inbox(sim, workbook, inbox):
+    """
+    Turn the inbox into this round's sheets. Returns (sheets, report lines,
+    listing). Nothing is written.
+    """
+    since = _last_played_time(sim, workbook)
+    box = read_inbox(sim, inbox, since)
+    rnd = sim.round_num + 1
+    prev = os.path.join(os.path.dirname(os.path.abspath(workbook)),
+                        f"round{rnd - 1:02d}.xlsx")
+    prev = prev if os.path.exists(prev) else None
+    sheets = _template_sheets(sim, rnd)
+    names, goods, phase = list(sim.countries), list(sim.goods), sim.phase
+    import engine                            # local: engine imports us too
+    comp_max = engine.COMPENSATION_MAX_SHARE * 100
+    tax_lo, tax_hi = engine.MNC_TAX_MIN * 100, engine.MNC_TAX_MAX * 100
+    era = 1 if phase == 1 else 2
+    stamp = lambda t: datetime.datetime.fromtimestamp(t).strftime("%H:%M")
+
+    lines = []
+    legs, tariffs, side_payments = {}, [], []
+    prod = sheets["production"].set_index("country").astype(float)
+    fin = sheets["finance"].set_index("country") if "finance" in sheets else None
+    if fin is not None:
+        fin = fin.astype(object)
+    if "mnc_tax_pct" in prod.columns:          # generated workbooks hold shares
+        for n in names:
+            prod.loc[n, "mnc_tax_pct"] = float(
+                sim.countries[n].get("mnc_tax_choice", 0.0) or 0.0)
+    status = {}
+
+    for n in names:
+        entry = box["teams"].get(("country", n))
+        d = entry["data"] if entry else None
+        problems, row, fin_row, tar_n, legs_n, sp_n = [], {}, {}, [], [], []
+        if d is not None:
+            fphase = d.get("phase")
+            fera = ((1 if fphase == 1 else 2)
+                    if isinstance(fphase, int) and fphase >= 1 else None)
+            if fera != era:
+                problems.append(f"filled in for Phase {fphase}, but this is Phase {phase}")
+            else:
+                p = d.get("production") or {}
+                for g in goods:
+                    workers = _number((p.get("labor") or {}).get(g),
+                                      f"workers in {g}", problems, lo=0)
+                    if era == 1:
+                        row[g] = workers
+                    else:
+                        row[f"labor_{g}"] = workers
+                        row[f"capital_{g}"] = _number((p.get("capital") or {}).get(g),
+                                                      f"capital in {g}", problems, lo=0)
+                row["compensation_pct"] = _number(d.get("compensation_pct"), "compensation",
+                                                  problems, lo=0, hi=comp_max) / 100
+                if "mnc_tax_pct" in prod.columns and d.get("mnc_tax_pct") not in (None, ""):
+                    row["mnc_tax_pct"] = _number(d.get("mnc_tax_pct"), "MNC tax",
+                                                 problems, lo=tax_lo, hi=tax_hi) / 100
+                for partner, rates in (d.get("tariffs") or {}).items():
+                    for g, r in (rates or {}).items():
+                        rate = _number(r, f"tariff on {g} from {partner}", problems,
+                                       lo=0, hi=100)
+                        if partner in names and partner != n and g in goods and rate > 0:
+                            tar_n.append((n, partner, g, rate / 100))
+                legs_n = _trade_legs(n, d.get("trades"), goods, names, problems)
+                for i, sp in enumerate(d.get("side_payments") or [], start=1):
+                    sp = sp if isinstance(sp, dict) else {}
+                    qty = _number(sp.get("qty"), f"side payment {i}", problems, lo=0)
+                    if sp.get("to") in names and sp.get("to") != n                             and sp.get("good") in goods and qty > 0:
+                        sp_n.append((n, sp["to"], sp["good"], qty))
+                if fin is not None:
+                    money = d.get("money") or {}
+                    if money.get("fx_regime") in ("peg", "float"):
+                        fin_row["fx_regime"] = money["fx_regime"]
+                    if isinstance(money.get("capital_controls"), bool):
+                        fin_row["capital_controls"] = "yes" if money["capital_controls"] else "no"
+                    if money.get("money_supply_growth") not in (None, ""):
+                        fin_row["money_supply_growth"] = _number(
+                            money["money_supply_growth"], "money growth", problems,
+                            lo=0, hi=100) / 100
+                    if phase >= 6:
+                        debt = d.get("debt") or {}
+                        fin_row["borrow"] = _number(debt.get("borrow"), "borrowing",
+                                                    problems, lo=0)
+                        fin_row["repay"] = _number(debt.get("repay"), "repayment",
+                                                   problems, lo=0)
+                        fin_row["default"] = "yes" if debt.get("default") is True else "no"
+                    if phase >= 7:
+                        inst = d.get("institutions") or {}
+                        if isinstance(inst.get("join_wto"), bool):
+                            fin_row["join_wto"] = "yes" if inst["join_wto"] else "no"
+                        if n == sim.hegemon and isinstance(inst.get("hegemon_provides"), bool):
+                            fin_row["hegemon_provides"] = ("yes" if inst["hegemon_provides"]
+                                                           else "no")
+        if d is not None and not problems:
+            for col, v in row.items():
+                prod.loc[n, col] = v
+            for col, v in fin_row.items():
+                fin.loc[n, col] = v
+            tariffs += tar_n
+            legs[n] = legs_n
+            side_payments += sp_n
+            note = f"file {stamp(entry['time'])}"
+            older = box["replaced"].get(("country", n))
+            if older:
+                note += f"  (replaces {', '.join(stamp(e['time']) for e in older)})"
+            status[n] = note
+            continue
+        # no usable file: repeat last round
+        why = ("file unusable: " + "; ".join(problems[:3])) if problems else "no file"
+        standing = _standing_orders(prev, n, sim)
+        if standing is None:
+            status[n] = f"{why} -- nothing to repeat, so this round can't play without it"
+            continue
+        for col, v in standing["production"].items():
+            prod.loc[n, col] = v
+        prod.loc[n, "compensation_pct"] = standing["compensation"]
+        tariffs += [(n, pt, g, r) for pt, g, r in standing["tariffs"]]
+        status[n] = f"{why} -- repeating Round {rnd - 1}'s production, tariffs and taxes; no trades"
+
+    confirmed, unconfirmed, mismatched = match_trades(legs)
+
+    firm_lines = []
+    if phase >= 3 and "firms" in sheets:
+        firms = sheets["firms"].set_index("firm").astype(object)
+        quiet = []
+        for fid in firms.index:
+            entry = box["teams"].get(("firm", fid))
+            problems = []
+            if entry:
+                d = entry["data"]
+                cfg = sim.firm_config[fid]
+                scale = _number(d.get("scale"), f"{fid} scale", problems,
+                                lo=0, hi=cfg["max_scale"])
+                dest = d.get("relocate_to") or ""
+                if dest and dest not in names:
+                    problems.append(f"{fid}: {dest!r} is not a country")
+                if not problems:
+                    firms.loc[fid, "scale"] = scale
+                    firms.loc[fid, "relocate_to"] = dest
+                    firms.loc[fid, "export"] = "yes" if d.get("export") is True and phase >= 4 else "no"
+                    move = f", moving to {dest}" if dest else ""
+                    firm_lines.append(f"{fid} file {stamp(entry['time'])} (scale {scale:g}{move})")
+                    continue
+                firm_lines.append(f"{fid} file unusable ({'; '.join(problems[:2])}) -- same as last round")
+            scale, export = _standing_firm(sim, fid)
+            firms.loc[fid, "scale"] = scale
+            firms.loc[fid, "relocate_to"] = ""
+            firms.loc[fid, "export"] = "yes" if export and phase >= 4 else "no"
+            if not entry:
+                quiet.append(fid)
+        if quiet:
+            firm_lines.append("no file, same as last round: " + ", ".join(quiet))
+        sheets["firms"] = firms.reset_index()
+
+    sheets["production"] = prod.reset_index()
+    if fin is not None:
+        sheets["finance"] = fin.reset_index()
+    sheets["tariffs"] = pd.DataFrame(tariffs, columns=["importer", "partner", "good", "tariff"])
+    sheets["trades"] = pd.DataFrame(confirmed, columns=["exporter", "importer", "good_out",
+                                                        "qty_out", "good_in", "qty_in"])
+    sheets["side_payments"] = pd.DataFrame(side_payments,
+                                           columns=["donor", "recipient", "good", "qty"])
+
+    used = {e["file"] for e in box["teams"].values()}
+    replaced = {e["file"] for es in box["replaced"].values() for e in es}
+    why_rejected = dict(box["rejected"])
+    rows = []
+    for name, t in box["listing"]:
+        state = ("used" if name in used else "replaced by a newer file" if name in replaced
+                 else "stale: reached the inbox before the last round was played"
+                 if name in box["stale"] else f"rejected: {why_rejected.get(name, '')}")
+        rows.append({"file": name, "time": datetime.datetime.fromtimestamp(t).isoformat(
+            timespec="seconds"), "mtime": t, "status": state})
+    sheets[INBOX_SHEET] = pd.DataFrame(rows, columns=["file", "time", "mtime", "status"])
+
+    n_countries = sum(1 for n in names if ("country", n) in box["teams"])
+    n_firms = sum(1 for k in box["teams"] if k[0] == "firm")
+    head = f"ROUND {rnd} INBOX -- files from {n_countries} of {len(names)} countries"
+    if phase >= 3:
+        head += f", {n_firms} of {len(sim.firms)} firms"
+    lines.append(head)
+    width = max(len(n) for n in names) + 2
+    for n in names:
+        lines.append(f"  {n:{width}s}{status[n]}")
+    for i, fl in enumerate(firm_lines):
+        lines.append(("  Firms  " if i == 0 else "         ") + fl)
+    lines.append(f"  Trades {len(confirmed)} confirmed by both sides")
+    for u in unconfirmed:
+        lines.append(f"         NOT CONFIRMED: {u}")
+    for m in mismatched:
+        lines.append(f"         MISMATCH: {m}")
+    if unconfirmed or mismatched:
+        lines.append("         (these don't execute -- a team can resubmit to fix one)")
+    for name in box["stale"]:
+        lines.append(f"  Set aside {name}: reached the inbox before Round {rnd - 1} was played")
+    for name, why in box["rejected"]:
+        lines.append(f"  Set aside {name}: {why}")
+    return sheets, lines, box["listing"]
+
+
+def build_round_from_inbox(sim, workbook, inbox=None, verbose=True):
+    """
+    Write this round's workbook from the decision files in the inbox and
+    print what went in. Returns the report lines.
+    """
+    inbox = inbox_path(workbook) if inbox is None else inbox
+    sheets, lines, _ = _plan_from_inbox(sim, workbook, inbox)
+    _write_book(workbook, sheets)
+    if verbose:
+        print("\n" + "\n".join(lines))
+        print(f"\n  Built {_rel(workbook)} from these. Run this cell again to play it.\n")
+    return lines
+
+
+def inbox_report(sim, folder="rounds"):
+    """
+    Who has submitted for the next round, and what would go in -- run it while
+    teams are still deciding. Writes nothing.
+    """
+    workbook = os.path.join(folder, f"round{sim.round_num + 1:02d}.xlsx")
+    _, lines, _ = _plan_from_inbox(sim, workbook, inbox_path(workbook))
+    print("\n" + "\n".join(lines) + "\n")
+
+
+def _built_from_inbox(path):
+    try:
+        pd.read_excel(path, sheet_name=INBOX_SHEET)
+        return True
+    except (ValueError, KeyError):
+        return False
+
+
+def _inbox_changed(path, inbox):
+    """True when the inbox no longer holds exactly the files a build used."""
+    try:
+        used = pd.read_excel(path, sheet_name=INBOX_SHEET)
+    except (ValueError, KeyError):
+        return True
+    then = sorted((str(r["file"]), float(r["mtime"])) for _, r in used.iterrows())
+    now = [(n, float(t)) for n, t in _inbox_listing(inbox)]
+    return [(n, round(t, 3)) for n, t in then] != [(n, round(t, 3)) for n, t in now]
+
+
+def _archive_inbox(path, inbox):
+    """Move the files a played round used into rounds/roundNN/."""
+    dest = os.path.splitext(os.path.abspath(path))[0]
+    moved = 0
+    for name, _ in _inbox_listing(inbox):
+        os.makedirs(dest, exist_ok=True)
+        target = os.path.join(dest, name)
+        stem, ext = os.path.splitext(name)
+        k = 1
+        while os.path.exists(target):
+            target = os.path.join(dest, f"{stem} ({k}){ext}")
+            k += 1
+        shutil.move(os.path.join(inbox, name), target)
+        moved += 1
+    return dest, moved

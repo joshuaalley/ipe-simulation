@@ -1,16 +1,16 @@
 <!doctype html>
 <!--
-  Template for the students' production calculator. Do not publish this file:
-  sim.export_calculator() fills in the data block (the application/json script
-  near the end) from the live simulation and writes docs/index.html, which is
-  what GitHub Pages serves.
+  Template for the students' calculator and round form. Do not publish this
+  file: sim.export_calculator() fills in the data block (the application/json
+  script near the end) from the live simulation and writes docs/index.html,
+  which is what GitHub Pages serves.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Production calculator</title>
+<title>Your round</title>
 <style>
   :root {
     --bg: #f5f4f0;
@@ -27,6 +27,7 @@
     --over: #b3261e;
     --banner-bg: #fde8e7;
     --banner-ink: #8c1d18;
+    --done-bg: #e7f4ea;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -44,38 +45,49 @@
       --over: #ff8a80;
       --banner-bg: #3a1614;
       --banner-ink: #ffb4ab;
+      --done-bg: #16301d;
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--ink);
     font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  main { max-width: 34rem; margin: 0 auto; padding: 1.25rem 1rem 2.5rem; }
+  main { max-width: 36rem; margin: 0 auto; padding: 1.25rem 1rem 2.5rem; }
   h1 { font-size: 1.5rem; line-height: 1.2; margin: 0 0 .3rem; }
+  h2 { font-size: 1.1rem; margin: 0 0 .6rem; }
+  h3 { font-size: .95rem; margin: 1rem 0 .4rem; }
   .lede { color: var(--muted); margin: 0 0 1rem; }
-  .countries {
+  .label { font-size: .75rem; font-weight: 600; letter-spacing: .04em;
+           text-transform: uppercase; color: var(--muted); margin: 0 0 .35rem; }
+  .bar {
     display: grid; gap: .5rem; margin: 0 0 1rem;
     grid-template-columns: repeat(auto-fit, minmax(4.75rem, 1fr));
   }
-  .countries button {
+  .bar.phases { grid-template-columns: repeat(7, 1fr); gap: .35rem; }
+  .bar.two { grid-template-columns: 1fr 1fr; }
+  .bar button {
     font: inherit; font-weight: 600;
-    min-height: 44px; padding: .5rem .4rem;
+    min-height: 44px; padding: .45rem .3rem;
     border: 1.5px solid var(--line); border-radius: 10px;
     background: var(--card); color: var(--ink); cursor: pointer;
   }
-  .countries button[aria-pressed="true"] {
+  .bar.phases button { line-height: 1.1; padding: .35rem .1rem; }
+  .bar.phases small { display: block; font-size: .62rem; font-weight: 500; margin-top: .15rem; }
+  .bar button[aria-pressed="true"] {
     background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
   }
-  .countries button:focus-visible, .linkbtn:focus-visible {
+  .bar button:disabled { opacity: .4; cursor: not-allowed; }
+  button:focus-visible, .linkbtn:focus-visible, select:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 2px;
   }
   .pick { color: var(--muted); margin: 0 0 1rem; }
   .card {
     background: var(--card); border: 1px solid var(--line);
-    border-radius: 14px; padding: 1rem .9rem .75rem;
+    border-radius: 14px; padding: 1rem .9rem .75rem; margin: 0 0 1rem;
   }
   .endow { margin: 0 0 .6rem; }
   table { width: 100%; border-collapse: collapse; }
@@ -88,18 +100,20 @@
   tbody th { font-weight: 600; }
   tbody tr > * { border-top: 1px solid var(--line); }
   tfoot tr > * { border-top: 2px solid var(--line); font-weight: 600; }
-  input {
-    font: inherit; width: 4.4rem; padding: .45rem .5rem;
+  input, select {
+    font: inherit; padding: .45rem .5rem;
     border: 1.5px solid var(--field-line); border-radius: 8px;
     background: var(--field); color: var(--ink);
-    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  input[type="number"], input.num {
+    width: 4.4rem; text-align: right; font-variant-numeric: tabular-nums;
     -moz-appearance: textfield; appearance: textfield;
   }
   input::-webkit-outer-spin-button, input::-webkit-inner-spin-button {
     -webkit-appearance: none; margin: 0;
   }
-  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
-  input.bad { border-color: var(--over); }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  input.bad, select.bad { border-color: var(--over); }
   .out { font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; min-width: 3.2rem; }
   .num { font-variant-numeric: tabular-nums; }
   .ok { color: var(--ok); }
@@ -113,6 +127,29 @@
     background: none; border: 0; padding: .4rem .2rem;
     text-decoration: underline; cursor: pointer;
   }
+  .hint { color: var(--muted); font-size: .85rem; margin: .2rem 0 .5rem; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .45rem; margin: 0 0 .5rem; }
+  .row .x { margin-left: auto; }
+  .field { display: flex; align-items: center; gap: .5rem; margin: 0 0 .55rem; flex-wrap: wrap; }
+  .field > span:first-child { min-width: 9.5rem; }
+  .choices { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .6rem; }
+  .choices label {
+    border: 1.5px solid var(--line); border-radius: 8px; padding: .35rem .6rem; cursor: pointer;
+  }
+  .choices input { margin: 0 .3rem 0 0; }
+  .choices label:has(input:checked) { border-color: var(--accent); }
+  details summary { cursor: pointer; font-weight: 600; margin: .8rem 0 .4rem; }
+  .primary {
+    font: inherit; font-weight: 700; width: 100%; min-height: 48px;
+    border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-ink);
+    cursor: pointer;
+  }
+  .errors { color: var(--over); font-weight: 600; margin: 0 0 .6rem; }
+  .errors div + div { margin-top: .15rem; }
+  .done {
+    background: var(--done-bg); border-radius: 12px; padding: .8rem 1rem; margin: .8rem 0 0;
+  }
+  .done p { margin: .2rem 0; }
   .note { color: var(--muted); font-size: .9rem; margin: .9rem 0 .4rem; }
   footer { color: var(--muted); font-size: .8rem; }
   .banner {
@@ -122,25 +159,38 @@
   @media (max-width: 360px) {
     main { padding: 1rem .6rem 2rem; }
     .card { padding: .8rem .5rem .6rem; }
-    input { width: 3.9rem; padding: .45rem .35rem; }
+    input[type="number"], input.num { width: 3.9rem; padding: .45rem .35rem; }
+    .field > span:first-child { min-width: 0; }
   }
 </style>
 </head>
 <body>
 <main>
-  <h1>Production calculator</h1>
-  <p class="lede">Pick your country, then enter where your workers and capital go.</p>
+  <h1>Your round</h1>
+  <p class="lede">Pick the phase and your country. Work out your production,
+    fill in what your team decided, then submit.</p>
 
-  <noscript><p class="banner">This calculator needs JavaScript turned on.</p></noscript>
+  <noscript><p class="banner">This page needs JavaScript turned on.</p></noscript>
   <div id="broken" class="banner" role="alert" hidden>
     These numbers don’t match the simulation, so don’t use them. Tell your instructor.
   </div>
 
   <div id="app" hidden>
-    <div class="countries" id="countries" role="group" aria-label="Your country"></div>
-    <p class="pick" id="pick">Choose your country to start.</p>
+    <p class="label">Phase (it’s on the board)</p>
+    <div class="bar phases" id="phases" role="group" aria-label="Phase"></div>
+
+    <div id="who" hidden>
+      <div class="bar two" id="modes" role="group" aria-label="Submitting for" hidden>
+        <button type="button" data-mode="country" aria-pressed="true">My country</button>
+        <button type="button" data-mode="firm" aria-pressed="false">A firm I own</button>
+      </div>
+      <div class="bar" id="countries" role="group" aria-label="Your country"></div>
+      <div class="bar" id="firms" role="group" aria-label="Your firm" hidden></div>
+    </div>
+    <p class="pick" id="pick">Choose the phase to start.</p>
 
     <section class="card" id="calc" hidden>
+      <h2>Production</h2>
       <p class="endow" id="endow"></p>
       <table>
         <thead>
@@ -163,17 +213,38 @@
       </table>
       <div class="status" id="status" aria-live="polite"></div>
       <div class="actions"><button type="button" class="linkbtn" id="clear">Clear</button></div>
+      <p class="note">What your own workers and capital produce this round, before
+        trade. Firms located in your country (from Phase 3) add their local sales
+        on top.</p>
     </section>
 
-    <p class="note">What your own workers and capital produce this round, before trade.
-      Output from firms located in your country (from Phase 3) comes on top and isn’t counted here.</p>
+    <section class="card" id="decide" hidden>
+      <h2>What your team decided</h2>
+      <div id="sections"></div>
+    </section>
+
+    <section class="card" id="firmcard" hidden>
+      <h2 id="firmtitle"></h2>
+      <div id="firmfields"></div>
+    </section>
+
+    <section id="submitbox" hidden>
+      <div class="errors" id="errors" role="alert"></div>
+      <button type="button" class="primary" id="submit">Submit</button>
+      <div class="done" id="done" hidden>
+        <p><strong id="donefile"></strong> is saved in your downloads.</p>
+        <p id="donenext"></p>
+        <p id="donesummary" class="hint"></p>
+        <p class="hint">Changed your mind? Submit again. The newest file counts.</p>
+      </div>
+    </section>
+
     <footer id="stamp"></footer>
   </div>
 </main>
 
 <script type="application/json" id="sim-data">{
- "version": 1,
- "phase": 2,
+ "version": 2,
  "uses_capital": true,
  "goods": [
   "cloth",
@@ -488,18 +559,622 @@
    }
   }
  ],
- "updated": "September 11, 2026"
+ "eras": {
+  "2": {
+   "uses_capital": true,
+   "goods": [
+    "cloth",
+    "wine",
+    "machinery"
+   ],
+   "countries": [
+    {
+     "name": "Bosque",
+     "labor": 60.0,
+     "capital": 25.0,
+     "tech": {
+      "cloth": {
+       "tfp": 1.2,
+       "labor_share": 0.7,
+       "capital_share": 0.3
+      },
+      "wine": {
+       "tfp": 0.8,
+       "labor_share": 0.55,
+       "capital_share": 0.45
+      },
+      "machinery": {
+       "tfp": 0.7,
+       "labor_share": 0.25,
+       "capital_share": 0.75
+      }
+     }
+    },
+    {
+     "name": "Llano",
+     "labor": 100.0,
+     "capital": 80.0,
+     "tech": {
+      "cloth": {
+       "tfp": 0.8,
+       "labor_share": 0.7,
+       "capital_share": 0.3
+      },
+      "wine": {
+       "tfp": 1.3,
+       "labor_share": 0.55,
+       "capital_share": 0.45
+      },
+      "machinery": {
+       "tfp": 0.9,
+       "labor_share": 0.25,
+       "capital_share": 0.75
+      }
+     }
+    },
+    {
+     "name": "Sabine",
+     "labor": 100.0,
+     "capital": 35.0,
+     "tech": {
+      "cloth": {
+       "tfp": 1.1,
+       "labor_share": 0.7,
+       "capital_share": 0.3
+      },
+      "wine": {
+       "tfp": 1.0,
+       "labor_share": 0.55,
+       "capital_share": 0.45
+      },
+      "machinery": {
+       "tfp": 0.6,
+       "labor_share": 0.25,
+       "capital_share": 0.75
+      }
+     }
+    },
+    {
+     "name": "Trinity",
+     "labor": 120.0,
+     "capital": 200.0,
+     "tech": {
+      "cloth": {
+       "tfp": 1.0,
+       "labor_share": 0.7,
+       "capital_share": 0.3
+      },
+      "wine": {
+       "tfp": 0.9,
+       "labor_share": 0.55,
+       "capital_share": 0.45
+      },
+      "machinery": {
+       "tfp": 1.2,
+       "labor_share": 0.25,
+       "capital_share": 0.75
+      }
+     }
+    }
+   ],
+   "checks": [
+    {
+     "country": "Bosque",
+     "labor": {
+      "cloth": 30.0,
+      "wine": 20.0,
+      "machinery": 10.0
+     },
+     "capital": {
+      "cloth": 4.166666666666667,
+      "wine": 8.333333333333334,
+      "machinery": 12.5
+     },
+     "expected": {
+      "cloth": 19.911443777681814,
+      "wine": 10.790086440767862,
+      "machinery": 8.275239078777787
+     }
+    },
+    {
+     "country": "Bosque",
+     "labor": {
+      "cloth": 60.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "capital": {
+      "cloth": 25.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "expected": {
+      "cloth": 55.36931158768579,
+      "wine": 0.0,
+      "machinery": 0.0
+     }
+    },
+    {
+     "country": "Bosque",
+     "labor": {
+      "cloth": 60.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0,
+      "machinery": 25.0
+     },
+     "expected": {
+      "cloth": 0.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     }
+    },
+    {
+     "country": "Llano",
+     "labor": {
+      "cloth": 50.0,
+      "wine": 33.333333333333336,
+      "machinery": 16.666666666666668
+     },
+     "capital": {
+      "cloth": 13.333333333333334,
+      "wine": 26.666666666666668,
+      "machinery": 40.0
+     },
+     "expected": {
+      "cloth": 26.90609126681055,
+      "wine": 39.19336858344437,
+      "machinery": 28.92342308200746
+     }
+    },
+    {
+     "country": "Llano",
+     "labor": {
+      "cloth": 100.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "capital": {
+      "cloth": 80.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "expected": {
+      "cloth": 74.81987582580969,
+      "wine": 0.0,
+      "machinery": 0.0
+     }
+    },
+    {
+     "country": "Llano",
+     "labor": {
+      "cloth": 100.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0,
+      "machinery": 80.0
+     },
+     "expected": {
+      "cloth": 0.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     }
+    },
+    {
+     "country": "Sabine",
+     "labor": {
+      "cloth": 50.0,
+      "wine": 33.333333333333336,
+      "machinery": 16.666666666666668
+     },
+     "capital": {
+      "cloth": 5.833333333333333,
+      "wine": 11.666666666666666,
+      "machinery": 17.5
+     },
+     "expected": {
+      "cloth": 28.869996177831403,
+      "wine": 20.78305396226999,
+      "machinery": 10.372703747942278
+     }
+    },
+    {
+     "country": "Sabine",
+     "labor": {
+      "cloth": 100.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "capital": {
+      "cloth": 35.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "expected": {
+      "cloth": 80.28106006543695,
+      "wine": 0.0,
+      "machinery": 0.0
+     }
+    },
+    {
+     "country": "Sabine",
+     "labor": {
+      "cloth": 100.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0,
+      "machinery": 35.0
+     },
+     "expected": {
+      "cloth": 0.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     }
+    },
+    {
+     "country": "Trinity",
+     "labor": {
+      "cloth": 60.0,
+      "wine": 40.0,
+      "machinery": 20.0
+     },
+     "capital": {
+      "cloth": 33.333333333333336,
+      "wine": 66.66666666666667,
+      "machinery": 100.0
+     },
+     "expected": {
+      "cloth": 50.30017532828786,
+      "wine": 45.303779838466696,
+      "machinery": 80.24883659717064
+     }
+    },
+    {
+     "country": "Trinity",
+     "labor": {
+      "cloth": 120.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "capital": {
+      "cloth": 200.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "expected": {
+      "cloth": 139.87363808288586,
+      "wine": 0.0,
+      "machinery": 0.0
+     }
+    },
+    {
+     "country": "Trinity",
+     "labor": {
+      "cloth": 120.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0,
+      "machinery": 200.0
+     },
+     "expected": {
+      "cloth": 0.0,
+      "wine": 0.0,
+      "machinery": 0.0
+     }
+    }
+   ]
+  },
+  "1": {
+   "uses_capital": false,
+   "goods": [
+    "cloth",
+    "wine"
+   ],
+   "countries": [
+    {
+     "name": "Bosque",
+     "labor": 60.0,
+     "capital": null,
+     "tech": {
+      "cloth": {
+       "tfp": 4.0,
+       "labor_share": 1.0,
+       "capital_share": 0.0
+      },
+      "wine": {
+       "tfp": 1.0,
+       "labor_share": 1.0,
+       "capital_share": 0.0
+      }
+     }
+    },
+    {
+     "name": "Llano",
+     "labor": 100.0,
+     "capital": null,
+     "tech": {
+      "cloth": {
+       "tfp": 1.0,
+       "labor_share": 1.0,
+       "capital_share": 0.0
+      },
+      "wine": {
+       "tfp": 3.0,
+       "labor_share": 1.0,
+       "capital_share": 0.0
+      }
+     }
+    },
+    {
+     "name": "Sabine",
+     "labor": 100.0,
+     "capital": null,
+     "tech": {
+      "cloth": {
+       "tfp": 1.0,
+       "labor_share": 1.0,
+       "capital_share": 0.0
+      },
+      "wine": {
+       "tfp": 1.5,
+       "labor_share": 1.0,
+       "capital_share": 0.0
+      }
+     }
+    },
+    {
+     "name": "Trinity",
+     "labor": 120.0,
+     "capital": null,
+     "tech": {
+      "cloth": {
+       "tfp": 3.0,
+       "labor_share": 1.0,
+       "capital_share": 0.0
+      },
+      "wine": {
+       "tfp": 1.5,
+       "labor_share": 1.0,
+       "capital_share": 0.0
+      }
+     }
+    }
+   ],
+   "checks": [
+    {
+     "country": "Bosque",
+     "labor": {
+      "cloth": 40.0,
+      "wine": 20.0
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0
+     },
+     "expected": {
+      "cloth": 160.0,
+      "wine": 20.0
+     }
+    },
+    {
+     "country": "Bosque",
+     "labor": {
+      "cloth": 60.0,
+      "wine": 0.0
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0
+     },
+     "expected": {
+      "cloth": 240.0,
+      "wine": 0.0
+     }
+    },
+    {
+     "country": "Llano",
+     "labor": {
+      "cloth": 66.66666666666667,
+      "wine": 33.333333333333336
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0
+     },
+     "expected": {
+      "cloth": 66.66666666666667,
+      "wine": 100.0
+     }
+    },
+    {
+     "country": "Llano",
+     "labor": {
+      "cloth": 100.0,
+      "wine": 0.0
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0
+     },
+     "expected": {
+      "cloth": 100.0,
+      "wine": 0.0
+     }
+    },
+    {
+     "country": "Sabine",
+     "labor": {
+      "cloth": 66.66666666666667,
+      "wine": 33.333333333333336
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0
+     },
+     "expected": {
+      "cloth": 66.66666666666667,
+      "wine": 50.0
+     }
+    },
+    {
+     "country": "Sabine",
+     "labor": {
+      "cloth": 100.0,
+      "wine": 0.0
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0
+     },
+     "expected": {
+      "cloth": 100.0,
+      "wine": 0.0
+     }
+    },
+    {
+     "country": "Trinity",
+     "labor": {
+      "cloth": 80.0,
+      "wine": 40.0
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0
+     },
+     "expected": {
+      "cloth": 240.0,
+      "wine": 60.0
+     }
+    },
+    {
+     "country": "Trinity",
+     "labor": {
+      "cloth": 120.0,
+      "wine": 0.0
+     },
+     "capital": {
+      "cloth": 0.0,
+      "wine": 0.0
+     },
+     "expected": {
+      "cloth": 360.0,
+      "wine": 0.0
+     }
+    }
+   ]
+  }
+ },
+ "firms": [
+  {
+   "id": "F1",
+   "variety": "Cloth-A",
+   "industry": "cloth",
+   "max_scale": 40.0,
+   "owners": [
+    "Sabine"
+   ]
+  },
+  {
+   "id": "F3",
+   "variety": "Cloth-C",
+   "industry": "cloth",
+   "max_scale": 40.0,
+   "owners": [
+    "Trinity"
+   ]
+  },
+  {
+   "id": "F4",
+   "variety": "Wine-A",
+   "industry": "wine",
+   "max_scale": 40.0,
+   "owners": [
+    "Trinity"
+   ]
+  },
+  {
+   "id": "F5",
+   "variety": "Wine-B",
+   "industry": "wine",
+   "max_scale": 40.0,
+   "owners": [
+    "Llano"
+   ]
+  },
+  {
+   "id": "F7",
+   "variety": "Mach-A",
+   "industry": "machinery",
+   "max_scale": 40.0,
+   "owners": [
+    "Sabine"
+   ]
+  },
+  {
+   "id": "F8",
+   "variety": "Mach-B",
+   "industry": "machinery",
+   "max_scale": 40.0,
+   "owners": [
+    "Bosque"
+   ]
+  },
+  {
+   "id": "F11",
+   "variety": "Cloth-D",
+   "industry": "cloth",
+   "max_scale": 40.0,
+   "owners": [
+    "Bosque"
+   ]
+  },
+  {
+   "id": "F12",
+   "variety": "Wine-D",
+   "industry": "wine",
+   "max_scale": 40.0,
+   "owners": [
+    "Llano"
+   ]
+  }
+ ],
+ "rules": {
+  "tariff_max": 100,
+  "compensation_max": 25.0,
+  "mnc_tax_min": 0.0,
+  "mnc_tax_max": 50.0,
+  "money_growth": [
+   0.0,
+   2.0,
+   5.0,
+   10.0
+  ]
+ },
+ "inbox_url": "https://www.dropbox.com/request/1r08vksl83w15kf8ilba",
+ "updated": "September 24, 2026"
 }</script>
 <script>
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
-  var STORE = "ipe-calculator:v1";
+  var STORE = "ipe-round:v2", OLD_STORE = "ipe-calculator:v1";
 
   function broken(why) {
     $("broken").hidden = false;
     $("app").hidden = true;
-    if (why) console.error("Production calculator: " + why);
+    if (why) console.error("Round page: " + why);
   }
 
   var data;
@@ -518,103 +1193,236 @@
     if (L > 0 && t.capital_share === 0) return t.tfp * Math.pow(L, t.labor_share);
     return 0;
   }
-  window.ipeCalculator = { data: data, output: output };   // for checking by hand
 
-  var byName = {};
-  data.countries.forEach(function (c) { byName[c.name] = c; });
+  // Every production era the page knows: Phase 1 (labor only) and Phase 2 on.
+  var eras = data.eras || {};
+  if (!eras["1"] && !eras["2"]) {
+    eras[data.uses_capital ? "2" : "1"] = { uses_capital: data.uses_capital, goods: data.goods,
+                                            countries: data.countries, checks: data.checks };
+  }
+  Object.keys(eras).forEach(function (k) {
+    var e = eras[k];
+    e.byName = {};
+    e.countries.forEach(function (c) { e.byName[c.name] = c; });
+  });
 
   // Self-check: recompute the values the engine produced when this page was
   // written. Any disagreement means the page's formula and the engine's have
   // drifted apart -- so show nothing rather than wrong numbers.
-  for (var i = 0; i < data.checks.length; i++) {
-    var chk = data.checks[i], c0 = byName[chk.country];
-    for (var j = 0; j < data.goods.length; j++) {
-      var g0 = data.goods[j];
-      var got = output(c0.tech[g0], chk.labor[g0] || 0, (chk.capital || {})[g0] || 0);
-      var want = chk.expected[g0];
-      if (!(Math.abs(got - want) <= 1e-9 * Math.max(1, Math.abs(want)))) {
-        broken("self-check failed for " + chk.country + " " + g0 +
-               ": page " + got + ", engine " + want);
-        return;
+  var eraKeys = Object.keys(eras);
+  for (var ei = 0; ei < eraKeys.length; ei++) {
+    var era0 = eras[eraKeys[ei]];
+    for (var i = 0; i < era0.checks.length; i++) {
+      var chk = era0.checks[i], c0 = era0.byName[chk.country];
+      for (var j = 0; j < era0.goods.length; j++) {
+        var g0 = era0.goods[j];
+        var got = output(c0.tech[g0], chk.labor[g0] || 0, (chk.capital || {})[g0] || 0);
+        var want = chk.expected[g0];
+        if (!(Math.abs(got - want) <= 1e-9 * Math.max(1, Math.abs(want)))) {
+          broken("self-check failed for " + chk.country + " " + g0 +
+                 ": page " + got + ", engine " + want);
+          return;
+        }
       }
     }
   }
 
-  var usesK = data.uses_capital;
+  var PHASES = [[1, "Ricardo"], [2, "Factors"], [3, "Firms"], [4, "Export"],
+                [5, "Money"], [6, "Debt"], [7, "Rules"]];
+  var rules = data.rules || { tariff_max: 100, compensation_max: 25, mnc_tax_min: 0,
+                              mnc_tax_max: 50, money_growth: [0, 2, 5, 10] };
+  var firms = data.firms || [];
+  var firmById = {};
+  firms.forEach(function (f) { firmById[f.id] = f; });
+
   var cap = function (s) { return s.charAt(0).toUpperCase() + s.slice(1); };
   var fmt = function (x) { return Number.isInteger(x) ? String(x) : x.toFixed(1); };
+  var eraOf = function (p) { return p === 1 ? "1" : "2"; };
 
-  var saved = {};
-  try { saved = JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { saved = {}; }
-  var alloc = (saved.alloc && typeof saved.alloc === "object") ? saved.alloc : {};
-  var current = byName[saved.country] ? saved.country : null;
-
+  // ---- remembered between visits ---------------------------------------
+  var st = { phase: null, mode: "country", country: null, firm: null,
+             alloc: {}, forms: {}, firmForms: {} };
+  try {
+    var got2 = JSON.parse(localStorage.getItem(STORE));
+    if (got2 && typeof got2 === "object") {
+      Object.keys(st).forEach(function (k) { if (got2[k] != null) st[k] = got2[k]; });
+    } else {
+      var old = JSON.parse(localStorage.getItem(OLD_STORE));     // the calculator's own
+      if (old && old.alloc) {
+        var oldEra = data.uses_capital ? "2" : "1";
+        Object.keys(old.alloc).forEach(function (c) { st.alloc[oldEra + ":" + c] = old.alloc[c]; });
+        st.country = old.country || null;
+      }
+    }
+  } catch (e) { /* private mode: the page still works, it just forgets */ }
+  ["alloc", "forms", "firmForms"].forEach(function (k) {
+    if (!st[k] || typeof st[k] !== "object") st[k] = {};
+  });
   function save() {
-    try {
-      localStorage.setItem(STORE, JSON.stringify({ country: current, alloc: alloc }));
-    } catch (e) { /* private mode: the page still works, it just forgets */ }
+    try { localStorage.setItem(STORE, JSON.stringify(st)); } catch (e) { /* see above */ }
   }
 
-  if (!usesK) {
-    Array.prototype.forEach.call(document.querySelectorAll(".k"),
-                                 function (el) { el.hidden = true; });
-  }
-
-  // One button per country in the simulation.
-  var bar = $("countries");
-  data.countries.forEach(function (c) {
-    var b = document.createElement("button");
-    b.type = "button";
-    b.textContent = c.name;
-    b.setAttribute("aria-pressed", "false");
-    b.addEventListener("click", function () { choose(c.name); });
-    bar.appendChild(b);
-  });
-
-  // One row per good: workers, capital, output.
-  var inputs = {}, outs = {};
-  data.goods.forEach(function (g) {
-    var tr = document.createElement("tr");
-    var th = document.createElement("th");
-    th.scope = "row";
-    th.textContent = cap(g);
-    tr.appendChild(th);
-    inputs[g] = {};
-    [["L", "workers"], ["K", "capital"]].forEach(function (pair) {
-      var f = pair[0];
-      if (f === "K" && !usesK) return;
-      var td = document.createElement("td");
-      var inp = document.createElement("input");
-      inp.type = "number";
-      inp.inputMode = "decimal";
-      inp.min = "0";
-      inp.step = "1";
-      inp.placeholder = "0";
-      inp.setAttribute("aria-label", cap(g) + " " + pair[1]);
-      inp.addEventListener("input", function () {
-        var a = alloc[current] || (alloc[current] = { L: {}, K: {} });
-        (a[f] = a[f] || {})[g] = inp.value;
-        save();
-        update();
-      });
-      td.appendChild(inp);
-      tr.appendChild(td);
-      inputs[g][f] = inp;
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (a) {
+      if (a === "text") n.textContent = attrs[a];
+      else if (a === "cls") n.className = attrs[a];
+      else n.setAttribute(a, attrs[a]);
     });
-    var out = document.createElement("td");
-    out.className = "out";
-    tr.appendChild(out);
-    outs[g] = out;
-    $("rows").appendChild(tr);
-  });
+    (kids || []).forEach(function (k) {
+      n.appendChild(typeof k === "string" ? document.createTextNode(k) : k);
+    });
+    return n;
+  }
 
-  function read(inp) {
-    if (!inp) return 0;
-    if (inp.validity && inp.validity.badInput) return NaN;
-    var raw = String(inp.value).trim();
+  function numInput(value, label, onInput, width) {
+    var inp = el("input", { type: "number", inputmode: "decimal", min: "0", step: "any",
+                            placeholder: "0", "aria-label": label });
+    inp.value = value == null ? "" : value;
+    if (width) inp.style.width = width;
+    inp.addEventListener("input", function () { onInput(inp.value); });
+    return inp;
+  }
+
+  function select(options, value, label, onChange) {
+    var s = el("select", { "aria-label": label });
+    options.forEach(function (o) {
+      var opt = el("option", { value: o[0], text: o[1] });
+      if (o[2]) opt.disabled = true;
+      s.appendChild(opt);
+    });
+    s.value = value || "";
+    s.addEventListener("change", function () { onChange(s.value); });
+    return s;
+  }
+
+  function choices(name, options, value, onChange) {
+    var box = el("div", { cls: "choices", role: "radiogroup" });
+    options.forEach(function (o) {
+      var r = el("input", { type: "radio", name: name, value: o[0] });
+      r.checked = (value || "") === o[0];
+      r.addEventListener("change", function () { if (r.checked) onChange(o[0]); });
+      box.appendChild(el("label", {}, [r, o[1]]));
+    });
+    return box;
+  }
+
+  function read(v) {
+    var raw = String(v == null ? "" : v).trim();
     if (raw === "") return 0;
     var x = Number(raw);
-    return (isFinite(x) && x >= 0) ? x : NaN;
+    return isFinite(x) ? x : NaN;
+  }
+  var blank = function (v) { return String(v == null ? "" : v).trim() === ""; };
+
+  // ---- the phase, who, and which cards show ------------------------------
+  var phaseBar = $("phases");
+  PHASES.forEach(function (p) {
+    var b = el("button", { type: "button", "aria-pressed": "false" },
+               [String(p[0]), el("small", { text: p[1] })]);
+    b.disabled = !eras[eraOf(p[0])];
+    b.addEventListener("click", function () { st.phase = p[0]; save(); render(); });
+    phaseBar.appendChild(b);
+  });
+  Array.prototype.forEach.call($("modes").children, function (b) {
+    b.addEventListener("click", function () { st.mode = b.getAttribute("data-mode"); save(); render(); });
+  });
+  var countryNames = eras[eraKeys[0]].countries.map(function (c) { return c.name; });
+  countryNames.forEach(function (n) {
+    var b = el("button", { type: "button", "aria-pressed": "false", text: n });
+    b.addEventListener("click", function () { st.country = n; save(); render(); });
+    $("countries").appendChild(b);
+  });
+  firms.forEach(function (f) {
+    var b = el("button", { type: "button", "aria-pressed": "false" },
+               [f.id, el("small", { text: " " + f.variety })]);
+    b.setAttribute("data-firm", f.id);
+    b.addEventListener("click", function () { st.firm = f.id; save(); render(); });
+    $("firms").appendChild(b);
+  });
+
+  function press(bar, test) {
+    Array.prototype.forEach.call(bar.children, function (b) {
+      b.setAttribute("aria-pressed", String(test(b)));
+    });
+  }
+
+  function render() {
+    var phase = st.phase, era = phase ? eras[eraOf(phase)] : null;
+    if (phase && !era) { st.phase = phase = null; }
+    press(phaseBar, function (b) { return Number(b.firstChild.nodeValue) === phase; });
+    var firmMode = phase >= 3 && firms.length > 0 && st.mode === "firm";
+    if (st.mode === "firm" && !firmMode) st.mode = "country";
+    $("who").hidden = !phase;
+    $("modes").hidden = !(phase >= 3 && firms.length);
+    press($("modes"), function (b) { return b.getAttribute("data-mode") === st.mode; });
+    $("countries").hidden = firmMode;
+    $("firms").hidden = !firmMode;
+    press($("countries"), function (b) { return b.textContent === st.country; });
+    press($("firms"), function (b) { return b.getAttribute("data-firm") === st.firm; });
+
+    var ready = phase && (firmMode ? firmById[st.firm] : era && era.byName[st.country]);
+    $("pick").hidden = !!ready;
+    $("pick").textContent = !phase ? "Choose the phase to start." :
+      firmMode ? "Choose your firm." : "Choose your country.";
+    $("calc").hidden = $("decide").hidden = !(ready && !firmMode);
+    $("firmcard").hidden = !(ready && firmMode);
+    $("submitbox").hidden = !ready;
+    $("done").hidden = true;
+    $("errors").textContent = "";
+    if (!ready) return;
+    if (firmMode) {
+      renderFirm();
+      $("submit").textContent = "Submit " + st.firm + "’s round";
+    } else {
+      renderCalc(era);
+      renderDecisions(era);
+      $("submit").textContent = "Submit " + st.country + "’s round";
+    }
+  }
+
+  // ---- production calculator ---------------------------------------------
+  var inputs = {}, outs = {};
+  function allocFor(era) {
+    var key = eraOf(st.phase) + ":" + st.country;
+    return st.alloc[key] || (st.alloc[key] = { L: {}, K: {} });
+  }
+
+  function renderCalc(era) {
+    var c = era.byName[st.country], usesK = era.uses_capital;
+    Array.prototype.forEach.call(document.querySelectorAll(".k"),
+                                 function (n) { n.hidden = !usesK; });
+    var endow = $("endow");
+    endow.textContent = "";
+    endow.appendChild(document.createTextNode(c.name + " has "));
+    endow.appendChild(el("strong", { text: fmt(c.labor) + " workers" }));
+    if (usesK) {
+      endow.appendChild(document.createTextNode(" and "));
+      endow.appendChild(el("strong", { text: fmt(c.capital) + " units of capital" }));
+    }
+    endow.appendChild(document.createTextNode("."));
+    var rows = $("rows"), a = allocFor(era);
+    rows.textContent = "";
+    inputs = {}; outs = {};
+    era.goods.forEach(function (g) {
+      var tr = el("tr", {}, [el("th", { scope: "row", text: cap(g) })]);
+      inputs[g] = {};
+      [["L", "workers"], ["K", "capital"]].forEach(function (pair) {
+        var f = pair[0];
+        if (f === "K" && !usesK) return;
+        var inp = numInput((a[f] || {})[g], cap(g) + " " + pair[1], function (v) {
+          (a[f] = a[f] || {})[g] = v;
+          save();
+          updateCalc();
+        });
+        inputs[g][f] = inp;
+        tr.appendChild(el("td", {}, [inp]));
+      });
+      outs[g] = el("td", { cls: "out" });
+      tr.appendChild(outs[g]);
+      rows.appendChild(tr);
+    });
+    updateCalc();
   }
 
   // Same rule the engine applies before it will run a round: each factor
@@ -631,95 +1439,329 @@
              " too many (you have " + fmt(endow) + ")" };
   }
 
-  function update() {
-    var c = byName[current];
-    if (!c) return;
-    var totL = 0, totK = 0, bad = false;
-    data.goods.forEach(function (g) {
-      var L = read(inputs[g].L), K = usesK ? read(inputs[g].K) : 0;
-      inputs[g].L.classList.toggle("bad", isNaN(L));
-      if (usesK) inputs[g].K.classList.toggle("bad", isNaN(K));
-      if (isNaN(L) || isNaN(K)) {
-        bad = true;
-        outs[g].textContent = "—";
-        return;
-      }
-      totL += L;
-      totK += K;
-      outs[g].textContent = output(c.tech[g], L, K).toFixed(1);
+  function production(era) {
+    var c = era.byName[st.country], usesK = era.uses_capital, a = allocFor(era);
+    var res = { L: {}, K: {}, totL: 0, totK: 0, bad: false, lines: [] };
+    era.goods.forEach(function (g) {
+      var L = read((a.L || {})[g]), K = usesK ? read((a.K || {})[g]) : 0;
+      if (isNaN(L) || L < 0 || isNaN(K) || K < 0) { res.bad = true; return; }
+      res.L[g] = L; res.K[g] = K; res.totL += L; res.totK += K;
     });
+    if (!res.bad) {
+      res.lines.push(factorLine(res.totL, c.labor, "worker", "workers"));
+      if (usesK) res.lines.push(factorLine(res.totK, c.capital, "unit of capital", "units of capital"));
+    }
+    return res;
+  }
 
+  function updateCalc() {
+    var era = eras[eraOf(st.phase)], c = era.byName[st.country], p = production(era);
+    era.goods.forEach(function (g) {
+      var L = inputs[g].L, K = inputs[g].K;
+      var badL = isNaN(read(L.value)) || read(L.value) < 0;
+      var badK = K ? (isNaN(read(K.value)) || read(K.value) < 0) : false;
+      L.classList.toggle("bad", badL);
+      if (K) K.classList.toggle("bad", badK);
+      outs[g].textContent = (badL || badK) ? "—" :
+        output(c.tech[g], read(L.value), K ? read(K.value) : 0).toFixed(1);
+    });
     var status = $("status");
     status.textContent = "";
-    function say(line) {
-      var d = document.createElement("div");
-      d.className = line.cls;
-      d.textContent = line.text;
-      status.appendChild(d);
-    }
-    if (bad) {
-      $("totL").textContent = "—";
-      $("totK").textContent = "—";
-      $("totL").className = $("totK").className = "num";
-      if (!usesK) $("totK").hidden = true;
-      say({ cls: "over", text: "Use numbers of 0 or more." });
+    if (p.bad) {
+      $("totL").textContent = $("totK").textContent = "—";
+      status.appendChild(el("div", { cls: "over", text: "Use numbers of 0 or more." }));
       return;
     }
-    var lineL = factorLine(totL, c.labor, "worker", "workers");
-    $("totL").textContent = fmt(totL);
-    $("totL").className = "num " + lineL.cls;
-    say(lineL);
-    if (usesK) {
-      var lineK = factorLine(totK, c.capital, "unit of capital", "units of capital");
-      $("totK").textContent = fmt(totK);
-      $("totK").className = "num k " + lineK.cls;
-      say(lineK);
+    $("totL").textContent = fmt(p.totL);
+    $("totL").className = "num " + p.lines[0].cls;
+    if (era.uses_capital) {
+      $("totK").textContent = fmt(p.totK);
+      $("totK").className = "num k " + p.lines[1].cls;
     }
-  }
-
-  function strong(text) {
-    var s = document.createElement("strong");
-    s.textContent = text;
-    return s;
-  }
-
-  function choose(name) {
-    current = name;
-    Array.prototype.forEach.call(bar.children, function (b) {
-      b.setAttribute("aria-pressed", String(b.textContent === name));
-    });
-    var c = byName[name];
-    var endow = $("endow");
-    endow.textContent = "";
-    endow.appendChild(document.createTextNode(name + " has "));
-    endow.appendChild(strong(fmt(c.labor) + " workers"));
-    if (usesK) {
-      endow.appendChild(document.createTextNode(" and "));
-      endow.appendChild(strong(fmt(c.capital) + " units of capital"));
-    }
-    endow.appendChild(document.createTextNode("."));
-
-    var a = alloc[name] || {};
-    data.goods.forEach(function (g) {
-      inputs[g].L.value = (a.L && a.L[g] != null) ? a.L[g] : "";
-      if (usesK) inputs[g].K.value = (a.K && a.K[g] != null) ? a.K[g] : "";
-    });
-    $("pick").hidden = true;
-    $("calc").hidden = false;
-    save();
-    update();
+    p.lines.forEach(function (line) { status.appendChild(el("div", { cls: line.cls, text: line.text })); });
   }
 
   $("clear").addEventListener("click", function () {
-    alloc[current] = { L: {}, K: {} };
-    choose(current);
+    st.alloc[eraOf(st.phase) + ":" + st.country] = { L: {}, K: {} };
+    save();
+    render();
+  });
+
+  // ---- the rest of the round -----------------------------------------------
+  function formFor(name) {
+    var f = st.forms[name] || (st.forms[name] = {});
+    f.tariffs = f.tariffs || {};
+    f.trades = f.trades || [];
+    f.gifts = f.gifts || [];
+    return f;
+  }
+
+  function renderDecisions(era) {
+    var box = $("sections"), phase = st.phase, me = st.country, f = formFor(me);
+    var partners = countryNames.filter(function (n) { return n !== me; });
+    var goodOpts = [["", "good…"]].concat(era.goods.map(function (g) { return [g, g]; }));
+    var partnerOpts = [["", "country…"]].concat(partners.map(function (n) { return [n, n]; }));
+    var redraw = function () { save(); renderDecisions(era); };
+    box.textContent = "";
+
+    // tariffs
+    box.appendChild(el("h3", { text: "Tariffs on your imports (%)" }));
+    box.appendChild(el("p", { cls: "hint", text: "Blank means no tariff." }));
+    var tt = el("table"), thr = el("tr", {}, [el("th", { text: "From" })]);
+    era.goods.forEach(function (g) { thr.appendChild(el("th", { scope: "col", text: g })); });
+    tt.appendChild(el("thead", {}, [thr]));
+    var tb = el("tbody");
+    partners.forEach(function (pn) {
+      var tr = el("tr", {}, [el("th", { scope: "row", text: pn })]);
+      era.goods.forEach(function (g) {
+        var cur = (f.tariffs[pn] || {})[g];
+        tr.appendChild(el("td", {}, [numInput(cur, "Tariff on " + g + " from " + pn, function (v) {
+          (f.tariffs[pn] = f.tariffs[pn] || {})[g] = v; save();
+        })]));
+      });
+      tb.appendChild(tr);
+    });
+    tt.appendChild(tb);
+    box.appendChild(tt);
+
+    // trades
+    box.appendChild(el("h3", { text: "Trades you agreed" }));
+    box.appendChild(el("p", { cls: "hint", text: "List every swap. Your partner must list the same swap, or it doesn’t happen." }));
+    f.trades.forEach(function (t, k) {
+      var set = function (key) { return function (v) { t[key] = v; save(); }; };
+      var row = el("div", { cls: "row" }, [
+        "We give", numInput(t.give, "Trade " + (k + 1) + ": amount you give", set("give")),
+        select(goodOpts, t.give_good, "Trade " + (k + 1) + ": good you give", set("give_good")),
+        "to", select(partnerOpts, t.to, "Trade " + (k + 1) + ": partner", set("to")),
+        "for", numInput(t.get, "Trade " + (k + 1) + ": amount you get", set("get")),
+        select(goodOpts, t.get_good, "Trade " + (k + 1) + ": good you get", set("get_good"))]);
+      var x = el("button", { type: "button", cls: "linkbtn x", text: "remove",
+                             "aria-label": "Remove trade " + (k + 1) });
+      x.addEventListener("click", function () { f.trades.splice(k, 1); redraw(); });
+      row.appendChild(x);
+      box.appendChild(row);
+    });
+    var addT = el("button", { type: "button", cls: "linkbtn", text: "+ Add a trade" });
+    addT.addEventListener("click", function () { f.trades.push({}); redraw(); });
+    box.appendChild(addT);
+
+    // policies
+    box.appendChild(el("h3", { text: "Policies" }));
+    box.appendChild(el("div", { cls: "field" }, [
+      el("span", { text: "Compensation (% of consumption)" }),
+      numInput(f.comp, "Compensation percent", function (v) { f.comp = v; save(); }),
+      el("span", { cls: "hint", text: "0–" + fmt(rules.compensation_max) })]));
+    if (phase >= 3) {
+      box.appendChild(el("div", { cls: "field" }, [
+        el("span", { text: "MNC tax (% of foreign firms’ revenue)" }),
+        numInput(f.mnc, "MNC tax percent", function (v) { f.mnc = v; save(); }),
+        el("span", { cls: "hint", text: "blank keeps last round’s" })]));
+    }
+
+    // side payments, tucked away
+    var det = el("details", {}, [el("summary", { text: "Side payments (goods you give away)" })]);
+    if (f.gifts.length) det.open = true;
+    f.gifts.forEach(function (sp, k) {
+      var set = function (key) { return function (v) { sp[key] = v; save(); }; };
+      var row = el("div", { cls: "row" }, [
+        "Give", numInput(sp.qty, "Side payment " + (k + 1) + ": amount", set("qty")),
+        select(goodOpts, sp.good, "Side payment " + (k + 1) + ": good", set("good")),
+        "to", select(partnerOpts, sp.to, "Side payment " + (k + 1) + ": country", set("to"))]);
+      var x = el("button", { type: "button", cls: "linkbtn x", text: "remove" });
+      x.addEventListener("click", function () { f.gifts.splice(k, 1); redraw(); });
+      row.appendChild(x);
+      det.appendChild(row);
+    });
+    var addG = el("button", { type: "button", cls: "linkbtn", text: "+ Add a side payment" });
+    addG.addEventListener("click", function () { f.gifts.push({}); redraw(); });
+    det.appendChild(addG);
+    box.appendChild(det);
+
+    // money, debt, institutions: only once they're live
+    var keep = ["", "Keep"];
+    if (phase >= 5) {
+      box.appendChild(el("h3", { text: "Money" }));
+      box.appendChild(el("p", { cls: "hint", text: "Exchange rate" }));
+      box.appendChild(choices("fx", [keep, ["peg", "Peg"], ["float", "Float"]], f.fx,
+                              function (v) { f.fx = v; save(); }));
+      box.appendChild(el("p", { cls: "hint", text: "Capital account" }));
+      box.appendChild(choices("cc", [keep, ["open", "Open"], ["controls", "Controls"]], f.controls,
+                              function (v) { f.controls = v; save(); }));
+      box.appendChild(el("p", { cls: "hint", text: "Money growth" }));
+      box.appendChild(choices("mg", [keep].concat(rules.money_growth.map(function (g) {
+        return [String(g), fmt(g) + "%"]; })), f.growth, function (v) { f.growth = v; save(); }));
+    }
+    if (phase >= 6) {
+      box.appendChild(el("h3", { text: "Debt" }));
+      box.appendChild(el("div", { cls: "field" }, [el("span", { text: "Borrow" }),
+        numInput(f.borrow, "Borrow", function (v) { f.borrow = v; save(); })]));
+      box.appendChild(el("div", { cls: "field" }, [el("span", { text: "Repay" }),
+        numInput(f.repay, "Repay", function (v) { f.repay = v; save(); })]));
+      var dcb = el("input", { type: "checkbox" });
+      dcb.checked = !!f.dflt;
+      dcb.addEventListener("change", function () { f.dflt = dcb.checked; save(); });
+      box.appendChild(el("label", { cls: "field" }, [dcb, "Default on everything we owe"]));
+    }
+    if (phase >= 7) {
+      box.appendChild(el("h3", { text: "Institutions" }));
+      box.appendChild(el("p", { cls: "hint", text: "WTO membership" }));
+      box.appendChild(choices("wto", [keep, ["join", "Join / stay in"], ["leave", "Stay out / leave"]],
+                              f.wto, function (v) { f.wto = v; save(); }));
+      box.appendChild(el("p", { cls: "hint", text: "Only if you are the hegemon: provide public goods?" }));
+      box.appendChild(choices("heg", [keep, ["yes", "Yes"], ["no", "No"]], f.heg,
+                              function (v) { f.heg = v; save(); }));
+    }
+  }
+
+  // ---- a firm -----------------------------------------------------------------
+  function renderFirm() {
+    var fm = firmById[st.firm], f = st.firmForms[fm.id] || (st.firmForms[fm.id] = {});
+    if (f.scale === undefined) { f.scale = String(fm.max_scale); save(); }   // most run flat out
+    $("firmtitle").textContent = fm.id + " · " + fm.variety + " (" + fm.industry + ")" +
+      (fm.owners.length ? " · owned from " + fm.owners.join(" and ") : "");
+    var box = $("firmfields");
+    box.textContent = "";
+    box.appendChild(el("p", { cls: "hint", text: "Nothing to change this round? You don’t need to submit: your firm keeps doing what it did." }));
+    box.appendChild(el("div", { cls: "field" }, [el("span", { text: "Scale (0–" + fmt(fm.max_scale) + ")" }),
+      numInput(f.scale, "Scale", function (v) { f.scale = v; save(); })]));
+    var opts = [["", "Stay where it is"]].concat(countryNames.map(function (n) {
+      var home = fm.owners.indexOf(n) >= 0;
+      return [n, home ? n + " (owner’s country: not allowed)" : n, home];
+    }));
+    box.appendChild(el("div", { cls: "field" }, [el("span", { text: "Move to" }),
+      select(opts, f.move, "Move to", function (v) { f.move = v; save(); })]));
+    if (st.phase >= 4) {
+      var ecb = el("input", { type: "checkbox" });
+      ecb.checked = !!f.exp;
+      ecb.addEventListener("change", function () { f.exp = ecb.checked; save(); });
+      box.appendChild(el("label", { cls: "field" }, [ecb, "Export (pays the fixed cost)"]));
+    }
+    box.appendChild(el("p", { cls: "hint", text: "Moving means producing nothing this round." }));
+  }
+
+  // ---- checking and building the file -----------------------------------------
+  function pct(v, what, lo, hi, errs) {
+    var x = read(v);
+    if (isNaN(x) || x < lo || x > hi) errs.push(what + " must be between " + fmt(lo) + " and " + fmt(hi) + ".");
+    return x;
+  }
+
+  function buildCountry() {
+    var phase = st.phase, era = eras[eraOf(phase)], me = st.country, f = formFor(me);
+    var errs = [], p = production(era);
+    if (p.bad) errs.push("Production: use numbers of 0 or more.");
+    else p.lines.forEach(function (l) { if (l.cls !== "ok") errs.push("Production: " + l.text + "."); });
+    var out = { ipe: 1, kind: "country", country: me, phase: phase, made: new Date().toISOString(),
+                production: { labor: p.L }, tariffs: {}, trades: [], side_payments: [] };
+    if (era.uses_capital) out.production.capital = p.K;
+    Object.keys(f.tariffs).forEach(function (pn) {
+      Object.keys(f.tariffs[pn] || {}).forEach(function (g) {
+        var v = f.tariffs[pn][g];
+        if (blank(v) || countryNames.indexOf(pn) < 0 || era.goods.indexOf(g) < 0) return;
+        var x = pct(v, "Tariff on " + g + " from " + pn, 0, rules.tariff_max, errs);
+        if (x > 0) (out.tariffs[pn] = out.tariffs[pn] || {})[g] = x;
+      });
+    });
+    f.trades.forEach(function (t, k) {
+      if (blank(t.give) && blank(t.get) && !t.give_good && !t.get_good && !t.to) return;
+      var give = read(t.give), get = read(t.get), n = "Trade " + (k + 1) + ": ";
+      if (!(give > 0) || !(get > 0)) errs.push(n + "both amounts must be more than 0.");
+      if (!t.give_good || !t.get_good) errs.push(n + "pick both goods.");
+      if (!t.to) errs.push(n + "pick the country you trade with.");
+      out.trades.push({ give: give, give_good: t.give_good, to: t.to, get: get, get_good: t.get_good });
+    });
+    out.compensation_pct = blank(f.comp) ? 0 : pct(f.comp, "Compensation", 0, rules.compensation_max, errs);
+    if (phase >= 3) {
+      out.mnc_tax_pct = blank(f.mnc) ? null : pct(f.mnc, "MNC tax", rules.mnc_tax_min, rules.mnc_tax_max, errs);
+    }
+    f.gifts.forEach(function (sp, k) {
+      if (blank(sp.qty) && !sp.good && !sp.to) return;
+      var q = read(sp.qty), n = "Side payment " + (k + 1) + ": ";
+      if (!(q > 0)) errs.push(n + "the amount must be more than 0.");
+      if (!sp.good || !sp.to) errs.push(n + "pick the good and the country.");
+      out.side_payments.push({ qty: q, good: sp.good, to: sp.to });
+    });
+    if (phase >= 5) {
+      out.money = {};
+      if (f.fx) out.money.fx_regime = f.fx;
+      if (f.controls) out.money.capital_controls = f.controls === "controls";
+      if (f.growth !== undefined && f.growth !== "") out.money.money_supply_growth = Number(f.growth);
+    }
+    if (phase >= 6) {
+      var b = read(f.borrow), r = read(f.repay);
+      if (isNaN(b) || b < 0 || isNaN(r) || r < 0) errs.push("Debt: borrowing and repayment must be 0 or more.");
+      out.debt = { borrow: b, repay: r, "default": !!f.dflt };
+    }
+    if (phase >= 7) {
+      out.institutions = {};
+      if (f.wto) out.institutions.join_wto = f.wto === "join";
+      if (f.heg) out.institutions.hegemon_provides = f.heg === "yes";
+    }
+    var summary = me + " · Phase " + phase + " — workers " +
+      era.goods.map(function (g) { return fmt(p.L[g] || 0); }).join(" / ") +
+      (era.uses_capital ? " · capital " + era.goods.map(function (g) { return fmt(p.K[g] || 0); }).join(" / ") : "") +
+      " · " + out.trades.length + " trade" + (out.trades.length === 1 ? "" : "s") +
+      " · " + Object.keys(out.tariffs).reduce(function (n, pn) { return n + Object.keys(out.tariffs[pn]).length; }, 0) +
+      " tariff(s)" + (phase >= 3 && out.mnc_tax_pct != null ? " · MNC tax " + fmt(out.mnc_tax_pct) + "%" : "");
+    return { errors: errs, data: out, file: me + ".json", summary: summary };
+  }
+
+  function buildFirm() {
+    var fm = firmById[st.firm], f = st.firmForms[fm.id] || {}, errs = [];
+    var scale = blank(f.scale) ? NaN : read(f.scale);
+    if (isNaN(scale) || scale < 0 || scale > fm.max_scale) {
+      errs.push("Scale must be between 0 and " + fmt(fm.max_scale) + ".");
+    }
+    if (f.move && fm.owners.indexOf(f.move) >= 0) {
+      errs.push(fm.id + " can’t move to its owner’s own country.");
+    }
+    var out = { ipe: 1, kind: "firm", firm: fm.id, phase: st.phase, made: new Date().toISOString(),
+                scale: scale, relocate_to: f.move || null, export: st.phase >= 4 && !!f.exp };
+    var summary = fm.id + " · Phase " + st.phase + " — scale " + (isNaN(scale) ? "?" : fmt(scale)) +
+      (f.move ? " · moving to " + f.move : "") + (out.export ? " · exporting" : "");
+    return { errors: errs, data: out, file: fm.id + ".json", summary: summary };
+  }
+
+  function build() {
+    return st.mode === "firm" && st.phase >= 3 ? buildFirm() : buildCountry();
+  }
+  window.ipeRound = { data: data, output: output, build: build, state: st };   // for checking by hand
+
+  $("submit").addEventListener("click", function () {
+    var res = build(), errors = $("errors");
+    errors.textContent = "";
+    $("done").hidden = true;
+    if (res.errors.length) {
+      res.errors.forEach(function (e) { errors.appendChild(el("div", { text: e })); });
+      return;
+    }
+    var blob = new Blob([JSON.stringify(res.data, null, 1)], { type: "application/json" });
+    var a = el("a", { href: URL.createObjectURL(blob), download: res.file });
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    $("donefile").textContent = res.file;
+    var next = $("donenext");
+    next.textContent = "";
+    if (data.inbox_url) {
+      window.open(data.inbox_url, "_blank", "noopener");
+      next.appendChild(document.createTextNode(
+        "Now drop it into the Dropbox upload page. It opens in a new tab; if it didn’t, "));
+      next.appendChild(el("a", { href: data.inbox_url, target: "_blank", rel: "noopener",
+                                 text: "open it here" }));
+      next.appendChild(document.createTextNode("."));
+    } else {
+      next.textContent = "Hand it to your instructor.";
+    }
+    $("donesummary").textContent = res.summary;
+    $("done").hidden = false;
   });
 
   $("stamp").textContent = "Numbers last updated " + data.updated +
     ". They change only when an announced shock hits a country, and this page is updated when one does.";
 
   $("app").hidden = false;
-  if (current) choose(current);
+  render();
 })();
 </script>
 </body>

@@ -211,12 +211,12 @@ rather than one error at a time.
 The filled workbooks are the semester's data. Keep the `rounds/` folder and a
 future class is a load, not a retype.
 
-## Student production calculator (Phase 2 on)
+## Student calculator and round form
 
 From Phase 2, output is TFP · L^α · K^β, which nobody works out in their head.
-The calculator is one web page: students tap their country, type where their
-workers and capital go, and see exactly what the engine will produce, plus
-whether their totals match their endowment. That is the same check the engine
+The calculator is one web page: students tap the phase and their country, type
+where their workers and capital go, and see exactly what the engine will
+produce, plus whether their totals match their endowment. That is the same check the engine
 runs, so a form that passes the calculator won't bounce in the notebook. It
 shows nothing else: no welfare, no prices, no suggested allocation. What to
 make, what to trade, and on what terms stay the students' problem.
@@ -233,12 +233,70 @@ curious students can find the engine and this guide from it.
 **Re-export only after a shock.** Production changes only when technology or
 endowments do (`inject_productivity_surge`, `inject_shock`). Run
 `sim.export_calculator()` right after such a shock, then commit and push;
-Pages republishes within a minute. Ordinary rounds and phase upgrades leave it
-alone.
+Pages republishes within a minute. The page carries every phase, so ordinary
+rounds and phase upgrades leave it alone, and an export that changes nothing
+leaves the file untouched, with nothing to commit.
 
 **It checks itself.** The page carries a few outputs the engine computed at
 export time and recomputes them when it loads. If they ever disagree, students
 see "These numbers don't match the simulation" instead of a calculator.
+
+## Collecting decisions from laptops (the class inbox)
+
+The same page is also the round form. Below the calculator, a team fills in
+what it decided and presses **Submit**. The page saves one small file
+(`Bosque.json`) and opens your Dropbox upload page, and the team drops the file
+in. `play_round` turns the files into the round's workbook and plays that, so
+the workbook is still the record, and paper and files go through the same
+door.
+
+**Set up once.**
+
+1. In Dropbox, create a **file request** (every plan has them, including free)
+   that saves to `ipe-simulation/rounds/inbox`. Uploaders need no Dropbox
+   account, though Dropbox may ask for a name and email, and they can't see
+   each other's files.
+2. Run `sim.export_calculator(inbox_url="https://www.dropbox.com/request/...")`
+   once, then commit and push `docs/`. Later exports keep the link.
+
+**What students do.**
+
+- A **country**: tap the phase and the country, enter production (the
+  calculator), then tariffs, trades, compensation and the MNC tax, and money,
+  debt and WTO choices once those phases arrive. Then Submit and drop the file
+  into Dropbox. The page refuses to save until the allocations add up and every
+  number is in range.
+- A **firm owner**: tap "A firm I own", pick the firm, then set scale, move
+  and export. Owners submit only when something changes; a firm with no file
+  keeps doing what it did.
+- **Changing a decision**: submit again. The newest file counts.
+
+**What you do each round.**
+
+- While teams decide, `sim.inbox_report()` shows who's in, who isn't, and any
+  trade the two sides wrote differently. It writes nothing.
+- Run the round cell as usual. **The first run** builds `roundNN.xlsx` from the
+  inbox and prints the report. **The second run** plays it. If more files arrive
+  in between, it rebuilds and reports again instead of playing.
+- Afterwards the files move to `rounds/roundNN/`, one file per team per round.
+  That's your raw data.
+
+**The rules the merge follows.**
+
+- A **trade** happens only when both sides list the same swap on the same
+  terms. The report lists swaps only one side entered, and pairs that
+  disagree, so you can read them out before playing.
+- A **country with no file** repeats last round's production, tariffs and
+  compensation, with no trades. Its policies stand anyway.
+- A **file that can't be used** (wrong phase picked, a number out of range) is
+  reported and treated as missing, never half-applied.
+- Files that reached the inbox **before the last round was played** are set
+  aside as stale.
+
+**Paper still works.** With an empty inbox, the round cell writes a blank
+workbook as before. For a team without a laptop, either type its row into a
+blank workbook or submit its file yourself on the page. A workbook you typed
+by hand wins over waiting files, with a note.
 
 ## The rhythm of one round (~75-minute session)
 
@@ -396,6 +454,79 @@ off?* When nobody uses it — the usual case — that reluctance is the lesson.
 Compensating losers is politically thankless, which is why protection wins so
 often in the real world.
 
+### The MNC tax and firm owners (Phase 3 on)
+
+From Phase 3 each country sets one **MNC tax**: a percent of the revenue that
+foreign-owned firms earn on its soil, 0 to 50%. It's a line on the trade form
+and an `mnc_tax_pct` column on the production sheet, pre-filled with the rate
+in force, so a blank or untouched cell keeps last round's rate.
+
+- **What it buys:** the host keeps what it collects. Welfare rises by the tax
+  as a share of the host's consumption at world prices. 10% on a HIGH
+  machinery firm and a LOW cloth firm is worth about 5% of Trinity's
+  welfare.
+- **What it costs:** the owners pay it, and owners can move. A firm that
+  leaves takes its local sales with it: hosting two firms is worth roughly
+  20-55% of a country's welfare, and Trinity losing its HIGH machinery firm
+  costs it about 9%, twice what that 10% tax brings in. A LOW firm's margin is only about 14%
+  of revenue, so even a modest tax wipes out its profit and it moves first.
+  HIGH firms are stickier, because moving costs a whole round of output.
+- **The populist minimum:** a government that falls gets a tariff floor and a
+  minimum MNC tax. Its own choices can go higher, never lower.
+
+That is the obsolescing bargain in one number. Once a firm is sunk, the host
+can raise the rate, right up to the point where the owner decides moving
+pays.
+
+**Owners.** Keep who owns each firm in `rounds/firms-roster.xlsx`: one row per
+firm, with the owner's home country in `country-origin` ("Bosque and Sabine"
+for a pair from two countries). The owners cell after the roster reads it and
+calls `sim.set_firm_owners(...)`. The engine then refuses to move a firm to
+its owner's own country (no re-shoring), and the firms sheet in each round's
+workbook shows owners for reference.
+Writing the firm's current host under "relocate to" counts as staying, not as
+a lost round.
+
+**Upgrade cells wait for their round and run once.** Each one checks the round
+number and the phase, so Run All never upgrades early or twice. As a backstop,
+the engine refuses to redo an upgrade once that phase has been played.
+
+### What the export choice buys (Phase 4)
+
+A firm that ticks EXPORT sells every unit for more (the *export premium*, up
+to 25%) and pays its fixed export cost. It pays only when units x price x
+premium beats that cost: at the full 25% that means shipping more than 32
+units, so at full scale HIGH firms (52 units) and MED firms (40) gain and LOW
+firms (28) do better staying home. That is the Melitz cutoff, and it is
+arithmetic a student can do at the desk.
+
+The premium shrinks with the tariffs other countries put on the firm's good
+from its host, last round. At 20% MED firms break exactly even; at 50% nobody's
+exports pay. Tariffs are bilateral, so premiums differ by host, which gives
+owners a reason to relocate. Project `sim.print_export_premiums()` before the
+owners fill in their forms (the Phase 3/4 template cell does it for you from
+Phase 4 on). Each firm's page in `handouts/forms-firms.pdf` works the numbers
+at scale 23, in that firm's own figures. Nobody picks 23, so the page shows
+the method without making the decision for them.
+
+The premium is profit only: the host's welfare counts the firm's local sales
+whether or not it exports.
+
+### How big firms are
+
+A firm's revenue counts every unit it makes, but only its **local sales**, a
+fifth of its output (`FIRM_LOCAL_SHARE`), reach the host's economy. The rest
+sells on world markets at world prices. At full scale the roster makes about
+as much as the four countries combined, so when hosts got all of it, small
+economies doubled or tripled overnight. At a fifth, hosting two firms is worth
+roughly what a country gains from trade. Love of variety is set at
+`VARIETY_RHO = 0.75` (an elasticity of 4, mid-range of the estimates). At 0.6,
+even a sliver of a new variety was worth a lot.
+
+The first round of each new phase also skips approval's prosperity term. Each
+phase measures welfare its own way, so a jump across the boundary is the model
+changing, not a government delivering.
+
 ### What the money and debt choices buy
 
 Every Phase 5 and 6 choice has an upside and a downside, and the finance form
@@ -434,7 +565,9 @@ Order of the upgrades across the semester:
 ```
 upgrade_to_phase2(PHASE2_COUNTRIES, PHASE2_GOODS)
 upgrade_to_phase3(firms_for_class)
-sim.phase = 4                      # toggle; firms gain the export decision
+sim.set_firm_owners(OWNERS)        # once: enforces no re-shoring
+sim.phase = 4                      # the Round 9+ template does this from Round 11
+sim.print_export_premiums()        # project before the first Phase 4 forms
 award_reserve_currency()           # end of the trade era — names the hegemon
 upgrade_to_phase5()                # money & FX
 upgrade_to_phase6()                # sovereign debt
@@ -448,17 +581,30 @@ upgrade_to_phase7()                # institutions & capstone
 appears, and the round prints `saved: rounds/state/round07.json`. There is
 nothing to run at the end of class.
 
-**Next class, run the top two cells.** The first builds a fresh simulation; the
-second picks up where you left off:
+**Every class: Kernel → Restart & Run All.** The first cell loads the engine.
+The second is your class configuration, and it picks up where you left off:
 
 ```python
-sim = IPESimulation.resume(default=sim)
-#   Resumed round 6, Phase 2 -- Bosque, Llano, Sabine, Trinity
-#   (from rounds/state/round06.json)
+sim = IPESimulation.resume(
+    default=IPESimulation({c: PHASE1_COUNTRIES[c] for c in COUNTRIES},
+                          PHASE1_GOODS, phase=1))
+#   Resumed round 7, Phase 2 -- Bosque, Llano, Sabine, Trinity
+#   (from rounds/state/round07.json)
 ```
 
-It is always safe to run. On the first class of a term there is no snapshot, so
-it keeps the fresh simulation and says so.
+The fresh simulation is used only on the first class of a term, when nothing
+is saved yet. Below the two setup cells:
+
+- rounds already played re-project their boards instead of replaying;
+- the next round's cell writes its blank workbook, says it is still blank, or
+  plays it once you've filled it in;
+- later rounds wait their turn and write nothing;
+- each phase change, the Phase 4 switch and the Round 14 ceremony wait for
+  their round and happen once.
+
+If you'd rather not re-render every old board, run the two setup cells and
+then your round's cell. Don't build a fresh simulation by hand mid-term: that
+is what reset approval and the round count before `resume` existed.
 
 A snapshot holds the whole state: round number, phase, every country's
 approval, debt, currency and WTO status, firm profits and hosts, monetary

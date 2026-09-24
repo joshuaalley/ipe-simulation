@@ -560,6 +560,164 @@ def test_country_metadata_does_not_block_valid_rows():
           err is not None and "Pecos" in err, (err or "")[:180])
 
 
+def p3_sim():
+    """A four-country Phase 3 simulation one round in, with firms."""
+    countries = {k: PHASE2_COUNTRIES[k] for k in KEEP}
+    sim = IPESimulation(countries, PHASE2_GOODS, phase=2)
+    bal = {n: {"production": {
+        "labor": {g: c["labor"] / 3 for g in PHASE2_GOODS},
+        "capital": {g: c["capital"] / 3 for g in PHASE2_GOODS}}}
+        for n, c in countries.items()}
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.run_round(bal, [])
+        sim.upgrade_to_phase3(build_firm_roster(KEEP, verbose=False))
+    return sim, bal
+
+
+def test_mnc_tax_in_the_workbook():
+    print("\n[8h] the MNC tax column: pre-filled, optional, percent or share")
+    sim, bal = p3_sim()
+    fd = {f: {"scale": 40, "relocate_to": None, "export": False} for f in sim.firms}
+    dec = {n: dict(d, mnc_tax=(0.10 if n == "Trinity" else None))
+           for n, d in bal.items()}
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.set_firm_owners({"F1": "Llano"})
+        sim.run_round(dec, [], firm_decisions=fd)
+    path = os.path.join(TMP, "p3_tax.xlsx")
+    sim.write_round_template(path)
+    book = pd.read_excel(path, sheet_name=None)
+    prod = book["production"].set_index("country")
+    check("  template carries each country's standing rate",
+          prod.loc["Trinity", "mnc_tax_pct"] == 10
+          and prod.loc["Bosque", "mnc_tax_pct"] == 0, str(prod["mnc_tax_pct"].to_dict()))
+    check("  the firms sheet shows owners (for reference)",
+          book["firms"].set_index("firm").loc["F1", "owners"] == "Llano")
+
+    # fill: percent, share, blank
+    filled_prod = pd.DataFrame([{
+        "country": n,
+        **{f"labor_{g}": d["production"]["labor"][g] for g in PHASE2_GOODS},
+        **{f"capital_{g}": d["production"]["capital"][g] for g in PHASE2_GOODS},
+        "mnc_tax_pct": {"Bosque": 15, "Llano": None, "Sabine": 0.05,
+                        "Trinity": 10}[n]} for n, d in bal.items()])
+    book["production"] = filled_prod
+    book["firms"] = pd.DataFrame([{"firm": f, "scale": 40, "relocate_to": "",
+                                   "export": "no"} for f in sim.firm_config])
+    write(path, book)
+    kw = sim.load_round(path)
+    got = {n: kw["decisions"][n].get("mnc_tax") for n in KEEP}
+    check("  15 means 15%, 0.05 means 5%, blank keeps the rate",
+          got == {"Bosque": 0.15, "Llano": None, "Sabine": 0.05, "Trinity": 0.10},
+          str(got))
+    book["production"] = filled_prod.drop(columns=["mnc_tax_pct"])
+    write(path, book)
+    kw = sim.load_round(path)
+    check("  a workbook without the column (made before it existed) loads",
+          all("mnc_tax" not in kw["decisions"][n] for n in KEEP))
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.run_round(**kw)
+    html = classroom.scoreboard_html(sim)
+    check("  the scoreboard shows the MNC tax in force",
+          "MNC tax" in html and "10%" in html)
+
+
+def test_upgrade_cells_safe_to_rerun():
+    print("\n[8i] re-running an upgrade cell after resume resets nothing")
+    countries = {k: PHASE2_COUNTRIES[k] for k in KEEP}
+    sim = p1_sim()
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.run_round({n: {"production": {g: v for g, v in r.items()
+                                           if g != "country"}}
+                       for n, r in ((r["country"], r) for r in p1_production())},
+                      [])
+        sim.upgrade_to_phase2(countries, PHASE2_GOODS)
+    bal = {n: {"production": {
+        "labor": {g: c["labor"] / 3 for g in PHASE2_GOODS},
+        "capital": {g: c["capital"] / 3 for g in PHASE2_GOODS}}}
+        for n, c in countries.items()}
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.run_round(bal, [])
+    sim.countries["Sabine"]["tariff_floor"] = 0.20      # state worth keeping
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        sim.upgrade_to_phase2(countries, PHASE2_GOODS)   # the cell, re-run
+    check("  Phase 2 cell re-run keeps the countries as they are",
+          sim.countries["Sabine"].get("tariff_floor") == 0.20
+          and "skipping" in buf.getvalue(), buf.getvalue()[:120])
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.upgrade_to_phase3(build_firm_roster(KEEP, n_firms=4, verbose=False))
+        sim.upgrade_to_phase3(build_firm_roster(KEEP, verbose=False))
+    check("  before a Phase 3 round, re-running rebuilds the roster",
+          len(sim.firms) == 8, str(len(sim.firms)))
+    fd = {f: {"scale": 40, "relocate_to": None, "export": False} for f in sim.firms}
+    fd["F1"] = {"scale": 0, "relocate_to": "Sabine", "export": False}
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.run_round(bal, [], firm_decisions=fd)
+        sim.upgrade_to_phase3(build_firm_roster(KEEP, verbose=False))
+    check("  after one, re-running keeps hosts and profits",
+          sim.firms["F1"]["host"] == "Sabine"
+          and sim.firms["F4"]["cumulative_profit"] > 0 and sim.phase == 3)
+
+
+def test_run_all_from_any_round():
+    print("\n[8j] Restart & Run All: future rounds write nothing, blanks wait")
+    sim = p1_sim()
+    folder = os.path.join(TMP, "runall2", "rounds")
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.play_round(filled(sim, folder, 1))
+    far = os.path.join(folder, "round15.xlsx")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        sim.play_round(far)
+    check("  a far-future round waits and writes no workbook",
+          not os.path.exists(far) and "comes first" in buf.getvalue(),
+          buf.getvalue()[-120:])
+    gone = os.path.join(folder, "round01.xlsx")
+    os.remove(gone)
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.play_round(gone)
+    check("  a played round with its workbook missing re-projects, no template",
+          not os.path.exists(gone) and sim.round_num == 1)
+    nxt = os.path.join(folder, "round02.xlsx")
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.play_round(nxt)                   # writes the blank workbook
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        result = sim.play_round(nxt)          # next class: still blank
+    check("  a blank workbook is reported, not played, and nothing raises",
+          result is None and sim.round_num == 1 and "still blank" in buf.getvalue(),
+          buf.getvalue()[-160:])
+
+
+def test_notebook_is_safe_to_run_all():
+    print("\n[8k] the notebook: setup resumes, phase changes wait for their round")
+    import json as _json
+    nb = _json.load(io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         "simulation.ipynb"), encoding="utf-8"))
+    code = ["".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"]
+    setup = [c for c in code if "CLASS CONFIGURATION" in c]
+    check("  the setup cell resumes (nothing to skip at the start of class)",
+          len(setup) == 1 and "IPESimulation.resume(" in setup[0])
+    check("  no cell needs a sim from a cell you might skip",
+          not any("resume(default=sim)" in c for c in code))
+    risky = ("upgrade_to_phase", "award_reserve_currency()", "save_state_file(",
+             "sim.phase = 4")
+    unguarded = []
+    for c in code:
+        lines = c.splitlines()
+        for i, line in enumerate(lines):
+            bare = line.strip()
+            if bare.startswith("#") or not any(r in bare for r in risky):
+                continue
+            header = next((l for l in reversed(lines[:i])
+                           if l.strip() and not l.startswith((" ", "\t", "#"))), "")
+            if not (line.startswith("    ")
+                    and header.startswith("if sim.round_num >=")):
+                unguarded.append(bare)
+    check("  every phase change and ceremony waits for its round",
+          not unguarded, str(unguarded))
+
+
 def main():
     for t in [test_round_trip, test_valid_trade_parses,
               test_empty_and_blank_trades_tolerated,
@@ -573,7 +731,9 @@ def main():
               test_a_failed_save_never_costs_the_round,
               test_run_all_after_resume_is_safe, test_scoreboard,
               test_play_round, test_phase_mismatch_diagnosed,
-              test_country_metadata_does_not_block_valid_rows]:
+              test_country_metadata_does_not_block_valid_rows,
+              test_mnc_tax_in_the_workbook, test_upgrade_cells_safe_to_rerun,
+              test_run_all_from_any_round, test_notebook_is_safe_to_run_all]:
         try:
             t()
         except Exception:

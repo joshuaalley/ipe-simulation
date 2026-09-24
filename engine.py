@@ -19,6 +19,8 @@ else within a round, which is what makes the negotiate-then-reveal trust
 dynamics real. Designed to run in a Jupyter notebook.
 """
 
+import datetime
+
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
@@ -192,6 +194,31 @@ PHASE3_FIRMS = {
 # Used only for firm profit accounting; inter-country goods trade is still barter.
 WORLD_PRICES = {"cloth": 1.0, "wine": 1.0, "machinery": 1.5}
 
+# Phase 4+: a firm that pays its fixed_export_cost reaches foreign buyers, so
+# the same units sell for price x (1 + premium). The shipped roster sets
+# fixed_export_cost / price = 8 in every industry, so exporting pays exactly
+# when a firm ships more than 8 / premium units -- 32 at the full 0.25. At
+# full scale HIGH (52 units) and MED (40) firms clear it; LOW (28) never can.
+# The premium is a profit-ledger effect only: welfare doesn't see it.
+EXPORT_MARKET_GAIN = 0.25
+# The premium shrinks with the tariff wall the firm's exports face:
+#   premium = EXPORT_MARKET_GAIN x (1 - mean tariff the OTHER countries
+#             applied last round to that good from the firm's host)
+# Last round's, so it is a number already on the board, not a guess. A world
+# at 20% leaves MED firms dead even; at 50% no firm's exports pay.
+# False = the flat EXPORT_MARKET_GAIN whatever the world does.
+EXPORT_TARIFF_GATE = True
+
+# Phase 3+: each country sets one MNC tax -- a share of the revenue that
+# foreign-owned firms earn on its soil (export premium included). The host
+# keeps what it collects: welfare x (1 + T / C), with T the tax collected and
+# C the host's consumption at world prices. The catch is that owners can move,
+# and a firm that leaves takes its output with it -- the biggest welfare lever
+# a host has. The rate stands until the country changes it. A populist
+# government (inject_populist_backlash) sets a minimum the choice can't undercut.
+MNC_TAX_MAX = 0.50
+MNC_TAX_MIN = 0.0    # below zero is a subsidy: set e.g. -0.20 for bidding wars
+
 # Implicit home prices used to value factor marginal products (Phase 2+).
 # Trade is barter, so there are no market prices -- but Cobb-Douglas utility
 # gives every good a marginal utility U/(J c_j): goods a country consumes little
@@ -203,7 +230,18 @@ SHADOW_PRICE_CAP = 10.0   # max home price, as a multiple of the price index (1)
 
 # CES elasticity within each industry (love-of-variety).
 # rho closer to 0 = stronger variety preference; rho=1 = perfect substitutes.
-VARIETY_RHO = 0.6
+# 0.75 is sigma = 1/(1-rho) = 4, the middle of what trade economists estimate.
+# At 0.6 (sigma 2.5) even a sliver of a new variety was worth a lot, so the
+# Phase 3 switch alone lifted welfare 20-45%.
+VARIETY_RHO = 0.75
+
+# How much of an MNC's output is sold in its host country. The rest sells on
+# world markets at world prices: the owner's revenue counts every unit, the
+# host's economy only its local share. At full scale the roster makes about as
+# much as the four countries combined, so handing hosts all of it doubled small
+# economies overnight. At a fifth, hosting two firms is worth roughly what a
+# country gains from trade.
+FIRM_LOCAL_SHARE = 0.20
 
 
 def build_firm_roster(countries, n_firms=None, base=None, verbose=True,
@@ -548,6 +586,9 @@ class IPESimulation:
             "compensation" is optional: the share of your consumption paid
             to the groups trade displaced (0 to COMPENSATION_MAX_SHARE).
             It buys approval and costs some welfare, with the border open.
+            "mnc_tax" is optional from Phase 3: the share of foreign-owned
+            firms' revenue this country taxes (MNC_TAX_MIN to MNC_TAX_MAX).
+            It stands until changed; leave it out to keep the current rate.
 
         trades : list of tuples
             Each tuple: (exporter, importer, good_out, qty_out, good_in, qty_in)
@@ -559,6 +600,9 @@ class IPESimulation:
             {firm_id: {"scale": int, "relocate_to": None or country,
                        "export": bool}}
             scale clamped to [0, max_scale]. export only matters in Phase 4+.
+            relocate_to the firm's current host counts as staying. Once
+            set_firm_owners() has recorded owners, relocate_to an owner's
+            home country is refused (no re-shoring).
 
         monetary_decisions : dict, Phase 5+ only
             {country: {"fx_regime": "peg"|"float",
@@ -588,6 +632,15 @@ class IPESimulation:
                     fid: {"scale": 0, "relocate_to": None, "export": False}
                     for fid in self.firms
                 }
+            # "Relocate to" the country you're already in means stay -- not
+            # a lost round of output for a move that goes nowhere.
+            firm_decisions = {
+                fid: (dict(dec, relocate_to=None)
+                      if fid in self.firms and dec.get("relocate_to") is not None
+                      and dec.get("relocate_to") == self.firms[fid]["host"]
+                      else dec)
+                for fid, dec in firm_decisions.items()
+            }
             fd_errors = self._validate_firm_decisions(firm_decisions)
             if fd_errors:
                 self.round_num -= 1
@@ -616,6 +669,12 @@ class IPESimulation:
                 raise ValueError(
                     "Debt decision validation failed:\n" + "\n".join(dbt_errors)
                 )
+
+        # Step 0a: MNC tax choices (Phase 3+). Each stands until changed.
+        if self.phase >= 3:
+            for c, dec in decisions.items():
+                if c in self.countries and dec.get("mnc_tax") is not None:
+                    self.countries[c]["mnc_tax_choice"] = float(dec["mnc_tax"])
 
         # Step 0: Apply monetary decisions + trilemma (Phase 5+) first, so
         # crisis devaluations affect this round's trade friction and profits.
@@ -651,12 +710,16 @@ class IPESimulation:
         # MNCs hosted on its soil.
         country_production = deepcopy(production)
 
-        # Step 1b: Firm production, added to host country's industry total
+        # Step 1b: Firm production. The host's economy gets the firm's local
+        # sales (FIRM_LOCAL_SHARE); the rest sells on world markets. Profits
+        # (Step 3d) count every unit.
         firm_output = {}
         production_varieties = None
         if self.phase >= 3:
             firm_output = self._compute_firm_production(firm_decisions)
-            for fid, out in firm_output.items():
+            local_output = {fid: out * FIRM_LOCAL_SHARE
+                            for fid, out in firm_output.items()}
+            for fid, out in local_output.items():
                 host = self.firms[fid]["host"]
                 industry = self.firm_config[fid]["industry"]
                 production[host][industry] = (
@@ -664,7 +727,7 @@ class IPESimulation:
                 )
             # Per-variety breakdown for CES utility
             production_varieties = self._build_variety_bundles(
-                production, firm_output
+                production, local_output
             )
 
         # Step 2: Initialize consumption (scalar totals) and varieties
@@ -692,6 +755,15 @@ class IPESimulation:
 
         # Step 3c: Consume a pending global crisis factor (Phase 7+).
         crisis_factor = self._global_crisis_factor() if self.phase >= 7 else 1.0
+
+        # Step 3d: Firm profits and the MNC tax (Phase 3+) -- before welfare,
+        # because the tax a host collects is part of its welfare this round.
+        firm_results = {}
+        mnc_tax_this_round = {}
+        if self.phase >= 3:
+            firm_results, mnc_tax_this_round = self._compute_firm_profits(
+                firm_decisions, firm_output
+            )
 
         # Step 4: Welfare. Phase 3+ uses variety-aware CES utility.
         results = {}
@@ -746,6 +818,18 @@ class IPESimulation:
                     fx_drag = welfare * WEAK_FX_WELFARE_DRAG * (1.0 - dep)
                     welfare -= fx_drag
 
+            # Phase 3+: the MNC tax collected here is the host's to spend.
+            # After the gains metric: a transfer from foreign owners, not a
+            # gain from trade.
+            mnc_tax_gain = 0.0
+            collected = mnc_tax_this_round.get(name, 0.0)
+            if collected:
+                capacity = sum(consumption[name].get(g, 0.0) * self.world_prices[g]
+                               for g in self.goods)
+                if capacity > 0:
+                    mnc_tax_gain = welfare * collected / capacity
+                    welfare += mnc_tax_gain
+
             # Compensating your own losers costs welfare (the transfer is
             # taxed and administered, not free) and buys approval below.
             # Applied after the gains metric: it is domestic politics, not
@@ -788,6 +872,12 @@ class IPESimulation:
             }
             if self.phase >= 6:
                 results[name]["debt"] = debt_info
+            if self.phase >= 3:
+                results[name]["mnc_tax"] = {
+                    "rate": self.mnc_tax_in_force(name),
+                    "collected": collected,
+                    "welfare_gain": mnc_tax_gain,
+                }
 
             if self.phase >= 5:
                 ev = monetary_events.get(name, {})
@@ -829,14 +919,6 @@ class IPESimulation:
                     production_varieties[name]
                 )
 
-        # Step 5: Firm profits (Phase 3+); MNC tax (Phase 4+)
-        firm_results = {}
-        mnc_tax_this_round = {}
-        if self.phase >= 3:
-            firm_results, mnc_tax_this_round = self._compute_firm_profits(
-                firm_decisions, firm_output
-            )
-
         # Governments that sat too long below the approval floor fall now,
         # so the protectionist turn bites from the NEXT round.
         governments_fallen = self._resolve_governments(results)
@@ -848,10 +930,15 @@ class IPESimulation:
             "trade_log": trade_log,
             "trades_executed": trade_records,
             "governments_fallen": governments_fallen,
+            # Read by next round's export premium (export_premium).
+            "tariff_wall": self._applied_tariffs(decisions),
+            # When it was played: decision files that reach the class inbox
+            # before this are stale for the next round.
+            "played_at": datetime.datetime.now().isoformat(timespec="seconds"),
         }
         if self.phase >= 3:
             round_result["firms"] = firm_results
-        if self.phase >= 4:
+        if self.phase >= 3:
             round_result["mnc_tax_this_round"] = mnc_tax_this_round
             round_result["mnc_tax_cumulative"] = dict(self.mnc_tax_revenue)
         if self.phase >= 5:
@@ -961,11 +1048,14 @@ class IPESimulation:
     def _compute_firm_profits(self, firm_decisions, firm_output):
         """
         Profit per firm = revenue - operating_cost - fixed_export_cost - mnc_tax.
-        revenue   = output * world_price[industry]
+        revenue   = output * world_price[industry] * (1 + premium)
+        premium   = export_premium(host, industry) iff dec.export and
+                    Phase >= 4, else 0 -- exporting reaches foreign buyers
         op_cost   = scale * unit_cost
         fixed     = fixed_export_cost iff dec.export and Phase >= 4
-        mnc_tax   = revenue * host's mnc_tax_rate (Phase 4+; ledger only,
-                    does NOT enter country welfare/utility)
+        mnc_tax   = revenue * mnc_tax_in_force(host) (Phase 3+). Levied on
+                    the premium too. The host adds what it collects to its
+                    welfare (run_round, Step 4).
 
         Cumulative profit ledger on self.firms[fid] is updated.
         Tax collected is also added to self.mnc_tax_revenue[host] (cumulative).
@@ -981,16 +1071,16 @@ class IPESimulation:
                 else max(0.0, min(dec.get("scale", 0), fcfg["max_scale"]))
             )
             output = firm_output.get(fid, 0.0)
-            revenue = output * self.world_prices[fcfg["industry"]]
-            op_cost = scale * fcfg["unit_cost"]
-            fixed_cost = 0.0
-            if self.phase >= 4 and dec.get("export", False):
-                fixed_cost = fcfg["fixed_export_cost"]
             host = self.firms[fid]["host"]
-            mnc_tax = 0.0
-            if self.phase >= 4:
-                rate = self.countries[host].get("mnc_tax_rate", 0.0)
-                mnc_tax = revenue * rate
+            exporting = self.phase >= 4 and bool(dec.get("export", False))
+            premium = (self.export_premium(host, fcfg["industry"])
+                       if exporting and output > 0 else 0.0)
+            revenue = output * self.world_prices[fcfg["industry"]] * (1 + premium)
+            op_cost = scale * fcfg["unit_cost"]
+            fixed_cost = fcfg["fixed_export_cost"] if exporting else 0.0
+            tax_rate = self.mnc_tax_in_force(host)
+            mnc_tax = revenue * tax_rate
+            if mnc_tax:
                 tax_this_round[host] += mnc_tax
             profit_nominal = revenue - op_cost - fixed_cost - mnc_tax
             # Phase 5+: profits accrue in the HOST currency. Convert to real
@@ -1011,18 +1101,156 @@ class IPESimulation:
                 "operating_cost": op_cost,
                 "fixed_cost": fixed_cost,
                 "mnc_tax": mnc_tax,
+                "mnc_tax_rate": tax_rate,
                 "profit_nominal": profit_nominal,
                 "depreciation_factor": dep,
                 "profit": profit_real,
                 "cumulative_profit": self.firms[fid]["cumulative_profit"],
                 "relocated": relocating,
                 "exported": dec.get("export", False),
+                "export_premium": premium,
             }
         # Update cumulative tax ledger
         for n, t in tax_this_round.items():
-            if t > 0:
+            if t:
                 self.mnc_tax_revenue[n] = self.mnc_tax_revenue.get(n, 0.0) + t
         return profits, tax_this_round
+
+    # ── MNC tax and owners (Phase 3+) ─────────────────────────────
+
+    def mnc_tax_in_force(self, host):
+        """
+        The MNC tax a firm in `host` pays, as a share of revenue (Phase 3+):
+        the rate the country chose, raised to any minimum a populist
+        government imposed (the country attribute mnc_tax_rate).
+        """
+        if self.phase < 3:
+            return 0.0
+        cfg = self.countries[host]
+        return max(float(cfg.get("mnc_tax_choice", 0.0) or 0.0),
+                   float(cfg.get("mnc_tax_rate", 0.0) or 0.0))
+
+    def set_firm_owners(self, owners):
+        """
+        Record each firm's owners by home country:
+
+            sim.set_firm_owners({"F1": "Llano", "F4": ["Bosque", "Sabine"]})
+
+        (A pair from two countries: list both.) The engine then holds the
+        no-re-shoring rule: a firm can't move to its owner's own country.
+        Firms left out keep whatever they had. Safe to re-run.
+        """
+        problems = []
+        for fid, who in owners.items():
+            if fid not in self.firms:
+                problems.append(f"{fid}: no such firm (roster: "
+                                f"{', '.join(self.firms)})")
+                continue
+            homes = [who] if isinstance(who, str) else list(who)
+            unknown = [h for h in homes if h not in self.countries]
+            if unknown:
+                problems.append(f"{fid}: {', '.join(unknown)} not in this game "
+                                f"({', '.join(self.countries)})")
+            host = self.firms[fid]["host"]
+            if host in homes:
+                problems.append(f"{fid} sits in {host}, so it can't be owned "
+                                f"from {host} -- owners come from another country")
+        if problems:
+            raise ValueError("Firm owners not recorded:\n  "
+                             + "\n  ".join(problems))
+        for fid, who in owners.items():
+            self.firms[fid]["owners"] = [who] if isinstance(who, str) else list(who)
+        print(f"  Owners recorded for {len(owners)} firm(s). A firm can't move to "
+              f"its owner's home country.")
+
+    # ── Export premium (Phase 4+) ─────────────────────────────────
+
+    def _applied_tariffs(self, decisions):
+        """
+        {importer: {partner: {good: rate}}}: the tariffs actually applied this
+        round -- each declared bilateral rate, raised to the importer's
+        populist floor. Non-zero entries only. Stored with the round so the
+        next round's export premium reads a schedule everyone has seen.
+        """
+        wall = {}
+        for imp in self.countries:
+            floor = float(self.countries[imp].get("tariff_floor", 0.0) or 0.0)
+            declared = (decisions.get(imp) or {}).get("tariffs") or {}
+            for partner in self.countries:
+                if partner == imp:
+                    continue
+                rates = declared.get(partner) or {}
+                for good in self.goods:
+                    rate = max(floor, float(rates.get(good, 0.0) or 0.0))
+                    if rate > 0:
+                        wall.setdefault(imp, {}).setdefault(partner, {})[good] = rate
+        return wall
+
+    def tariff_wall(self, host, good):
+        """
+        Mean tariff the other countries applied LAST round to `good` coming
+        from `host` -- the wall a firm there exports over. Zero before any
+        round has been played.
+        """
+        others = [c for c in self.countries if c != host]
+        if not others or not self.history:
+            return 0.0
+        wall = self.history[-1].get("tariff_wall") or {}
+        return sum(wall.get(c, {}).get(host, {}).get(good, 0.0)
+                   for c in others) / len(others)
+
+    def export_premium(self, host, good):
+        """
+        Revenue premium for exporting `good` from `host` in the coming round:
+        EXPORT_MARKET_GAIN, shrunk by the tariff wall (EXPORT_TARIFF_GATE).
+        """
+        if not EXPORT_TARIFF_GATE:
+            return EXPORT_MARKET_GAIN
+        return EXPORT_MARKET_GAIN * (1.0 - self.tariff_wall(host, good))
+
+    def export_breakeven(self, fid, host=None):
+        """
+        Units a firm must ship before exporting pays: the fixed cost over the
+        premium it would earn per unit. None when the premium is zero.
+        """
+        cfg = self.firm_config[fid]
+        host = self.firms[fid]["host"] if host is None else host
+        per_unit = self.world_prices[cfg["industry"]] * self.export_premium(
+            host, cfg["industry"])
+        if per_unit <= 1e-12:
+            return None
+        return cfg["fixed_export_cost"] / per_unit
+
+    def print_export_premiums(self):
+        """
+        Project before firm owners fill in their forms (Phase 4+): each
+        firm's export premium for the coming round, and the volume it must
+        ship before exporting pays. Premiums differ by host because tariffs
+        are bilateral.
+        """
+        if not self.firms:
+            print("No firms loaded.")
+            return
+        print(f"\n  EXPORT PREMIUM FOR ROUND {self.round_num + 1}"
+              f"   (tick EXPORT on the firm form to earn it)")
+        print(f"  {'Firm':6s}{'Host':10s}{'Good':11s}{'Premium':>8s}"
+              f"{'Pays if you ship more than':>29s}")
+        print(f"  {'-' * 64}")
+        for fid, cfg in self.firm_config.items():
+            host = self.firms[fid]["host"]
+            prem = self.export_premium(host, cfg["industry"])
+            be = self.export_breakeven(fid)
+            be_txt = "never pays" if be is None else f"{be:.1f} units"
+            print(f"  {fid:6s}{host:10s}{cfg['industry']:11s}{prem:>8.0%}"
+                  f"{be_txt:>29s}")
+        print("\n  Exporting pays when units sold x price x premium > the fixed"
+              " export cost.")
+        if EXPORT_TARIFF_GATE:
+            print(f"  Premium = {EXPORT_MARKET_GAIN:.0%} x (1 - the average "
+                  f"tariff other countries put on that good from your host "
+                  f"last round).\n")
+        else:
+            print()
 
     # ── Monetary & FX (Phase 5+) ──────────────────────────────────
 
@@ -1745,6 +1973,22 @@ class IPESimulation:
                     f"0.10 and 10 both mean 10%)"
                 )
 
+            # MNC tax (Phase 3+): a share of foreign firms' revenue
+            if dec.get("mnc_tax") is not None:
+                try:
+                    tax = float(dec["mnc_tax"])
+                except (TypeError, ValueError):
+                    errors.append(f"{name}: MNC tax {dec['mnc_tax']!r} is not a number")
+                else:
+                    if self.phase < 3:
+                        errors.append(f"{name}: an MNC tax needs firms (Phase 3+)")
+                    elif not (MNC_TAX_MIN - 1e-9 <= tax <= MNC_TAX_MAX + 1e-9):
+                        errors.append(
+                            f"{name}: MNC tax {tax:.2f} outside "
+                            f"{MNC_TAX_MIN:.2f}-{MNC_TAX_MAX:.2f} (a share of "
+                            f"revenue; 0.10 and 10 both mean 10%)"
+                        )
+
             # Validate tariff rates
             for partner, goods_tariffs in dec.get("tariffs", {}).items():
                 for good, rate in goods_tariffs.items():
@@ -1774,15 +2018,36 @@ class IPESimulation:
                 errors.append(
                     f"{fid}: relocate_to '{relocate_to}' is not a country"
                 )
+            elif relocate_to in self.firms[fid].get("owners", []):
+                errors.append(
+                    f"{fid}: can't relocate to {relocate_to} -- that is its "
+                    f"owner's home country (no re-shoring)"
+                )
         return errors
 
     # ── Phase transition ──────────────────────────────────────────
+
+    def _upgrade_done(self, phase):
+        """
+        True once a round at `phase` or later is in history: the upgrade has
+        happened and been played, so re-running its notebook cell (as a
+        run-from-the-top after resume() does) must not reset anything.
+        """
+        if any(r.get("phase", 0) >= phase for r in self.history):
+            print(f"  Phase {phase} is already in play (round {self.round_num}, "
+                  f"Phase {self.phase}) -- skipping this upgrade so nothing "
+                  f"is reset.")
+            return True
+        return False
 
     def upgrade_to_phase2(self, new_countries: dict, new_goods: list):
         """
         Transition from Phase 1 to Phase 2 mid-simulation.
         Keeps history intact; future rounds use new parameters.
+        A no-op once a Phase 2 round has been played.
         """
+        if self._upgrade_done(2):
+            return
         # Approval is political history -- it survives the model change.
         carried = {n: (c.get("approval", APPROVAL_START),
                        c.get("low_approval_rounds", 0))
@@ -1810,8 +2075,11 @@ class IPESimulation:
           - Per-firm profit accounting in numeraire welfare units.
 
         firms_config defaults to PHASE3_FIRMS. Pass a subset (e.g., F1-F10)
-        to match class enrollment.
+        to match class enrollment. A no-op once a Phase 3 round has been
+        played; before that, re-running it rebuilds the roster.
         """
+        if self._upgrade_done(3):
+            return
         if firms_config is None:
             firms_config = PHASE3_FIRMS
 
@@ -1836,6 +2104,9 @@ class IPESimulation:
             )
 
         self.firm_config = deepcopy(firms_config)
+        # Varieties start here, so they take today's love-of-variety setting
+        # (a snapshot saved before Phase 3 may carry an older one).
+        self.variety_rho = VARIETY_RHO
         self.firms = {
             fid: {"host": cfg["default_host"], "cumulative_profit": 0.0}
             for fid, cfg in firms_config.items()
@@ -1856,8 +2127,10 @@ class IPESimulation:
         currency becomes the default invoicing unit). Each country gets a
         currency and default monetary policy (float, open capital, 0% money
         growth -- i.e. following the anchor). Firms and country endowments
-        carry over from Phase 4.
+        carry over from Phase 4. A no-op once a Phase 5 round has been played.
         """
+        if self._upgrade_done(5):
+            return
         if self.reserve_currency_holder is None:
             raise ValueError(
                 "Run award_reserve_currency() before upgrade_to_phase5(): "
@@ -1897,8 +2170,10 @@ class IPESimulation:
         a borrowing-ban clock, and a default counter. Borrowing lifts welfare
         now; interest + repayment lower it later. Because debt is denominated
         in the reserve currency, a weak local currency makes servicing more
-        painful (original sin).
+        painful (original sin). A no-op once a Phase 6 round has been played.
         """
+        if self._upgrade_done(6):
+            return
         if self.reserve_currency_holder is None:
             raise ValueError(
                 "Run award_reserve_currency() before upgrade_to_phase6()."
@@ -1940,7 +2215,11 @@ class IPESimulation:
           - Coalition-weight challenges that can transfer hegemony (and the
             reserve currency with it)
           - An always-on IMF that bails out distressed debtors with strings
+
+        A no-op once a Phase 7 round has been played.
         """
+        if self._upgrade_done(7):
+            return
         if self.reserve_currency_holder is None:
             raise ValueError(
                 "Run award_reserve_currency() before upgrade_to_phase7()."
@@ -2172,8 +2451,9 @@ class IPESimulation:
 
         Effects (until reversed):
           - tariff_floor: minimum tariff on ALL imports into this country
-          - mnc_tax_rate: tax on MNC revenue, collected by host country
-                          (stored in a separate ledger; does NOT affect welfare)
+          - mnc_tax_rate: the lowest MNC tax the country may charge once
+                          firms arrive (its own choice can be higher). What
+                          it collects counts toward its welfare.
 
         Reverse later via a follow-up inject_shock setting both to 0.
         """
@@ -2719,9 +2999,16 @@ class IPESimulation:
             cfg.setdefault("low_approval_rounds", 0)
 
     def _prev_welfare(self, name):
-        """That country's welfare last round, or None on the first round."""
+        """
+        That country's welfare last round -- or None on the first round, and
+        on the first round of a new phase. Each phase measures welfare its
+        own way (Phase 2 adds capital, Phase 3 varieties), so a jump across
+        the boundary is the model changing, not the country prospering.
+        """
         for rd in reversed(self.history):
             if name in rd.get("results", {}):
+                if rd.get("phase") != self.phase:
+                    return None
                 return rd["results"][name]["welfare"]
         return None
 
@@ -2900,15 +3187,24 @@ class IPESimulation:
         """
         Pick up where the last class left off: restore the newest snapshot
         play_round wrote (rounds/state/roundNN.json). Returns `default` when
-        nothing is saved yet, so the first class of a term keeps the fresh
-        simulation from the setup cell:
+        nothing is saved yet, so one setup cell serves every class -- the
+        fresh simulation is only used on the first class of a term:
 
-            sim = IPESimulation.resume(default=sim)
+            sim = IPESimulation.resume(
+                default=IPESimulation(countries, PHASE1_GOODS, phase=1))
 
         Pass a folder of snapshots, or one .json file, to be explicit.
         """
         return cls._classroom().resume(folder=folder, default=default,
                                        verbose=verbose)
+
+    def inbox_report(self, folder: str = "rounds"):
+        """
+        Who has submitted decision files for the next round, and what would
+        go in (rounds/inbox). Run it while teams are still deciding; it
+        writes nothing.
+        """
+        return self._classroom().inbox_report(self, folder)
 
     def save_state_file(self, path: str = "simulation_state.json"):
         """
@@ -2917,15 +3213,17 @@ class IPESimulation:
         """
         return self._classroom().save_state(self, path)
 
-    def export_calculator(self, path: str = None):
+    def export_calculator(self, path: str = None, inbox_url: str = None):
         """
-        Write the students' production calculator (calculator.py): one static
-        web page, a button per country in play, allocation in, output out.
-        Defaults to docs/index.html for GitHub Pages. Re-export only after a
-        shock that changes technology or endowments.
+        Write the students' calculator and round form (calculator.py): one
+        static web page covering every phase. Defaults to docs/index.html for
+        GitHub Pages. inbox_url is the Dropbox file request that Submit opens;
+        give it once and later exports keep it. Re-export only after a shock
+        that changes technology or endowments -- an unchanged page is left
+        alone.
         """
         import calculator
-        return calculator.export_calculator(self, path)
+        return calculator.export_calculator(self, path, inbox_url=inbox_url)
 
     # ── Display ───────────────────────────────────────────────────
 
@@ -3035,8 +3333,8 @@ class IPESimulation:
                 tag = ""
                 if fr["relocated"]:
                     tag = " (moved)"
-                elif fr["exported"]:
-                    tag = " (exp)"
+                elif fr["exported"] and phase >= 4:
+                    tag = f" (exp +{fr.get('export_premium', 0.0):.0%})"
                 print(
                     f"  {fid:4s}{fr['variety']:10s}{fr['host']:10s}"
                     f"{fr['scale']:8.1f}{fr['output']:10.1f}"
@@ -3056,11 +3354,12 @@ class IPESimulation:
                     print(f"  {n:16s}{f:.0%} floor on all imports")
 
         # MNC tax revenue (Phase 4+; separate ledger, NOT in welfare)
-        if phase >= 4 and "mnc_tax_this_round" in rd:
+        if phase >= 3 and "mnc_tax_this_round" in rd:
             tr = rd["mnc_tax_this_round"]
             cum = rd["mnc_tax_cumulative"]
             if any(t > 0 for t in tr.values()) or any(c > 0 for c in cum.values()):
-                print(f"\n  MNC TAX LEDGER (separate; does NOT enter welfare)")
+                print(f"\n  MNC TAX COLLECTED (the host keeps it: counts toward "
+                      f"its welfare)")
                 print(
                     f"  {'':16s}{'This round':>14s}{'Cumulative':>14s}"
                 )
@@ -3647,15 +3946,16 @@ class IPESimulation:
         print(f"{'':=<70}")
         print(
             f"  {'ID':4s}{'Variety':10s}{'Industry':11s}{'Host':10s}"
-            f"{'Prod.':>7s}{'Max scale':>11s}{'Unit cost':>11s}"
+            f"{'Prod.':>7s}{'Max scale':>11s}{'Unit cost':>11s}   Owner(s)"
         )
-        print(f"  {'-'*64}")
+        print(f"  {'-'*76}")
         for fid, cfg in self.firm_config.items():
             host = self.firms[fid]["host"]
+            owners = ", ".join(self.firms[fid].get("owners", [])) or "--"
             print(
                 f"  {fid:4s}{cfg['variety']:10s}{cfg['industry']:11s}"
                 f"{host:10s}{cfg['productivity']:7.1f}"
-                f"{cfg['max_scale']:11.0f}{cfg['unit_cost']:11.2f}"
+                f"{cfg['max_scale']:11.0f}{cfg['unit_cost']:11.2f}   {owners}"
             )
         print(f"\n  Productivity tiers: HIGH=1.3, MED=1.0, LOW=0.7")
         print(f"  Owner is always a student from a DIFFERENT country.\n")

@@ -2,14 +2,14 @@
 Stress test Phase 3 (MNCs + varieties + CES utility) and Phase 4 selection.
 Covers normal flow, edge cases, validation, save/restore, plot interaction.
 """
-import sys, json, traceback, math
+import sys, json, copy, io, contextlib, traceback, math
 import matplotlib
 matplotlib.use("Agg")
 
 from engine import (
     IPESimulation,
     PHASE2_COUNTRIES, PHASE2_GOODS,
-    PHASE3_FIRMS, WORLD_PRICES, VARIETY_RHO,
+    PHASE3_FIRMS, WORLD_PRICES, VARIETY_RHO, FIRM_LOCAL_SHARE,
     build_firm_roster,
 )
 
@@ -205,8 +205,10 @@ def test_variety_trade_flow():
     # Run a setup round so MNCs produce
     sim.run_round(BAL_DEC, [], firm_decisions=full_firm_dec(sim, scale=30))
     # Bosque hosts F1 (Cloth-A); Llano hosts F2 (Cloth-B) and F4 (Wine-A)
-    # Trade: Bosque exports cloth to Llano (40), Llano exports wine (20)
-    trades = [("Bosque", "Llano", "cloth", 40, "wine", 20)]
+    # Trade: Bosque exports cloth to Llano (20), Llano exports wine (10).
+    # (Sized to what Bosque has now that hosts keep only the local share of
+    # a firm's output.)
+    trades = [("Bosque", "Llano", "cloth", 20, "wine", 10)]
     r = sim.run_round(BAL_DEC, trades, firm_decisions=full_firm_dec(sim, scale=30))
     llano_cloth = r["results"]["Llano"]["consumption_varieties"]["cloth"]
     bosque_wine = r["results"]["Bosque"]["consumption_varieties"]["wine"]
@@ -236,17 +238,17 @@ def test_tariff_with_varieties():
     dec_with_tariff["Llano"] = dict(dec_with_tariff["Llano"])
     dec_with_tariff["Llano"]["tariffs"] = {"Bosque": {"cloth": 0.5}}
     sim.run_round(dec_with_tariff, [], firm_decisions=full_firm_dec(sim, scale=30))
-    trades = [("Bosque", "Llano", "cloth", 40, "wine", 20)]
+    trades = [("Bosque", "Llano", "cloth", 20, "wine", 10)]
     r = sim.run_round(dec_with_tariff, trades,
                       firm_decisions=full_firm_dec(sim, scale=30))
-    # 50% tariff: Llano should receive 40 * 0.5 = 20 cloth (scalar)
+    # 50% tariff: Llano should receive 20 * 0.5 = 10 cloth (scalar)
     # Variety totals on Llano's side should also reflect tariff destruction
     log = "\n".join(r["trade_log"])
     check("  trade log shows 50% tariff", "50%" in log, f"log: {log!r}")
     # Tariff losses recorded
     losses = r["results"]["Llano"]["tariff_losses"]["cloth"]
-    check("  tariff loss = 20 cloth (50% of 40)",
-          abs(losses - 20.0) < 0.01, f"got {losses}")
+    check("  tariff loss = 10 cloth (50% of 20)",
+          abs(losses - 10.0) < 0.01, f"got {losses}")
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -279,19 +281,21 @@ def test_phase4_selection():
     fd_export = {fid: {"scale": 30, "relocate_to": None, "export": True}
                  for fid in sim.firms}
     r = sim.run_round(BAL_DEC, [], firm_decisions=fd_export)
-    # F1 HIGH cloth (cost=0.6, fixed=8): rev=39, opcost=18, fixed=8 -> profit=13
-    check("  F1 (HIGH) profit with export: 13",
-          abs(r["firms"]["F1"]["profit"] - 13.0) < 0.01,
+    # Last round had no tariffs, so exporters earn the full 25% premium.
+    # F1 HIGH cloth: 39 units, rev = 39 * 1.25 = 48.75, opcost 18, fixed 8
+    #   -> 22.75, vs 21 staying home: exporting adds 1.75
+    check("  F1 (HIGH) profit with export: 22.75 (home 21)",
+          abs(r["firms"]["F1"]["profit"] - 22.75) < 1e-9,
           f"got {r['firms']['F1']['profit']}")
-    # F3 LOW cloth: rev=21, opcost=18, fixed=8 -> profit=-5 (loses money!)
-    check("  F3 (LOW) profit with export: -5",
-          abs(r["firms"]["F3"]["profit"] - (-5.0)) < 0.01,
+    # F3 LOW cloth: 21 units, rev = 26.25, opcost 18, fixed 8
+    #   -> 0.25, vs 3 staying home: exporting costs it 2.75
+    check("  F3 (LOW) profit with export: 0.25 (home 3) -- worse off",
+          abs(r["firms"]["F3"]["profit"] - 0.25) < 1e-9,
           f"got {r['firms']['F3']['profit']}")
-    # F7 HIGH machinery (price=1.5, cost=1.0, fixed=12): rev=58.5, opcost=30, fixed=12
-    # output = 30 * 1.3 = 39, rev = 39 * 1.5 = 58.5
-    # profit = 58.5 - 30 - 12 = 16.5
-    check("  F7 (HIGH machinery) profit with export: 16.5",
-          abs(r["firms"]["F7"]["profit"] - 16.5) < 0.01,
+    # F7 HIGH machinery (price 1.5, cost 1.0, fixed 12): 39 units,
+    # rev = 39 * 1.5 * 1.25 = 73.125 -> 73.125 - 30 - 12 = 31.125, vs 28.5
+    check("  F7 (HIGH machinery) profit with export: 31.125 (home 28.5)",
+          abs(r["firms"]["F7"]["profit"] - 31.125) < 1e-9,
           f"got {r['firms']['F7']['profit']}")
 
 
@@ -560,6 +564,173 @@ def test_build_firm_roster():
         check("  empty country list raises", True)
 
 
+# ────────────────────────────────────────────────────────────────────
+# 21. The MNC tax: a country decision from Phase 3
+# ────────────────────────────────────────────────────────────────────
+def play_taxed(sim, taxes=None, scale=40, fd=None):
+    dec = copy.deepcopy(BAL_DEC)
+    for c, t in (taxes or {}).items():
+        dec[c]["mnc_tax"] = t
+    return sim.run_round(dec, [], firm_decisions=fd or full_firm_dec(sim, scale=scale))
+
+
+def test_mnc_tax_decision():
+    print("\n[21] the MNC tax: the host's choice, the host's revenue, the owner's cost")
+    base = fresh_phase3()
+    a, b = copy.deepcopy(base), copy.deepcopy(base)
+    r0, r1 = play_taxed(a), play_taxed(b, {"Trinity": 0.10})
+    # Trinity hosts F7 (HIGH machinery) and F10 (MED machinery). At scale 40:
+    # revenue 52 x 1.5 = 78 and 40 x 1.5 = 60, so 10% collects 7.8 + 6.0.
+    t = r1["results"]["Trinity"]["mnc_tax"]
+    check("  Trinity collects 10% of its firms' revenue: 13.80",
+          abs(t["collected"] - 13.8) < 1e-9 and t["rate"] == 0.10, str(t))
+    cons = r1["results"]["Trinity"]["consumption"]
+    cap = sum(cons[g] * WORLD_PRICES[g] for g in PHASE2_GOODS)
+    check("  the host keeps it: welfare x (1 + T/C), exactly",
+          abs(r1["results"]["Trinity"]["welfare"]
+              / r0["results"]["Trinity"]["welfare"] - (1 + 13.8 / cap)) < 1e-12)
+    check("  the owners pay it: F7 38 -> 30.2, F10 20 -> 14",
+          abs(r1["firms"]["F7"]["profit"] - 30.2) < 1e-9
+          and abs(r1["firms"]["F10"]["profit"] - 14.0) < 1e-9)
+    check("  nobody else's welfare moves",
+          all(r1["results"][c]["welfare"] == r0["results"][c]["welfare"]
+              for c in PHASE2_COUNTRIES if c != "Trinity"))
+    check("  it is not a gain from trade (the metric ignores it)",
+          r1["results"]["Trinity"]["gains_from_trade_pct"]
+          == r0["results"]["Trinity"]["gains_from_trade_pct"])
+    r2 = play_taxed(b)
+    check("  the rate stands until changed",
+          r2["results"]["Trinity"]["mnc_tax"]["rate"] == 0.10)
+    r3 = play_taxed(b, {"Trinity": 0.0})
+    check("  ...and changing it to 0 ends it",
+          r3["results"]["Trinity"]["mnc_tax"]["collected"] == 0.0)
+    fd = full_firm_dec(b, scale=40)
+    fd["F7"] = {"scale": 0, "relocate_to": "Llano", "export": False}
+    r4 = play_taxed(b, {"Trinity": 0.20}, fd=fd)
+    check("  a firm moving out this round pays nothing",
+          r4["firms"]["F7"]["mnc_tax"] == 0.0)
+
+    # limits, and only once there are firms
+    for bad, label in ((0.55, "above 50%"), (-0.05, "below 0 (subsidies off)"),
+                       ("ten", "not a number")):
+        s = copy.deepcopy(base)
+        try:
+            play_taxed(s, {"Bosque": bad})
+            check(f"  {label} rejected", False, "no error")
+        except ValueError as e:
+            check(f"  {label} rejected", "MNC tax" in str(e) and s.round_num == 0,
+                  str(e)[:120])
+    p2 = IPESimulation(PHASE2_COUNTRIES, PHASE2_GOODS, phase=2)
+    dec = copy.deepcopy(BAL_DEC)
+    dec["Bosque"]["mnc_tax"] = 0.10
+    try:
+        p2.run_round(dec, [])
+        check("  Phase 2: no firms, no MNC tax", False, "no error")
+    except ValueError as e:
+        check("  Phase 2: no firms, no MNC tax", "Phase 3" in str(e), str(e)[:120])
+
+    # a populist government's minimum holds; a higher choice wins
+    pop = copy.deepcopy(base)
+    pop.countries["Bosque"]["mnc_tax_rate"] = 0.15
+    r5 = play_taxed(pop, {"Bosque": 0.05})
+    check("  a populist 15% minimum beats a 5% choice",
+          r5["results"]["Bosque"]["mnc_tax"]["rate"] == 0.15
+          and abs(r5["firms"]["F1"]["mnc_tax"] - 0.15 * 52) < 1e-9)
+    r6 = play_taxed(pop, {"Bosque": 0.25})
+    check("  ...and a 25% choice beats the minimum",
+          r6["results"]["Bosque"]["mnc_tax"]["rate"] == 0.25)
+
+    # the standing rate survives a save
+    s2 = IPESimulation.from_state(json.loads(json.dumps(b.get_state())))
+    check("  a snapshot keeps the standing rate",
+          s2.mnc_tax_in_force("Trinity") == 0.20)
+
+
+# ────────────────────────────────────────────────────────────────────
+# 22. Owners: a firm can't move to its owner's home (no re-shoring)
+# ────────────────────────────────────────────────────────────────────
+def test_owners_no_reshoring():
+    print("\n[22] owners and the no-re-shoring rule")
+    sim = fresh_phase3()
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.set_firm_owners({"F1": "Llano", "F7": ["Bosque", "Sabine"]})
+    check("  owners recorded (a pair keeps both countries)",
+          sim.firms["F1"]["owners"] == ["Llano"]
+          and sim.firms["F7"]["owners"] == ["Bosque", "Sabine"])
+    for fid, home in (("F1", "Llano"), ("F7", "Sabine")):
+        fd = full_firm_dec(sim)
+        fd[fid] = {"scale": 0, "relocate_to": home, "export": False}
+        try:
+            sim.run_round(BAL_DEC, [], firm_decisions=fd)
+            check(f"  {fid} can't move home to {home}", False, "no error")
+        except ValueError as e:
+            check(f"  {fid} can't move home to {home}",
+                  "no re-shoring" in str(e) and sim.round_num == 0, str(e)[:120])
+    fd = full_firm_dec(sim)
+    fd["F1"] = {"scale": 0, "relocate_to": "Pecos", "export": False}
+    fd["F2"] = {"scale": 0, "relocate_to": "Bosque", "export": False}
+    sim.run_round(BAL_DEC, [], firm_decisions=fd)
+    check("  anywhere else is fine, and firms without owners move freely",
+          sim.firms["F1"]["host"] == "Pecos" and sim.firms["F2"]["host"] == "Bosque")
+    for owners, label in (({"F3": "Sabine"}, "an owner from the host country"),
+                          ({"F99": "Llano"}, "an unknown firm"),
+                          ({"F4": "Atlantis"}, "an unknown country")):
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                sim.set_firm_owners(owners)
+            check(f"  {label} is refused", False, "no error")
+        except ValueError:
+            check(f"  {label} is refused", True)
+    fd = full_firm_dec(sim, scale=30)
+    fd["F4"] = {"scale": 30, "relocate_to": sim.firms["F4"]["host"], "export": False}
+    r = sim.run_round(BAL_DEC, [], firm_decisions=fd)
+    check("  'relocate to' your current host just means stay",
+          r["firms"]["F4"]["output"] > 0 and not r["firms"]["F4"]["relocated"])
+    back = IPESimulation.from_state(json.loads(json.dumps(sim.get_state())))
+    fd = full_firm_dec(back)
+    fd["F1"] = {"scale": 0, "relocate_to": "Llano", "export": False}
+    try:
+        back.run_round(BAL_DEC, [], firm_decisions=fd)
+        check("  owners survive a snapshot, rule and all", False, "no error")
+    except ValueError:
+        check("  owners survive a snapshot, rule and all", True)
+
+
+# ────────────────────────────────────────────────────────────────────
+# 23. Calibration: hosts get the local share; hosting matters but can't
+#     swallow an economy
+# ────────────────────────────────────────────────────────────────────
+def test_firm_calibration():
+    print("\n[23] firm calibration: local share, bounded hosting gains")
+    a, b = fresh_phase3(), fresh_phase3()
+    r0 = a.run_round(BAL_DEC, [], firm_decisions=zero_firm_dec(a))
+    r1 = b.run_round(BAL_DEC, [], firm_decisions=full_firm_dec(b, scale=40))
+    # F1 (HIGH cloth, Bosque) makes 52 units; Bosque's economy gets its local share
+    added = (r1["results"]["Bosque"]["production"]["cloth"]
+             - r0["results"]["Bosque"]["production"]["cloth"])
+    check(f"  host production gains the local share ({FIRM_LOCAL_SHARE:.0%} of 52)",
+          abs(added - 52 * FIRM_LOCAL_SHARE) < 1e-9, f"added {added:.3f}")
+    check("  ...while the owner's revenue counts every unit (profit 28)",
+          abs(r1["firms"]["F1"]["profit"] - 28.0) < 1e-9
+          and abs(r1["firms"]["F1"]["revenue"] - 52.0) < 1e-9)
+    gain = {c: r1["results"][c]["welfare"] / r0["results"][c]["welfare"]
+            for c in PHASE2_COUNTRIES}
+    hosts = {b.firms[f]["host"] for f in b.firms}
+    check("  hosting at full scale never doubles a country",
+          max(gain.values()) < 2.0, str({c: round(g, 2) for c, g in gain.items()}))
+    check("  ...but every host gains at least 5%",
+          all(gain[c] > 1.05 for c in hosts),
+          str({c: round(gain[c], 2) for c in hosts}))
+
+    # a save from before Phase 3 may carry an older love-of-variety setting
+    old = IPESimulation(PHASE2_COUNTRIES, PHASE2_GOODS, phase=2)
+    old.variety_rho = 0.6
+    with contextlib.redirect_stdout(io.StringIO()):
+        old.upgrade_to_phase3({f: PHASE3_FIRMS[f] for f in ("F1", "F7")})
+    check("  the Phase 3 upgrade applies today's VARIETY_RHO",
+          old.variety_rho == VARIETY_RHO)
+
+
 def main():
     tests = [
         test_zero_firms,
@@ -582,6 +753,9 @@ def main():
         test_subset_firms,
         test_off_map_firm_hosts_rejected,
         test_build_firm_roster,
+        test_mnc_tax_decision,
+        test_owners_no_reshoring,
+        test_firm_calibration,
     ]
     for t in tests:
         try:

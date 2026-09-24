@@ -42,8 +42,8 @@ def _parse_args():
              "Must match the country set you run the simulation with.")
     ap.add_argument(
         "--firms", type=int, default=None, metavar="N",
-        help="number of MNC forms to print, normally one per student "
-             "(default: the full roster).")
+        help="print fewer MNC forms than the default of two per country "
+             "(more than that is trimmed back to two per country).")
     return ap.parse_args()
 
 
@@ -66,10 +66,7 @@ if ARGS.countries:
     FIRMS = engine.build_firm_roster(NAMES, n_firms=ARGS.firms, verbose=False)
 else:
     NAMES = list(engine.PHASE1_COUNTRIES.keys())
-    FIRMS = engine.PHASE3_FIRMS
-    if ARGS.firms is not None:
-        FIRMS = engine.build_firm_roster(NAMES, n_firms=ARGS.firms,
-                                         verbose=False)
+    FIRMS = engine.build_firm_roster(NAMES, n_firms=ARGS.firms, verbose=False)
 
 P1 = {n: engine.PHASE1_COUNTRIES[n] for n in NAMES}
 P2 = {n: engine.PHASE2_COUNTRIES[n] for n in NAMES}
@@ -247,6 +244,18 @@ def politics_block():
     )
 
 
+def mnc_tax_block(name):
+    """The MNC tax: one rate on foreign-owned firms' revenue (Phase 3+)."""
+    top = _pct(engine.MNC_TAX_MAX)
+    low = _pct(engine.MNC_TAX_MIN)
+    return (
+        rf"{{\bfseries MNC tax}} (Phase 3+) --- on foreign-owned firms in "
+        rf"{esc(name)}: \blank{{1.4cm}}\% of their revenue "
+        rf"\quad \textit{{({low}--{top}\%)}}\par" "\n"
+        r"\textit{Blank keeps last round's rate. What you collect adds to your "
+        r"welfare. Set it too high and the owners can move their firm out, "
+        r"taking its output with it.}"
+    )
 
 
 # ── Phase 1 decision form ─────────────────────────────────────────────
@@ -324,6 +333,9 @@ Labor: \textbf{{{L}}} \quad|\quad Capital: \textbf{{{K}}}
 {politics_block()}
 
 \vspace{{4pt}}
+{mnc_tax_block(name)}
+
+\vspace{{4pt}}
 {trade_block()}
 """
 
@@ -340,14 +352,34 @@ def build_phase2_forms():
 
 
 # ── Firm (MNC) forms ──────────────────────────────────────────────────
+#
+# One page per firm: the decision slip on top, then a worked example in that
+# firm's own numbers at a scale nobody picks (EXAMPLE_SCALE), so the method is
+# on the page but the decision isn't.
 
-def firm_form_block(fid):
+EXAMPLE_SCALE = 23
+
+
+def _money(x):
+    """Round half-up to cents, the way students round by hand."""
+    from decimal import Decimal, ROUND_HALF_UP
+    return Decimal(str(x)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _units(x):
+    from decimal import Decimal, ROUND_HALF_UP
+    return Decimal(str(x)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+
+
+def firm_slip(fid):
     cfg = FIRMS[fid]
     price = engine.WORLD_PRICES[cfg["industry"]]
     return rf"""
-\noindent\fbox{{\begin{{minipage}}{{0.95\linewidth}}
-{{\bfseries ROUND \blank{{1cm}} --- FIRM {esc(fid)}: {esc(cfg['variety'])}}}
-\hfill Owner(s): \blank{{4.5cm}}\par
+\noindent\fbox{{\begin{{minipage}}{{0.97\linewidth}}
+\vspace{{3pt}}
+{{\large\bfseries ROUND \blank{{1.2cm}} --- FIRM {esc(fid)}: {esc(cfg['variety'])}}}
+\hfill Owner(s): \blank{{4.8cm}}\par
+\vspace{{3pt}}
 Industry: \textbf{{{esc(cfg['industry'])}}} \quad
 Productivity: \textbf{{{cfg['productivity']:.1f}}} \quad
 Starting host: \textbf{{{esc(cfg['default_host'])}}}\par
@@ -355,29 +387,101 @@ Price per unit sold: \textbf{{{price:.2f}}} \quad
 Unit cost: \textbf{{{cfg['unit_cost']:.2f}}} \quad
 Max scale: \textbf{{{cfg['max_scale']:.0f}}} \quad
 Export fixed cost: \textbf{{{cfg['fixed_export_cost']:.0f}}}\par
-\vspace{{3pt}}
-SCALE (0--{cfg['max_scale']:.0f}): \blank{{2cm}} \qquad
-RELOCATE TO: \blank{{3cm}} \textit{{(blank = stay)}}\par
-EXPORT this round? \boxx\ Yes \quad \boxx\ No \hfill\textit{{(Phase 4+; pays the fixed cost)}}\par
-\vspace{{2pt}}
-{{\small You make \textbf{{scale $\times$ productivity}} units and sell them at the price
-above. \textbf{{Profit}} $=$ units sold $\times$ price $-$ scale $\times$ unit cost
-$-$ export fixed cost (only if you export) $-$ your host's MNC tax (Phase 4+).}}
-\end{{minipage}}}}
 \vspace{{8pt}}
+SCALE (0--{cfg['max_scale']:.0f}): \blank{{2.2cm}} \qquad
+RELOCATE TO: \blank{{3.4cm}} \textit{{(blank = stay)}}\par
+{{\small\itshape Relocate anywhere except your own country --- no re-shoring.}}\par
+\vspace{{6pt}}
+EXPORT this round? \quad \boxx\ Yes \quad \boxx\ No
+\hfill\textit{{(Phase 4+; pays the fixed cost)}}\par
+\vspace{{3pt}}
+\end{{minipage}}}}
+"""
+
+
+def firm_example(fid):
+    """Stay home vs export at EXAMPLE_SCALE, in this firm's own numbers."""
+    cfg = FIRMS[fid]
+    k, phi = EXAMPLE_SCALE, cfg["productivity"]
+    price, uc = engine.WORLD_PRICES[cfg["industry"]], cfg["unit_cost"]
+    fx, gain = cfg["fixed_export_cost"], engine.EXPORT_MARKET_GAIN
+    units = _units(k * phi)
+    rev_home = _money(units * _money(price))
+    rev_exp = _money(rev_home * (1 + _money(gain)))
+    cost = _money(k * uc)
+    fixed = _money(fx)
+    prof_home = rev_home - cost
+    prof_exp = rev_exp - cost - fixed
+    extra = rev_exp - rev_home
+    diff = prof_exp - prof_home
+    pays = diff > 0
+    verdict = (rf"at scale {k}, exporting \textbf{{adds {diff:.2f}}}: the extra "
+               rf"revenue ({extra:.2f}) covers the fixed cost ({fixed:.2f})."
+               if pays else
+               rf"at scale {k}, exporting \textbf{{loses {-diff:.2f}}}: the extra "
+               rf"revenue ({extra:.2f}) does not cover the fixed cost ({fixed:.2f}). "
+               rf"Stay home.")
+    pct = f"{gain * 100:.0f}"
+    local = f"{engine.FIRM_LOCAL_SHARE * 100:.0f}"
+    return rf"""
+\vspace{{10pt}}
+\noindent\tikz\draw[dashed,gray] (0,0) -- (0.99\linewidth,0);\par
+\vspace{{-2pt}}
+{{\footnotesize\color{{gray}} Hand in the slip above; keep this half.}}\par
+\vspace{{8pt}}
+{{\large\bfseries How the numbers work --- a worked example at scale {k}}}\par
+\textit{{Scale {k} is an illustration, not a recommendation. Redo the table at the
+scale you actually choose.}}
+
+\vspace{{6pt}}
+\begin{{center}}
+\renewcommand{{\arraystretch}}{{1.25}}
+\begin{{tabular}}{{lrr}}
+\toprule
+ & \textbf{{Stay home}} & \textbf{{Export}} (premium {pct}\%) \\
+\midrule
+Units made: scale $\times$ productivity & {k} $\times$ {phi:.1f} $=$ {units} & {units} \\
+Revenue: units $\times$ price & {units} $\times$ {price:.2f} $=$ {rev_home}
+  & {rev_home} $\times$ {1 + gain:.2f} $=$ {rev_exp} \\
+Production cost: scale $\times$ unit cost & {k} $\times$ {uc:.2f} $=$ {cost} & {cost} \\
+Export fixed cost & --- & {fixed} \\
+\midrule
+\textbf{{Profit}} & \textbf{{{prof_home}}} & \textbf{{{prof_exp}}} \\
+\bottomrule
+\end{{tabular}}
+\end{{center}}
+
+\textbf{{Verdict:}} {verdict}
+
+\vspace{{4pt}}
+\begin{{itemize}}[nosep,leftmargin=1.2em]
+  \item \textbf{{The rule:}} export only if units $\times$ price $\times$ premium
+    $>$ the fixed export cost. The fixed cost is the same whether you ship 5 units
+    or 50, so exporting needs volume.
+  \item \textbf{{The premium}} is on the board each round. {pct}\% is the most it
+    can be; tariffs other countries put on your good from your host shrink it.
+  \item \textbf{{Your local sales}} --- {local}\% of your units --- count toward your
+    \emph{{host's}} welfare, export or not; the rest sells on world markets.
+    \textbf{{Your profit}} counts every unit, and it is yours alone.
+  \item \textbf{{Your host's MNC tax}} takes its \% of your revenue (premium
+    included), so a lower-tax host keeps more of your profit --- but moving
+    means producing nothing that round. From Phase 5 your profit is worth what
+    your host's currency is worth.
+\end{{itemize}}
 """
 
 
 def build_firm_forms():
-    intro = (r"{\large\bfseries MNC Decision Forms} \hfill (Phase 3+)\par " + "\n"
-             r"You own this firm -- alone or with a partner -- even though it "
+    intro = (r"{\large\bfseries MNC Decision Form} \hfill (Phase 3+)\par" + "\n"
+             r"You own this firm --- alone or with a partner --- even though it "
              r"sits in another country. Each round: choose how much to produce "
              r"(\emph{scale}), whether to \emph{relocate} to a new host, and "
-             r"(Phase 4+) whether to pay the fixed cost to \emph{export}. The "
-             r"profit is yours; the output counts for whichever country hosts you. "
-             r"Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7." + "\n\\hr\n")
-    blocks = [firm_form_block(fid) for fid in FIRMS]
-    return write_tex("forms-firms.tex", intro + "\n".join(blocks))
+             r"(Phase 4+) whether to pay the fixed cost to \emph{export}. "
+             r"It can move anywhere except your own country. "
+             r"Productivity tiers: HIGH 1.3, MED 1.0, LOW 0.7." + "\n"
+             r"\vspace{6pt}" + "\n")
+    pages = [intro + firm_slip(fid) + firm_example(fid) for fid in FIRMS]
+    return write_tex("forms-firms.tex", "\n\\newpage\n".join(pages))
 
 
 # ── Finance add-on form (monetary / debt / institutions) ──────────────
@@ -466,6 +570,46 @@ def build_finance_forms():
     return write_tex("forms-finance.tex", "\n".join(pages))
 
 
+# ── Submitting from a laptop (one page) ───────────────────────────────
+
+PAGE_URL = "https://joshuaalley.github.io/ipe-simulation/"
+
+
+def build_submit_howto():
+    body = rf"""
+{{\Large\bfseries Submitting your round from a laptop}}\par
+\vspace{{2pt}}
+The class page: \texttt{{{esc(PAGE_URL)}}} \hfill One person per team submits.
+\hr
+
+\begin{{enumerate}}[leftmargin=1.6em,itemsep=6pt]
+  \item \textbf{{Tap the phase}} (it's on the board), then \textbf{{your country}}.
+  \item \textbf{{Production.}} Type where your workers and capital go. Green ticks
+    mean everything is placed; the page won't let you submit until it is.
+  \item \textbf{{What your team decided.}} Tariffs on your imports, the trades you
+    agreed, compensation, and from Phase 3 your MNC tax (blank keeps last
+    round's). Money, debt and WTO choices appear once those phases start.
+  \item \textbf{{Submit.}} The page saves a small file (\texttt{{Bosque.json}}) and
+    opens the class Dropbox page. \textbf{{Drop the file in.}} That's it.
+\end{{enumerate}}
+
+\vspace{{6pt}}
+{{\bfseries Good to know}}
+\begin{{itemize}}[leftmargin=1.4em,itemsep=4pt]
+  \item \textbf{{Trades need both sides.}} List every swap you agreed. Your partner
+    must list the same swap on the same terms, or it doesn't happen.
+  \item \textbf{{Changed your mind?}} Submit again. The newest file counts.
+  \item \textbf{{Firm owners:}} tap \emph{{A firm I own}}, pick your firm, and set scale,
+    move and export. Submit only when something changes; otherwise your firm
+    keeps doing what it did.
+  \item \textbf{{No file?}} Your country repeats last round's production, tariffs
+    and compensation, with no trades.
+  \item \textbf{{No laptop?}} Hand in the paper form as before.
+\end{{itemize}}
+"""
+    return write_tex("how-to-submit.tex", body)
+
+
 # ── main ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -475,6 +619,7 @@ if __name__ == "__main__":
         build_phase2_forms(),
         build_firm_forms(),
         build_finance_forms(),
+        build_submit_howto(),
     ]
     for p in out:
         print("wrote", os.path.basename(p))

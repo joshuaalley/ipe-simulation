@@ -9,9 +9,10 @@ forms — so you stop relying on notebook cell output in front of the class.
 |---|---|---|
 | `country-briefs.pdf` | One page per country: identity, endowments, factor intensities, and how the country's role grows across phases. | Hand to each group **once**, at the start. They keep it. |
 | `forms-phase1-ricardo.pdf` | Per-country round form: labor allocation, tariffs, trade offers. | Phase 1 (Rounds ~1–3). One sheet per group per round. |
-| `forms-phase2plus-trade.pdf` | Per-country round form: labor **and** capital allocation across three goods, tariffs, trade offers. | Phase 2 onward — the core trade form for every later round. |
-| `forms-firms.pdf` | One boxed form per MNC (scale, relocate, export). | Phase 3+. Hand each firm-owner their firm's box. The export line activates in Phase 4. |
+| `forms-phase2plus-trade.pdf` | Per-country round form: labor **and** capital allocation across three goods, tariffs, compensation, trade offers, and the MNC tax (Phase 3+). | Phase 2 onward — the core trade form for every later round. |
+| `forms-firms.pdf` | One page per MNC: the decision slip (scale, relocate, export) plus a worked example in that firm's own numbers. | Phase 3+. Hand each owner (or pair) their firm's page; they hand in the slip and keep the example. The export line activates in Phase 4. |
 | `forms-finance.pdf` | Per-country add-on: monetary regime (Phase 5), debt (Phase 6), institutions/WTO/hegemon (Phase 7). | Staple to the trade form once the relevant phase opens. |
+| `how-to-submit.pdf` | One page: submitting a round from the class page (phase, country, decisions, Submit, drop into Dropbox). | Hand out once, the first time teams submit from laptops. |
 
 Each form has a blank `ROUND ____` so one printout works for any round.
 

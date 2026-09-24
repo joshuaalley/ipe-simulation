@@ -167,9 +167,11 @@ r9_firm_dec = {fid: {"scale": 30, "relocate_to": None, "export": True}
 # Round 12: first Phase 4 round (export selection live)
 sim.run_round(r4_dec, [], firm_decisions=r9_firm_dec)
 check("Phase 4 R12 (first Melitz round) ran", sim.phase == 4)
-# Low-prod F3 should be in the red this round (profit = 3 - 8 = -5)
+# Low-prod F3 earns less exporting than it would have at home: at scale 30
+# it makes 21 units, the premium adds at most 21 x 0.25 = 5.25, the fixed
+# cost is 8. Staying home earns 30 x (0.7 - 0.6) = 3.
 last = sim.history[-1]["firms"]["F3"]["profit"]
-check("R12: F3 (LOW) export loses money", last < 0,
+check("R12: exporting costs F3 (LOW) money vs staying home", last < 3.0 - 1e-9,
       f"F3 profit = {last}")
 
 # Round 14: structural shock

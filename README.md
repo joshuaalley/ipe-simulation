@@ -10,11 +10,11 @@ economy, driven from a Jupyter notebook and projected for the room.
 | `simulation.ipynb` | The notebook you drive in class. |
 | `CLASSROOM_GUIDE.md` | **Start here** — class-size setup, round rhythm, facilitation. |
 | `handouts/` | Printable country briefs and decision forms. |
-| `calculator.py`, `calculator_template.html` | Students' production calculator: `sim.export_calculator()` writes it. |
+| `calculator.py`, `calculator_template.html` | Students' calculator and round form: `sim.export_calculator()` writes it. Its decision files land in `rounds/inbox`, and `play_round` builds rounds from them. |
 | `docs/` | The published calculator page (GitHub Pages). Generated; don't edit by hand. |
 | `rounds/`, `rounds/state/` | Your class data: one workbook per round, plus the per-round state snapshots `play_round` writes. Git-ignored, and the only copy — back it up. |
 | `engine-math-reference.pdf` | Instructor-only: the math behind each phase. |
-| `stress_test*.py`, `notebook_e2e_test.py` | Regression suite (670 checks), including `stress_test_money_balance.py`, which plays six different trading worlds and fails if any fixed money strategy, or serial default, starts winning everywhere. |
+| `stress_test*.py`, `notebook_e2e_test.py` | Regression suite (775 checks), including `stress_test_money_balance.py`, which plays six different trading worlds and fails if any fixed money strategy, or serial default, starts winning everywhere. |
 
 ## Quick start
 
@@ -48,18 +48,24 @@ The engine rejects a firm roster hosted in countries that aren't in play, so
 these two country lists must agree. See *Setting up for your class size* in
 `CLASSROOM_GUIDE.md`.
 
-## Student production calculator
+## Student calculator and round form
 
-One static web page with a button per country in play. Students type an
-allocation and see what the engine will produce, and nothing else.
+One static web page for the whole term. Students pick the phase and their
+country, see what their allocation produces, fill in the rest of the round
+(tariffs, trades, policies), and submit. The page saves a small decision file
+and opens your Dropbox file request, which drops it into `rounds/inbox`.
 
 ```python
-sim.export_calculator()        # writes docs/index.html from the live simulation
+sim.export_calculator(inbox_url="https://www.dropbox.com/request/...")   # once
+sim.inbox_report()             # who's in, while teams decide
 ```
 
-Publish `docs/` with GitHub Pages (Settings → Pages → Deploy from a branch →
-`master`, `/docs`); each push republishes it. Re-export only after a shock that
-changes technology or endowments. See *Student production calculator* in
+The round cell then builds `roundNN.xlsx` from the files on its first run and
+plays it on the second. An empty inbox means a paper round, as before. Publish
+`docs/` with GitHub Pages (Settings → Pages → Deploy from a branch → `master`,
+`/docs`). Re-export only after a shock that changes technology or endowments;
+an export that changes nothing leaves the file alone. See *Student calculator
+and round form* and *Collecting decisions from laptops* in
 `CLASSROOM_GUIDE.md`.
 
 ## Tests
@@ -68,6 +74,7 @@ changes technology or endowments. See *Student production calculator* in
 python stress_test.py && python stress_test_phase3.py && python stress_test_phase4.py \
   && python stress_test_phase5.py && python stress_test_phase6.py \
   && python stress_test_phase7.py && python stress_test_approval.py && python stress_test_classroom.py \
-  && python stress_test_calculator.py && python stress_test_money_balance.py \
+  && python stress_test_calculator.py && python stress_test_inbox.py \
+  && python stress_test_money_balance.py \
   && python notebook_e2e_test.py
 ```

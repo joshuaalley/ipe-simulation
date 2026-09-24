@@ -82,12 +82,12 @@ def test_borrow_grows_welfare_and_stock():
     base = fresh_phase6(); r0 = run6(base)
     w_noborrow = r0["results"]["Bosque"]["welfare"]
     s = fresh_phase6()
-    r = run6(s, debt={"Bosque": {"borrow": 20}})
+    r = run6(s, debt={"Bosque": {"borrow": 10}})    # under the 25%-of-C cap
     w_borrow = r["results"]["Bosque"]["welfare"]
     check("  borrowing raises welfare this round", w_borrow > w_noborrow,
           f"noborrow={w_noborrow:.2f}, borrow={w_borrow:.2f}")
-    check("  debt stock = 20 after borrowing 20",
-          abs(s.countries["Bosque"]["debt_stock"] - 20) < 0.01,
+    check("  debt stock = 10 after borrowing 10",
+          abs(s.countries["Bosque"]["debt_stock"] - 10) < 0.01,
           f"got {s.countries['Bosque']['debt_stock']}")
 
 
@@ -95,13 +95,13 @@ def test_borrow_grows_welfare_and_stock():
 def test_interest_and_rate():
     print("\n[3] interest accrues; rate rises with debt")
     s = fresh_phase6()
-    run6(s, debt={"Bosque": {"borrow": 20}})       # stock 20
-    r = run6(s, debt={"Bosque": {"borrow": 20}})   # stock 40 (before this round's interest logic)
+    run6(s, debt={"Bosque": {"borrow": 10}})       # stock 10
+    r = run6(s, debt={"Bosque": {"borrow": 10}})   # stock 20 (before this round's interest logic)
     d = r["results"]["Bosque"]["debt"]
     check("  rate above base when indebted", d["rate"] > DEBT_BASE_RATE,
           f"got {d['rate']:.3f}")
     check("  interest > 0 on positive stock", d["interest"] > 0)
-    check("  stock grew to 40", abs(s.countries["Bosque"]["debt_stock"]-40) < 0.01,
+    check("  stock grew to 20", abs(s.countries["Bosque"]["debt_stock"]-20) < 0.01,
           f"got {s.countries['Bosque']['debt_stock']}")
 
 
@@ -109,17 +109,17 @@ def test_interest_and_rate():
 def test_service_lowers_welfare_and_stock():
     print("\n[4] servicing/repay lowers welfare + stock")
     s = fresh_phase6()
-    run6(s, debt={"Bosque": {"borrow": 16}})          # stock 16 (under the cap)
+    run6(s, debt={"Bosque": {"borrow": 12}})          # stock 12 (under the cap)
     # Compare repay vs no-repay welfare in the next round
-    s_no = fresh_phase6(); run6(s_no, debt={"Bosque": {"borrow": 16}})
+    s_no = fresh_phase6(); run6(s_no, debt={"Bosque": {"borrow": 12}})
     r_no = run6(s_no, debt={"Bosque": {"borrow": 0}})           # service interest only
-    r_re = run6(s,    debt={"Bosque": {"borrow": 0, "repay": 8}})
+    r_re = run6(s,    debt={"Bosque": {"borrow": 0, "repay": 6}})
     check("  repaying lowers welfare vs not repaying",
           r_re["results"]["Bosque"]["welfare"] < r_no["results"]["Bosque"]["welfare"],
           f"repay={r_re['results']['Bosque']['welfare']:.2f}, "
           f"norepay={r_no['results']['Bosque']['welfare']:.2f}")
-    check("  stock reduced by repayment (16 -> 8)",
-          abs(s.countries["Bosque"]["debt_stock"] - 8) < 0.01,
+    check("  stock reduced by repayment (12 -> 6)",
+          abs(s.countries["Bosque"]["debt_stock"] - 6) < 0.01,
           f"got {s.countries['Bosque']['debt_stock']}")
 
 

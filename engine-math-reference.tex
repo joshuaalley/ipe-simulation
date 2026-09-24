@@ -68,7 +68,8 @@ factor shares (wine) & $\alpha{=}0.55,\ \beta{=}0.45$ & moderate \\
 factor shares (machinery) & $\alpha{=}0.25,\ \beta{=}0.75$ & capital-intensive \\
 \code{WORLD\_PRICES} & cloth 1, wine 1, machinery 1.5 & numeraire goods prices \\
 productivity tiers & HIGH 1.3, MED 1.0, LOW 0.7 & firm productivity (Ph.\ 4) \\
-\code{VARIETY\_RHO} $\rho$ & 0.6 & CES; $\sigma = 1/(1-\rho) = 2.5$ \\
+\code{VARIETY\_RHO} $\rho$ & 0.75 & CES; $\sigma = 1/(1-\rho) = 4$ \\
+\code{FIRM\_LOCAL\_SHARE} $\lambda$ & 0.2 & MNC output sold locally \\
 \code{PHASE5\_MONEY\_GROWTH\_CHOICES} & $0,\ 2,\ 5,\ 10\%$ & money-supply growth \\
 \code{WARNING\_DEVALUATION} & 0.90 & stress-1 currency drop \\
 \code{CRISIS\_DEVALUATION} & 0.70 & stress-2 currency drop \\
@@ -190,16 +191,33 @@ monopolistic competition.
 \textbf{Engine} (\code{\_compute\_firm\_production}, \code{\_build\_variety\_bundles},
 \code{\_utility\_with\_varieties}, \code{\_compute\_firm\_profits}).
 MNC output is linear in scale, $Y_{\text{firm}} = \text{scale}\times\text{productivity}$
-(0 in a relocation round; scale capped at \code{max\_scale}). Each good's
+(0 in a relocation round; scale capped at \code{max\_scale}). Only the firm's
+local sales, $\lambda Y_{\text{firm}}$ with $\lambda = 0.2$ (\code{FIRM\_LOCAL\_SHARE}),
+enter the host's production and consumption; the rest sells on world markets,
+and the owner's revenue counts all of it. Each good's
 consumption is a CES aggregate over its varieties, nested inside the Cobb-Douglas:
 \[
 c_g = \Big(\textstyle\sum_{v} q_v^{\rho}\Big)^{1/\rho}, \qquad
-U = \prod_{g} c_g^{1/J}, \qquad \rho = 0.6,\ \ \sigma = \tfrac{1}{1-\rho} = 2.5 .
+U = \prod_{g} c_g^{1/J}, \qquad \rho = 0.75,\ \ \sigma = \tfrac{1}{1-\rho} = 4 .
 \]
 More varieties raise $c_g$ at fixed total quantity --- the variety gain. Firm
 profit (numeraire): $\pi = Y_{\text{firm}}\cdot p_{\text{industry}} -
 \text{scale}\cdot\text{unit\_cost}$. Trade moves a good's varieties in proportion
 to the exporter's variety mix.
+
+\textbf{MNC tax (Phase 3+).} Each host $h$ sets a rate $t_h \in [0, 0.5]$ on
+foreign-owned firms' revenue $R$ (premium included in Phase 4+); a populist
+government imposes a floor, so the rate in force is
+$\tau_h = \max(t_h, \underline t_h)$. The owner pays $\tau_h R$; the host collects
+$T_h = \sum_{f \in h} \tau_h R_f$ and keeps it:
+\[
+U_h \leftarrow U_h \Bigl(1 + \frac{T_h}{C_h}\Bigr), \qquad
+C_h = \textstyle\sum_g c_{h,g}\, p_g ,
+\]
+applied after the gains-from-trade metric (a transfer from foreign owners, not a
+gain from trade). The brake is mobility: a firm that relocates takes its output,
+and so its variety, with it, which costs the host far more than the tax brings
+in. A relocation to the owner's home country is refused (no re-shoring).
 
 \textbf{Divergence.} Real new trade theory has monopolistic competition with free
 entry, markup pricing, and an \emph{endogenous} number of varieties pinned down by
@@ -215,22 +233,42 @@ Trade reallocates toward high-$\varphi$ firms and raises average productivity
 (selection).
 
 \textbf{Engine} (\code{\_compute\_firm\_profits}). Each firm has a fixed
-productivity tier. With \code{export}\,=\,True it pays the fixed cost:
+productivity tier $\varphi$ and makes $Y = \text{scale}\cdot\varphi$ units. With
+\code{export}\,=\,True it reaches foreign buyers, so every unit sells at a premium
+$m$, and it pays the fixed cost:
 \[
-\pi = \underbrace{Y_{\text{firm}}\,p_{\text{ind}}}_{\text{revenue}}
+\pi = \underbrace{Y\,p_{\text{ind}}\,(1 + m e)}_{\text{revenue}}
 - \text{scale}\cdot\text{unit\_cost}
-- \underbrace{f_x}_{\text{if exporting}}
-- \underbrace{p_{\text{ind}}Y_{\text{firm}}\cdot \tau_{\text{mnc}}}_{\text{MNC tax, Ph.4+}} .
+- \underbrace{f_x e}_{\text{if exporting}}
+- \underbrace{\text{revenue}\cdot \tau_{\text{mnc}}}_{\text{MNC tax}} ,
+\qquad
+m = \bar m\,\bigl(1 - \bar\tau_{h,g}\bigr),
 \]
-Selection is demonstrated by outcome: a low-productivity firm that pays $f_x$
-earns negative $\pi$; a high-productivity firm profits. Populist regimes set a
-tariff floor (applied tariff $= \max(\text{declared},\ \text{floor})$) and an MNC
-revenue tax routed to a \textbf{separate ledger} (it does not enter welfare).
+where $e = 1$ if the firm exports and $0$ otherwise, with $\bar m = 0.25$ (\code{EXPORT\_MARKET\_GAIN}) and $\bar\tau_{h,g}$ the mean
+tariff the other countries applied \emph{last round} to good $g$ from the firm's
+host $h$ (declared bilateral rate, raised to any populist floor). Exporting pays
+iff $m\,Y\,p_{\text{ind}} > f_x$. The shipped roster sets $f_x/p_{\text{ind}} = 8$
+in every industry, so at $\bar\tau = 0$ the cutoff is $Y > 32$: at full scale
+(40) HIGH firms ship 52 units and MED 40, both above it; LOW ship 28 and cannot
+reach it at any scale. At $\bar\tau = 0.2$, MED firms break exactly even; at
+$\bar\tau = 0.5$ ($m = 0.125$, cutoff 64) no firm's exports pay.
+Populist regimes set a tariff floor (applied tariff $= \max(\text{declared},\
+\text{floor})$) and a minimum MNC tax (Phase 3); the tax falls on
+premium-inclusive revenue.
+
+\textbf{Why this form.} A fixed cost with no upside makes exporting a dominated
+choice, and selection never happens. A revenue premium is the smallest change
+that creates a genuine cutoff; tying it to the tariff wall links Phase 2 trade
+politics to Phase 4 firm decisions --- protection abroad removes the MED
+exporters first. Using last round's tariffs makes $m$ a number on the board, so
+the decision is computable at the desk.
 
 \textbf{Divergence.} Real Melitz derives $\varphi^\ast$ endogenously from the
-productivity distribution and fixed costs in equilibrium. Here productivity is
-discrete (HIGH/MED/LOW) and the export choice is the student's, so selection is
-shown, not solved.
+productivity distribution and fixed costs in equilibrium, and exporters sell
+more units, not the same units at a higher price. Here productivity is discrete
+(HIGH/MED/LOW), the premium is a profit-ledger effect only (host welfare counts
+the firm's units whether or not it exports), and the export choice is the
+student's, so selection is shown, not solved.
 
 \section{Political approval (all phases)}
 \textbf{Theory.} In welfare terms a tariff is pure deadweight loss, so a
@@ -256,7 +294,9 @@ trade displaced, $S_i$ the \emph{net} goods another country sent
 A_i &\leftarrow \operatorname{clip}\left(A_i + \Delta A_i,\; 0,\; 100\right)
 \end{align*}
 with $\pi=35$, $\varepsilon=14$, $\rho=35$ (clipped to $\pm 15$), $\kappa=25$,
-$\delta=0.10$, $A_0=50$, and $U_i'$ last round's welfare.
+$\delta=0.10$, $A_0=50$, and $U_i'$ last round's welfare. The prosperity term
+is zero in the first round of a phase: each phase measures welfare differently,
+so a jump across the boundary is the model changing, not the country prospering.
 
 \textbf{Buying off the losers.} $c_i \le 0.25$ is a decision, taken on the same
 form as tariffs and available in every phase. It costs welfare ---
