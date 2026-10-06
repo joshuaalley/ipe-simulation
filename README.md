@@ -14,7 +14,7 @@ economy, driven from a Jupyter notebook and projected for the room.
 | `docs/` | The published calculator page (GitHub Pages). Generated; don't edit by hand. |
 | `rounds/`, `rounds/state/` | Your class data: one workbook per round, plus the per-round state snapshots `play_round` writes. Git-ignored, and the only copy — back it up. |
 | `engine-math-reference.pdf` | Instructor-only: the math behind each phase. |
-| `stress_test*.py`, `notebook_e2e_test.py` | Regression suite (775 checks), including `stress_test_money_balance.py`, which plays six different trading worlds and fails if any fixed money strategy, or serial default, starts winning everywhere. |
+| `stress_test*.py`, `notebook_e2e_test.py` | Regression suite (783 checks), including `stress_test_money_balance.py`, which plays six different trading worlds and fails if any fixed money strategy, or serial default, starts winning everywhere. |
 
 ## Quick start
 

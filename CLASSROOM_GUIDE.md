@@ -553,6 +553,23 @@ passes all six, so your class's real trade pattern shouldn't need a re-tune.
 It runs with the regression suite; re-run it after changing any money or debt
 constant.
 
+### Who gets the reserve currency (end of Phase 4)
+
+The award ranks countries by their average gains from trade across every
+round, with cumulative welfare breaking ties. A plain average favors small open
+economies: a big country's partners can't supply it much relative to its size,
+so its percentage gains stay low however well it plays. New games therefore
+weight each round's gain by the square root of the country's size (its no-trade
+welfare relative to the average country's). A big economy is no longer held
+back, and a small one no longer wins just by being small, but size alone
+doesn't decide it.
+
+A game that began before this rule existed keeps the plain average, so a term
+already under way isn't changed. Either rule can be named:
+`sim.award_reserve_currency("gains")` or `sim.award_reserve_currency("half_size")`.
+Each call awards the currency, so if you show the class the other rule's
+ranking, run the one that counts last.
+
 ## Phase transitions
 
 At the start of a new phase, run `sim.upgrade_to_phaseN(...)`, then

@@ -222,7 +222,7 @@ def test_award_reserve_currency():
     # Already has 2 rounds of history (one Phase 3, one Phase 4)
     sim.run_round(BAL_DEC, [], firm_decisions=fd(sim))
     sim.run_round(BAL_DEC, [], firm_decisions=fd(sim))
-    ranking = sim.award_reserve_currency()
+    ranking = sim.award_reserve_currency("gains")      # the plain-average rule
     check("  ranking has all 6 countries", len(ranking) == 6)
     check("  reserve_currency_holder set",
           sim.reserve_currency_holder == ranking[0])
@@ -490,6 +490,61 @@ def test_export_premium():
           and s100.export_breakeven("F1") is None, text[:200])
 
 
+# ────────────────────────────────────────────────────────────────────
+# 13. Reserve currency: the size-weighted rule, and which game uses which
+# ────────────────────────────────────────────────────────────────────
+def test_reserve_currency_rules():
+    print("\n[13] reserve currency: plain vs size-weighted gains, per game")
+    big, small = "Trinity", "Bosque"
+    sim = IPESimulation({c: PHASE2_COUNTRIES[c] for c in (big, small)},
+                        PHASE2_GOODS, phase=2)
+    # Two rounds. The small economy gains more in percent; the big one is
+    # four times its size. Mean no-trade welfare 125: sizes 1.6 and 0.4.
+    rnd = lambda: {"results": {
+        big:   {"welfare": 280.0, "no_trade_welfare": 200.0, "gains_from_trade_pct": 40.0},
+        small: {"welfare": 85.0,  "no_trade_welfare": 50.0,  "gains_from_trade_pct": 70.0}}}
+    sim.history = [rnd(), rnd()]
+    check("  a new game uses the size-weighted rule", sim.reserve_rule == "half_size")
+
+    a = copy.deepcopy(sim)
+    with contextlib.redirect_stdout(io.StringIO()):
+        ranking_a = a.award_reserve_currency("gains")
+    check("  plain average: the small open economy wins (70% vs 40%)",
+          ranking_a[0] == small and a.reserve_currency_holder == small)
+
+    c = copy.deepcopy(sim)
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        ranking_c = c.award_reserve_currency()
+    # big: 40 * sqrt(1.6) = 50.6 ; small: 70 * sqrt(0.4) = 44.3
+    check("  size-weighted: the big economy wins (50.6 vs 44.3)",
+          ranking_c[0] == big and c.reserve_currency_holder == big)
+    check("  ...and the printout shows the weighted averages and says so",
+          "50.6%" in out.getvalue() and "44.3%" in out.getvalue()
+          and "square root of the country's size" in out.getvalue(),
+          out.getvalue()[-400:])
+
+    z = copy.deepcopy(sim)
+    z.history[0]["results"][small]["no_trade_welfare"] = 0.0
+    z.history[0]["results"][small]["gains_from_trade_pct"] = float("inf")
+    with contextlib.redirect_stdout(io.StringIO()):
+        z.award_reserve_currency("half_size")
+    check("  a round with zero no-trade welfare counts as 0, not NaN",
+          z.reserve_currency_holder == big)
+
+    try:
+        copy.deepcopy(sim).award_reserve_currency("biggest")
+        check("  an unknown rule is refused", False, "no error")
+    except ValueError:
+        check("  an unknown rule is refused", True)
+
+    state = json.loads(json.dumps(sim.get_state()))
+    check("  a saved game keeps its rule",
+          IPESimulation.from_state(state).reserve_rule == "half_size")
+    state.pop("reserve_rule")
+    check("  a game saved before the rule existed stays on the plain average",
+          IPESimulation.from_state(state).reserve_rule == "gains")
+
+
 def main():
     tests = [
         test_productivity_surge,
@@ -504,6 +559,7 @@ def main():
         test_print_results_phase4,
         test_inject_shock_missing_key_smoke,
         test_export_premium,
+        test_reserve_currency_rules,
     ]
     for t in tests:
         try:

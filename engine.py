@@ -20,6 +20,7 @@ dynamics real. Designed to run in a Jupyter notebook.
 """
 
 import datetime
+import math
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -227,6 +228,21 @@ MNC_TAX_MIN = 0.0    # below zero is a subsidy: set e.g. -0.20 for bidding wars
 # Stolper-Samuelson is about -- and lets trade move them. Capped so a good that
 # was exported almost entirely cannot report an absurd price.
 SHADOW_PRICE_CAP = 10.0   # max home price, as a multiple of the price index (1)
+
+# Who earns the reserve currency at the end of Phase 4 (award_reserve_currency):
+#   "half_size"  average gains from trade (%), each round weighted by the square
+#                root of the country's size -- its no-trade welfare relative to
+#                the average country's that round. A big economy isn't held back
+#                because its partners can't supply it much relative to its size,
+#                and a small one doesn't win just by being small; size alone
+#                doesn't decide it.
+#   "gains"      the plain average gains from trade (%). It tilts toward small
+#                open economies, which can import a large share of what they
+#                consume.
+# A new game takes RESERVE_CURRENCY_RULE. A game saved before the rule was
+# recorded keeps "gains", so a term already under way isn't changed mid-stream.
+RESERVE_CURRENCY_RULE = "half_size"
+RESERVE_CURRENCY_RULES = ("half_size", "gains")
 
 # CES elasticity within each industry (love-of-variety).
 # rho closer to 0 = stronger variety preference; rho=1 = perfect substitutes.
@@ -541,6 +557,7 @@ class IPESimulation:
         # set them via inject_populist_backlash() or inject_shock().
         self.mnc_tax_revenue = {}     # country -> cumulative MNC tax revenue
         self.reserve_currency_holder = None  # set by award_reserve_currency()
+        self.reserve_rule = RESERVE_CURRENCY_RULE   # how it is awarded
 
         # Phase 5+ monetary state.
         # Per-country monetary fields (currency, fx_regime, capital_controls,
@@ -2253,21 +2270,31 @@ class IPESimulation:
 
     # ── End-of-Phase-4 ceremonies ─────────────────────────────────
 
-    def award_reserve_currency(self):
+    def award_reserve_currency(self, rule: str = None):
         """
-        Rank countries by their AVERAGE gains from trade (%) across all
-        completed rounds -- a size-neutral measure of how well each country
-        exploited trade, not how large it is -- with cumulative welfare as
-        the tiebreaker. Set self.reserve_currency_holder = top country.
+        Rank countries by their average gains from trade (%) across all
+        completed rounds, with cumulative welfare as the tiebreaker, and set
+        self.reserve_currency_holder to the top country.
+
+        rule : None uses the game's own (self.reserve_rule), or name one:
+          "half_size"  each round's gain weighted by the square root of the
+                       country's size (no-trade welfare relative to the
+                       average country's). A large economy isn't held back
+                       because its partners can't supply it, and a small one
+                       doesn't win by being small.
+          "gains"      the plain average, which tilts toward small open
+                       economies.
 
         Call at the end of Phase 4. The winner becomes the Phase 5 reserve
-        currency holder and the Phase 7 hegemon. Because the metric is the
-        gains-from-trade percentage (not the welfare level), a small but well-
-        traded economy can earn the reserve currency over a large one -- the
-        hegemon is contested on skill, not pre-ordained by endowment size.
+        currency holder and the Phase 7 hegemon -- contested on how well each
+        country used trade, not handed to the biggest.
 
         Returns the full ranking list (best first).
         """
+        rule = self.reserve_rule if rule is None else rule
+        if rule not in RESERVE_CURRENCY_RULES:
+            raise ValueError(f"rule must be one of {RESERVE_CURRENCY_RULES}, "
+                             f"not {rule!r}")
         if not self.history:
             print("No rounds played; cannot award reserve currency.")
             return []
@@ -2275,12 +2302,19 @@ class IPESimulation:
         sum_gains = {n: 0.0 for n in self.countries}
         rounds_played = {n: 0 for n in self.countries}
         for h in self.history:
-            for n in self.countries:
-                if n in h["results"]:
-                    cum_welfare[n] += h["results"][n]["welfare"]
-                    sum_gains[n] += h["results"][n].get(
-                        "gains_from_trade_pct", 0.0)
-                    rounds_played[n] += 1
+            res = h["results"]
+            here = [n for n in self.countries if n in res]
+            no_trade = {n: max(float(res[n].get("no_trade_welfare", 0.0) or 0.0), 0.0)
+                        for n in here}
+            mean_no_trade = (sum(no_trade.values()) / len(here)) if here else 0.0
+            for n in here:
+                cum_welfare[n] += res[n]["welfare"]
+                gain = res[n].get("gains_from_trade_pct", 0.0)
+                if rule == "half_size":
+                    size = (no_trade[n] / mean_no_trade) if mean_no_trade > 0 else 1.0
+                    gain = gain * math.sqrt(size) if size > 0 else 0.0
+                sum_gains[n] += gain
+                rounds_played[n] += 1
         avg_gains = {
             n: (sum_gains[n] / rounds_played[n]) if rounds_played[n] else 0.0
             for n in self.countries
@@ -2295,8 +2329,13 @@ class IPESimulation:
         print(f"\n{'':=<65}")
         print(f"  RESERVE CURRENCY AWARDED")
         print(f"{'':=<65}")
-        print(f"  Average gains from trade across all rounds "
-              f"(cumulative welfare breaks ties):\n")
+        if rule == "half_size":
+            print("  Average gains from trade across all rounds, each round weighted")
+            print("  by the square root of the country's size "
+                  "(cumulative welfare breaks ties):\n")
+        else:
+            print(f"  Average gains from trade across all rounds "
+                  f"(cumulative welfare breaks ties):\n")
         print(f"  {'Rank':5s}{'Country':14s}{'Avg gains':>12s}{'Cum. welf.':>12s}")
         print(f"  {'-'*43}")
         for i, n in enumerate(ranking, 1):
@@ -4141,6 +4180,7 @@ class IPESimulation:
             # Phase 4+ state
             "mnc_tax_revenue": self.mnc_tax_revenue,
             "reserve_currency_holder": self.reserve_currency_holder,
+            "reserve_rule": self.reserve_rule,
             # Phase 5+ state (monetary fields live inside `countries`)
             "monetary_unions": self.monetary_unions,
             # Phase 7+ state (WTO/binding fields live inside `countries`)
@@ -4165,6 +4205,8 @@ class IPESimulation:
         # Phase 4+ fields
         sim.mnc_tax_revenue = state.get("mnc_tax_revenue", {})
         sim.reserve_currency_holder = state.get("reserve_currency_holder", None)
+        # Saved before the rule was recorded: the term began under "gains".
+        sim.reserve_rule = state.get("reserve_rule", "gains")
         # Phase 5+ fields
         sim.monetary_unions = state.get("monetary_unions", {})
         # Phase 7+ fields
