@@ -304,7 +304,8 @@ def test_populist_plus_selection():
 def test_save_restore_phase4():
     print("\n[9] save/restore preserves Phase 4 fields")
     sim = fresh_phase4()
-    sim.inject_populist_backlash("Bosque", tariff_floor=0.25, mnc_tax_rate=0.20)
+    sim.inject_populist_backlash("Bosque", tariff_floor=0.25, mnc_tax_rate=0.20,
+                                 rounds=3)
     sim.run_round(BAL_DEC, [], firm_decisions=fd(sim))
     sim.run_round(BAL_DEC, [], firm_decisions=fd(sim))
     ranking = sim.award_reserve_currency()
@@ -320,10 +321,15 @@ def test_save_restore_phase4():
           sim2.countries["Bosque"]["tariff_floor"] == 0.25)
     check("  Bosque mnc_tax_rate preserved",
           sim2.countries["Bosque"]["mnc_tax_rate"] == 0.20)
+    check("  ...and the populist term left (1 of 3 rounds)",
+          sim2.countries["Bosque"]["populist_rounds_left"] == 1)
     # Can continue rounds
     sim2.run_round(BAL_DEC, [], firm_decisions=fd(sim2))
     check("  continues running after restore",
           sim2.round_num == sim.round_num + 1)
+    check("  ...and the populist government steps down after its third round",
+          sim2.countries["Bosque"]["tariff_floor"] == 0.0
+          and sim2.history[-1]["populist_ended"] == ["Bosque"])
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -340,6 +346,8 @@ def test_print_results_phase4():
         sim.print_results()
     out = buf.getvalue()
     check("  output mentions tariff floor", "TARIFF FLOORS" in out)
+    check("  ...with the populist government's rounds left",
+          "25% floor on all imports  (1 more round)" in out, out[-600:])
     check("  output shows the MNC tax collected", "MNC TAX COLLECTED" in out)
     check("  output says the host keeps it",
           "counts toward its welfare" in out)
@@ -504,7 +512,6 @@ def test_reserve_currency_rules():
         big:   {"welfare": 280.0, "no_trade_welfare": 200.0, "gains_from_trade_pct": 40.0},
         small: {"welfare": 85.0,  "no_trade_welfare": 50.0,  "gains_from_trade_pct": 70.0}}}
     sim.history = [rnd(), rnd()]
-    check("  a new game uses the size-weighted rule", sim.reserve_rule == "half_size")
 
     a = copy.deepcopy(sim)
     with contextlib.redirect_stdout(io.StringIO()):
@@ -514,7 +521,7 @@ def test_reserve_currency_rules():
 
     c = copy.deepcopy(sim)
     with contextlib.redirect_stdout(io.StringIO()) as out:
-        ranking_c = c.award_reserve_currency()
+        ranking_c = c.award_reserve_currency("half_size")
     # big: 40 * sqrt(1.6) = 50.6 ; small: 70 * sqrt(0.4) = 44.3
     check("  size-weighted: the big economy wins (50.6 vs 44.3)",
           ranking_c[0] == big and c.reserve_currency_holder == big)
@@ -537,12 +544,129 @@ def test_reserve_currency_rules():
     except ValueError:
         check("  an unknown rule is refused", True)
 
+    sim.reserve_rule = "half_size"
     state = json.loads(json.dumps(sim.get_state()))
     check("  a saved game keeps its rule",
           IPESimulation.from_state(state).reserve_rule == "half_size")
     state.pop("reserve_rule")
     check("  a game saved before the rule existed stays on the plain average",
           IPESimulation.from_state(state).reserve_rule == "gains")
+
+
+# ────────────────────────────────────────────────────────────────────
+# 14. A firm that moves pays no export cost
+# ────────────────────────────────────────────────────────────────────
+def test_moving_firm_pays_no_export_cost():
+    print("\n[14] a moving firm makes nothing, ships nothing, pays no export cost")
+    sim = fresh_phase4()
+    dec = fd(sim, export=True)
+    host = sim.firms["F1"]["host"]
+    dec["F1"]["relocate_to"] = next(c for c in sim.countries if c != host)
+    r = sim.run_round(BAL_DEC, [], firm_decisions=dec)
+    f1, f2 = r["firms"]["F1"], r["firms"]["F2"]
+    check("  moving with export ticked: no output, no export cost, no loss",
+          f1["relocated"] and f1["output"] == 0 and f1["fixed_cost"] == 0
+          and f1["profit"] == 0, str(f1))
+    check("  ...and the owner's choice to export is kept for next round",
+          f1["exported"] is True)
+    check("  a firm that stays and exports still pays its export cost",
+          not f2["relocated"] and f2["fixed_cost"] == PHASE3_FIRMS["F2"]["fixed_export_cost"])
+
+
+# ────────────────────────────────────────────────────────────────────
+# 15. The best mix with no trade, and the reserve rule built on it
+# ────────────────────────────────────────────────────────────────────
+def test_best_mix_rule():
+    print("\n[15] reserve currency: gains over each country's best mix with no trade")
+    import math, random
+    from engine import best_autarky, PHASE1_COUNTRIES, PHASE1_GOODS
+    rng = random.Random(7)
+
+    def beaten(sim, name, phase):
+        """Does any of 2000 random splits of the endowment beat the closed form?"""
+        cfg, goods = sim.countries[name], sim.goods
+        best = best_autarky(cfg, goods, phase)
+        for _ in range(2000):
+            L = [rng.random() for _ in goods]
+            L = {g: cfg["labor"] * v / sum(L) for g, v in zip(goods, L)}
+            if phase == 1:
+                dec = {"production": L}
+            else:
+                K = [rng.random() for _ in goods]
+                K = {g: cfg["capital"] * v / sum(K) for g, v in zip(goods, K)}
+                dec = {"production": {"labor": L, "capital": K}}
+            out = sim._compute_production({n: dec for n in sim.countries})[name]
+            if sim._utility(out) > best["welfare"] + 1e-9:
+                return True
+        return False
+
+    p1 = IPESimulation(PHASE1_COUNTRIES, PHASE1_GOODS, phase=1)
+    p2 = IPESimulation(PHASE2_COUNTRIES, PHASE2_GOODS, phase=2)
+    check("  the closed form is the best split of a country's own factors",
+          not any(beaten(p1, n, 1) for n in p1.countries)
+          and not any(beaten(p2, n, 2) for n in p2.countries))
+    b = best_autarky(p1.countries["Bosque"], PHASE1_GOODS, 1)
+    check("  Phase 1: an equal share of the workers in each good",
+          b["labor"] == {g: PHASE1_COUNTRIES["Bosque"]["labor"] / 2 for g in PHASE1_GOODS})
+
+    # Every round records it. Best split, no trade: no gain. Lopsided, no
+    # trade: no gain over what it made, but a loss against its best.
+    sim = fresh_phase4()
+    check("  a new game uses the best-mix rule", sim.reserve_rule == "best_mix")
+    dec = copy.deepcopy(BAL_DEC)
+    best = {n: best_autarky(sim.countries[n], sim.goods, 4) for n in sim.countries}
+    dec["Bosque"]["production"] = {"labor": best["Bosque"]["labor"],
+                                   "capital": best["Bosque"]["capital"]}
+    dec["Llano"]["production"] = {"labor": {"cloth": 80, "wine": 10, "machinery": 10},
+                                  "capital": {"cloth": 60, "wine": 10, "machinery": 10}}
+    off = {fid: {"scale": 0, "relocate_to": None, "export": False} for fid in sim.firms}
+    r = sim.run_round(dec, [], firm_decisions=off)
+    bq, ll = r["results"]["Bosque"], r["results"]["Llano"]
+    check("  the best split, no trade, no firms: no gain against the best",
+          abs(bq["gains_vs_best_pct"]) < 1e-9
+          and abs(bq["best_autarky_welfare"] - best["Bosque"]["welfare"]) < 1e-9)
+    check("  a lopsided split, no trade: 0% over what it made, a loss against its best",
+          abs(ll["gains_from_trade_pct"]) < 1e-9 and ll["gains_vs_best_pct"] < -10,
+          f"{ll['gains_vs_best_pct']:.1f}%")
+    check("  the board shows the gain this game's race counts",
+          sim.gains_shown(ll) == ll["gains_vs_best_pct"])
+
+    # A shock changes the best mix from then on, not for rounds already played
+    before = r["results"]["Trinity"]["best_autarky_welfare"]
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.inject_productivity_surge("Trinity", "machinery", 1.5)
+    r2 = sim.run_round(dec, [], firm_decisions=off)
+    check("  a shock raises the bar from the next round; earlier rounds keep theirs",
+          r2["results"]["Trinity"]["best_autarky_welfare"] > before
+          and sim.history[-2]["results"]["Trinity"]["best_autarky_welfare"] == before)
+
+    # The award: gain over the best mix, weighted by the root of the best mix's size
+    two = IPESimulation({c: PHASE2_COUNTRIES[c] for c in ("Trinity", "Bosque")},
+                        PHASE2_GOODS, phase=2)
+    rnd = lambda: {"results": {
+        "Trinity": {"welfare": 280.0, "gains_vs_best_pct": 40.0, "best_autarky_welfare": 200.0,
+                    "no_trade_welfare": 100.0, "gains_from_trade_pct": 180.0},
+        "Bosque":  {"welfare": 85.0, "gains_vs_best_pct": 70.0, "best_autarky_welfare": 50.0,
+                    "no_trade_welfare": 20.0, "gains_from_trade_pct": 325.0}}}
+    two.history = [rnd(), rnd()]
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        ranking = two.award_reserve_currency()
+    # Trinity 40 x sqrt(1.6) = 50.6 ; Bosque 70 x sqrt(0.4) = 44.3
+    check("  best mix, size-weighted: 50.6 vs 44.3, and the printout says how",
+          ranking[0] == "Trinity" and "50.6%" in out.getvalue() and "44.3%" in out.getvalue()
+          and "best mix with no trade" in out.getvalue(), out.getvalue()[-300:])
+    with contextlib.redirect_stdout(io.StringIO()):
+        plain = copy.deepcopy(two).award_reserve_currency("gains")
+    check("  ...where the gain over what it made would have handed it to the specialist",
+          plain[0] == "Bosque")
+    old = copy.deepcopy(two)
+    del old.history[0]["results"]["Bosque"]["gains_vs_best_pct"]
+    try:
+        old.award_reserve_currency()
+        check("  rounds from before the best mix was recorded: refused, not guessed", False)
+    except ValueError as e:
+        check("  rounds from before the best mix was recorded: refused, not guessed",
+              "rule='gains'" in str(e))
 
 
 def main():
@@ -560,6 +684,8 @@ def main():
         test_inject_shock_missing_key_smoke,
         test_export_premium,
         test_reserve_currency_rules,
+        test_moving_firm_pays_no_export_cost,
+        test_best_mix_rule,
     ]
     for t in tests:
         try:

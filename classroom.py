@@ -67,6 +67,10 @@ def _badges(res_c, is_hegemon=False):
         out.append(("GOVT FELL", NEGATIVE))
     elif appr.get("low_rounds"):
         out.append(("unpopular", "#b26a00"))
+    if appr.get("populist_ends"):
+        out.append(("populist ends", MUTED))
+    elif appr.get("populist"):
+        out.append(("populist", NEGATIVE))
     inst = res_c.get("institutions") or {}
     if inst.get("defected"):
         out.append(("defected", NEGATIVE))
@@ -123,7 +127,7 @@ def _columns_for_phase(phase, columns=None):
     return [(ALL_COLUMNS[k], k) for k in keys]
 
 
-def _row_values(res_c):
+def _row_values(res_c, sim=None):
     """Pull the scoreboard values out of one country's result dict."""
     fp = res_c.get("factor_prices") or {}
     appr = res_c.get("approval") or {}
@@ -131,7 +135,8 @@ def _row_values(res_c):
     debt = res_c.get("debt") or {}
     return {
         "welfare": res_c["welfare"],
-        "gains": res_c["gains_from_trade_pct"],
+        "gains": (sim.gains_shown(res_c) if sim is not None
+                  else res_c["gains_from_trade_pct"]),
         "approval": appr.get("approval"),
         "wage": fp.get("avg_wage"),
         "ret": fp.get("avg_capital_return"),
@@ -190,7 +195,7 @@ def scoreboard_html(sim, round_num=None, scale=1.0, sort=None, trades=True,
     hegemon = rd.get("hegemon")
     names = list(sim.countries.keys())
 
-    rows = [(n, _row_values(res[n])) for n in names]
+    rows = [(n, _row_values(res[n], sim)) for n in names]
     if sort in ("gains", "welfare"):
         rows.sort(key=lambda r: (r[1][sort] if r[1][sort] not in (None, float("inf"))
                                  else -1e18), reverse=True)
@@ -270,7 +275,7 @@ def scoreboard_text(sim, round_num=None, sort=None, columns=None):
     rd = sim.history[-1] if round_num is None else sim.history[round_num - 1]
     res, phase = rd["results"], rd["phase"]
     cols = _columns_for_phase(phase, columns)
-    rows = [(n, _row_values(res[n])) for n in sim.countries]
+    rows = [(n, _row_values(res[n], sim)) for n in sim.countries]
     if sort in ("gains", "welfare"):
         rows.sort(key=lambda r: (r[1][sort] if r[1][sort] not in (None, float("inf"))
                                  else -1e18), reverse=True)
@@ -1516,8 +1521,11 @@ def _inbox_changed(path, inbox):
     except (ValueError, KeyError):
         return True
     then = sorted((str(r["file"]), float(r["mtime"])) for _, r in used.iterrows())
-    now = [(n, float(t)) for n, t in _inbox_listing(inbox)]
-    return [(n, round(t, 3)) for n, t in then] != [(n, round(t, 3)) for n, t in now]
+    now = _inbox_listing(inbox)
+    # Excel keeps about 15 digits of a file time, so match within a tolerance
+    # (rounding both sides can split a time that sits on a rounding boundary).
+    return (len(then) != len(now)
+            or any(a != b or abs(s - t) > 0.01 for (a, s), (b, t) in zip(then, now)))
 
 
 def _archive_inbox(path, inbox):

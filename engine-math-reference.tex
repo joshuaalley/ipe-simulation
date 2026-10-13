@@ -200,7 +200,10 @@ consumption is a CES aggregate over its varieties, nested inside the Cobb-Dougla
 c_g = \Big(\textstyle\sum_{v} q_v^{\rho}\Big)^{1/\rho}, \qquad
 U = \prod_{g} c_g^{1/J}, \qquad \rho = 0.75,\ \ \sigma = \tfrac{1}{1-\rho} = 4 .
 \]
-More varieties raise $c_g$ at fixed total quantity --- the variety gain. Firm
+More varieties raise $c_g$ at fixed total quantity --- the variety gain. The
+no-trade baseline is the country's \emph{own} output, without its hosted firms'
+local sales: foreign capital producing on its soil is part of being open, so a
+country that attracts a firm gains and one that loses a firm loses. Firm
 profit (numeraire): $\pi = Y_{\text{firm}}\cdot p_{\text{industry}} -
 \text{scale}\cdot\text{unit\_cost}$. Trade moves a good's varieties in proportion
 to the exporter's variety mix.
@@ -270,6 +273,24 @@ more units, not the same units at a higher price. Here productivity is discrete
 the firm's units whether or not it exports), and the export choice is the
 student's, so selection is shown, not solved.
 
+\textbf{The reserve currency} (\code{award\_reserve\_currency}, end of Phase 4)
+goes to the best average gain from trade over all rounds. New games
+(\code{"best\_mix"}) measure each round against the country's best mix with no
+trade, $\bar U_i$: the split of its own factors that maximises $\prod_g Y_g^{1/J}$
+(\code{best\_autarky}). Taking logs, $\sum_g \frac1J(\ln A_g + \alpha_g \ln L_g +
+\beta_g \ln K_g)$ separates by factor, so
+\[
+L_g = L\,\frac{\alpha_g}{\sum_h \alpha_h}, \qquad
+K_g = K\,\frac{\beta_g}{\sum_h \beta_h}
+\]
+(an equal split of the workers in Phase 1). Round $t$ scores
+$\bigl(W_{it}/\bar U_{it} - 1\bigr)\sqrt{\bar U_{it}/\overline{\bar U}_t}$, the
+root of the country's size relative to the average. Measured against what a
+country chose to produce instead, hard specialisation lowers the bar it is
+judged against and a small economy gains more in percent; the older rules
+(\code{"gains"}, the plain average against own output, and \code{"half\_size"}) remain
+available, and a game saved before the rule existed keeps \code{"gains"}.
+
 \section{Political approval (all phases)}
 \textbf{Theory.} In welfare terms a tariff is pure deadweight loss, so a
 welfare-maximizing player would never protect --- which makes the politics of
@@ -308,11 +329,13 @@ Block 7 made playable. Side payments ($S_i$) are goods one country hands another
 also available from Phase 1 on; only the \emph{net} counts, so two countries
 cannot pass the same crate back and forth and both bank approval for it.
 
-\textbf{The endogenous backlash.} If $A_i < 30$ for two consecutive rounds the
-government falls: \code{inject\_populist\_backlash} fires automatically (20\%
+\textbf{The endogenous backlash.} If a round ends with $A_i < 30$ the
+government falls (one round is enough; \code{APPROVAL\_CRISIS\_ROUNDS}): \code{inject\_populist\_backlash} fires automatically (20\%
 tariff floor, 10\% MNC tax) and $A_i$ resets to $A_0$. Protection is therefore
 imposed \emph{on} a country that ignores its losers --- the instructor does not
-choose the victim.
+choose the victim. The populist government governs for two rounds
+(\code{POPULIST\_ROUNDS}), then steps down and the floor and the MNC tax minimum
+lift: one round leaves no time to answer it, three is most of a phase.
 
 \textbf{Tuning.} Holding policy fixed, approval converges to
 \[

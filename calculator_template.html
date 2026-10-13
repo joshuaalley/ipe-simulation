@@ -128,6 +128,8 @@
     text-decoration: underline; cursor: pointer;
   }
   .hint { color: var(--muted); font-size: .85rem; margin: .2rem 0 .5rem; }
+  .alone { margin: .7rem 0 0; }
+  .alone p { margin: 0; }
   .row { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .45rem; margin: 0 0 .5rem; }
   .row .x { margin-left: auto; }
   .field { display: flex; align-items: center; gap: .5rem; margin: 0 0 .55rem; flex-wrap: wrap; }
@@ -212,6 +214,7 @@
         </tfoot>
       </table>
       <div class="status" id="status" aria-live="polite"></div>
+      <div class="alone" id="alone"></div>
       <div class="actions"><button type="button" class="linkbtn" id="clear">Clear</button></div>
       <p class="note">What your own workers and capital produce this round, before
         trade. Firms located in your country (from Phase 3) add their local sales
@@ -273,6 +276,17 @@
     return 0;
   }
 
+  // The engine's welfare for what a country makes and keeps -- engine.py,
+  // _utility(): Cobb-Douglas across goods with equal weights.
+  function welfare(outputs) {
+    var u = 1, J = outputs.length;
+    for (var i = 0; i < J; i++) {
+      if (!(outputs[i] > 0)) return 0;
+      u *= Math.pow(outputs[i], 1 / J);
+    }
+    return u;
+  }
+
   // Every production era the page knows: Phase 1 (labor only) and Phase 2 on.
   var eras = data.eras || {};
   if (!eras["1"] && !eras["2"]) {
@@ -300,6 +314,16 @@
         if (!(Math.abs(got - want) <= 1e-9 * Math.max(1, Math.abs(want)))) {
           broken("self-check failed for " + chk.country + " " + g0 +
                  ": page " + got + ", engine " + want);
+          return;
+        }
+      }
+      if (typeof chk.welfare === "number") {
+        var gotW = welfare(era0.goods.map(function (g1) {
+          return output(c0.tech[g1], chk.labor[g1] || 0, (chk.capital || {})[g1] || 0);
+        }));
+        if (!(Math.abs(gotW - chk.welfare) <= 1e-9 * Math.max(1, chk.welfare))) {
+          broken("self-check failed for " + chk.country + " welfare: page " + gotW +
+                 ", engine " + chk.welfare);
           return;
         }
       }
@@ -546,6 +570,7 @@
     });
     var status = $("status");
     status.textContent = "";
+    renderAlone(era, c, p);
     if (p.bad) {
       $("totL").textContent = $("totK").textContent = "—";
       status.appendChild(el("div", { cls: "over", text: "Use numbers of 0 or more." }));
@@ -558,6 +583,21 @@
       $("totK").className = "num k " + p.lines[1].cls;
     }
     p.lines.forEach(function (line) { status.appendChild(el("div", { cls: line.cls, text: line.text })); });
+  }
+
+  // With no trade: what this plan is worth (engine.py, _utility), so a team
+  // can search for its own best mix -- the bar its trades must beat. The page
+  // never gives that mix away; finding it is the students' job.
+  function renderAlone(era, c, p) {
+    var box = $("alone");
+    box.textContent = "";
+    var placed = !p.bad && p.lines.every(function (line) { return line.cls === "ok"; });
+    box.appendChild(el("p", { cls: "hint", text: placed
+      ? "With no trade, this plan gives a welfare of " + welfare(era.goods.map(function (g) {
+          return output(c.tech[g], p.L[g], p.K[g] || 0);
+        })).toFixed(1) + (st.phase >= 3 ? ", before any foreign firms." : ".")
+      : "Place all your " + (era.uses_capital ? "workers and capital" : "workers") +
+        " to see what this plan gives with no trade." }));
   }
 
   $("clear").addEventListener("click", function () {

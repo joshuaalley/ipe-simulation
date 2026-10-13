@@ -216,7 +216,8 @@ EXPORT_TARIFF_GATE = True
 # C the host's consumption at world prices. The catch is that owners can move,
 # and a firm that leaves takes its output with it -- the biggest welfare lever
 # a host has. The rate stands until the country changes it. A populist
-# government (inject_populist_backlash) sets a minimum the choice can't undercut.
+# government (inject_populist_backlash) sets a minimum the choice can't undercut,
+# for as long as it governs (POPULIST_ROUNDS).
 MNC_TAX_MAX = 0.50
 MNC_TAX_MIN = 0.0    # below zero is a subsidy: set e.g. -0.20 for bidding wars
 
@@ -230,19 +231,68 @@ MNC_TAX_MIN = 0.0    # below zero is a subsidy: set e.g. -0.20 for bidding wars
 SHADOW_PRICE_CAP = 10.0   # max home price, as a multiple of the price index (1)
 
 # Who earns the reserve currency at the end of Phase 4 (award_reserve_currency):
-#   "half_size"  average gains from trade (%), each round weighted by the square
-#                root of the country's size -- its no-trade welfare relative to
-#                the average country's that round. A big economy isn't held back
-#                because its partners can't supply it much relative to its size,
-#                and a small one doesn't win just by being small; size alone
-#                doesn't decide it.
-#   "gains"      the plain average gains from trade (%). It tilts toward small
-#                open economies, which can import a large share of what they
-#                consume.
+#   "best_mix"   each round's gain over the country's BEST mix with no trade
+#                (best_autarky: the welfare-maximising split of its own
+#                factors), weighted by the square root of its size -- that best
+#                welfare relative to the average country's. Measured against
+#                what the country chose to produce, a country that specialises
+#                hard starts from a low bar and posts huge percentages whether
+#                or not trade really paid; against its best mix it doesn't.
+#                The size weight keeps a small economy from winning just by
+#                being small, and a big one from losing because its partners
+#                can't supply much relative to its size.
+#   "half_size"  the gain over what the country produced, size-weighted by
+#                that same no-trade welfare.
+#   "gains"      the plain average gain over what the country produced. It
+#                favours small, specialised economies.
 # A new game takes RESERVE_CURRENCY_RULE. A game saved before the rule was
 # recorded keeps "gains", so a term already under way isn't changed mid-stream.
-RESERVE_CURRENCY_RULE = "half_size"
-RESERVE_CURRENCY_RULES = ("half_size", "gains")
+RESERVE_CURRENCY_RULE = "best_mix"
+RESERVE_CURRENCY_RULES = ("best_mix", "half_size", "gains")
+
+
+def best_autarky(cfg, goods, phase):
+    """
+    The best a country can do with no trade: the split of its own workers (and,
+    from Phase 2, its capital) that maximises its welfare when it consumes only
+    what it makes. Equal-weight Cobb-Douglas utility and constant-returns
+    production put it in closed form: maximising the sum of ln(output) splits
+    each factor in proportion to its share in each good's production -- an
+    equal share of the workers per good in Phase 1; from Phase 2, workers by
+    labor share and capital by capital share. Hosted firms and trade are left
+    out: this is the country on its own.
+
+    Returns {"labor": {good: L}, "capital": {good: K} (None in Phase 1),
+             "output": {good: Y}, "welfare": U}.
+    """
+    J = len(goods)
+    if phase == 1:
+        labor = {g: cfg["labor"] / J for g in goods}
+        capital = None
+        output = {g: cfg["productivity"][g] * labor[g] for g in goods}
+    else:
+        tech = cfg["tech"]
+        a = {g: tech[g]["labor_share"] for g in goods}
+        b = {g: tech[g]["capital_share"] for g in goods}
+        sa, sb = sum(a.values()), sum(b.values())
+        labor = {g: cfg["labor"] * a[g] / sa for g in goods}
+        capital = {g: (cfg["capital"] * b[g] / sb) if sb > 0 else 0.0 for g in goods}
+        output = {}
+        for g in goods:                       # as _compute_production
+            L, K, t = labor[g], capital[g], tech[g]
+            if L > 0 and K > 0:
+                output[g] = t["tfp"] * L ** t["labor_share"] * K ** t["capital_share"]
+            elif L > 0 and t["capital_share"] == 0:
+                output[g] = t["tfp"] * L ** t["labor_share"]
+            else:
+                output[g] = 0.0
+    welfare = 1.0
+    for g in goods:                           # as _utility
+        if output[g] <= 0:
+            welfare = 0.0
+            break
+        welfare *= output[g] ** (1.0 / J)
+    return {"labor": labor, "capital": capital, "output": output, "welfare": welfare}
 
 # CES elasticity within each industry (love-of-variety).
 # rho closer to 0 = stronger variety preference; rho=1 = perfect substitutes.
@@ -409,8 +459,9 @@ def build_firm_roster(countries, n_firms=None, base=None, verbose=True,
 #
 # The bargain it creates: tariffs buy approval and cost welfare; open
 # trade builds welfare and burns approval unless you compensate the
-# losers. Let approval sit too low too long and the government falls --
-# the populist regime takes over and imposes protection ON you.
+# losers. Let approval end a round below the crisis floor and the government
+# falls -- the populist regime takes over and imposes protection ON you, for
+# POPULIST_ROUNDS rounds.
 
 APPROVAL_START = 50.0            # every country begins here (0-100)
 APPROVAL_FLOOR = 0.0
@@ -431,7 +482,22 @@ COMPENSATION_DEADWEIGHT = 0.20   # ...and this much of it is burned on the way:
 APPROVAL_DRIFT = 0.10            # mean reversion toward APPROVAL_START
 
 APPROVAL_CRISIS_FLOOR = 30.0     # below this...
-APPROVAL_CRISIS_ROUNDS = 2       # ...for this many rounds -> backlash fires
+APPROVAL_CRISIS_ROUNDS = 1       # ...for this many rounds in a row -> the
+                                 # government falls. One: a single bad round
+                                 # is enough, so the Approval column is the
+                                 # only warning.
+POPULIST_ROUNDS = 2              # the populist government then governs this
+                                 # many rounds; after its last one its tariff
+                                 # floor and MNC tax minimum lift by themselves.
+                                 # One round leaves no time to answer it;
+                                 # three is most of a phase.
+
+
+
+
+def _rounds(n):
+    """'1 round', '2 rounds'."""
+    return f"{n} round{'' if n == 1 else 's'}"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -783,11 +849,17 @@ class IPESimulation:
             )
 
         # Step 4: Welfare. Phase 3+ uses variety-aware CES utility.
+        # The no-trade baseline is the country's OWN output. The firms it hosts
+        # are part of being open -- foreign capital producing here -- so their
+        # local sales count in welfare, not in the baseline: attracting a firm
+        # raises a country's gains, and losing one lowers them.
+        own_varieties = (self._build_variety_bundles(country_production, {})
+                         if self.phase >= 3 else None)
         results = {}
         for name in self.countries:
             if self.phase >= 3:
                 welfare = self._utility(varieties[name])
-                no_trade_welfare = self._utility(production_varieties[name])
+                no_trade_welfare = self._utility(own_varieties[name])
             else:
                 welfare = self._utility(consumption[name])
                 no_trade_welfare = self._utility(production[name])
@@ -815,6 +887,13 @@ class IPESimulation:
                 gains_pct = float("inf")
             else:
                 gains_pct = 0.0
+            # ...and over the best the country could do on its own, whatever it
+            # chose to produce (best_autarky) -- what the "best_mix" reserve
+            # rule counts.
+            best_alone = best_autarky(self.countries[name], self.goods,
+                                      self.phase)["welfare"]
+            gains_vs_best = ((trade_welfare - best_alone) / best_alone * 100
+                             if best_alone > 0 else 0.0)
 
             # Phase 5+: printing money buys a stimulus this round, scaled by
             # the currency's remaining credibility (its FX index) -- a strong
@@ -876,6 +955,8 @@ class IPESimulation:
                 "welfare": welfare,
                 "no_trade_welfare": no_trade_welfare,
                 "gains_from_trade_pct": gains_pct,
+                "best_autarky_welfare": best_alone,
+                "gains_vs_best_pct": gains_vs_best,
                 "tariff_losses": tariff_losses[name],
                 # Separate ledger: approval never enters the utility function.
                 "approval": self._update_approval(
@@ -936,8 +1017,10 @@ class IPESimulation:
                     production_varieties[name]
                 )
 
-        # Governments that sat too long below the approval floor fall now,
-        # so the protectionist turn bites from the NEXT round.
+        # A populist government whose term is up steps down; then governments
+        # that ended the round below the approval floor fall, so the
+        # protectionist turn bites from the NEXT round.
+        populist_ended = self._end_populist_terms(results)
         governments_fallen = self._resolve_governments(results)
 
         round_result = {
@@ -947,6 +1030,7 @@ class IPESimulation:
             "trade_log": trade_log,
             "trades_executed": trade_records,
             "governments_fallen": governments_fallen,
+            "populist_ended": populist_ended,
             # Read by next round's export premium (export_premium).
             "tariff_wall": self._applied_tariffs(decisions),
             # When it was played: decision files that reach the class inbox
@@ -1069,7 +1153,9 @@ class IPESimulation:
         premium   = export_premium(host, industry) iff dec.export and
                     Phase >= 4, else 0 -- exporting reaches foreign buyers
         op_cost   = scale * unit_cost
-        fixed     = fixed_export_cost iff dec.export and Phase >= 4
+        fixed     = fixed_export_cost iff dec.export and Phase >= 4, and the
+                    firm isn't moving: a moving firm makes nothing, so it ships
+                    nothing and pays nothing to reach foreign buyers
         mnc_tax   = revenue * mnc_tax_in_force(host) (Phase 3+). Levied on
                     the premium too. The host adds what it collects to its
                     welfare (run_round, Step 4).
@@ -1089,7 +1175,8 @@ class IPESimulation:
             )
             output = firm_output.get(fid, 0.0)
             host = self.firms[fid]["host"]
-            exporting = self.phase >= 4 and bool(dec.get("export", False))
+            exporting = (self.phase >= 4 and bool(dec.get("export", False))
+                         and not relocating)
             premium = (self.export_premium(host, fcfg["industry"])
                        if exporting and output > 0 else 0.0)
             revenue = output * self.world_prices[fcfg["industry"]] * (1 + premium)
@@ -1124,6 +1211,8 @@ class IPESimulation:
                 "profit": profit_real,
                 "cumulative_profit": self.firms[fid]["cumulative_profit"],
                 "relocated": relocating,
+                # The owner's choice, even in a moving round: a firm with no
+                # file next round repeats it (classroom._standing_firm).
                 "exported": dec.get("export", False),
                 "export_premium": premium,
             }
@@ -1624,143 +1713,162 @@ class IPESimulation:
 
         If `varieties` is provided (Phase 3+), per-variety inventories are
         moved proportionally to the exporter's variety mix and updated in place.
+
+        Trades settle in the order given, except that one short of goods waits
+        until the trades that deliver them have settled and is then retried --
+        so passing on an import works whatever order the trades were typed or
+        uploaded in. Only a trade that can never be covered fails.
         """
         trade_log = []
         trade_records = []
         defected = defected or set()
         tariff_losses = {c: {g: 0.0 for g in self.goods} for c in self.countries}
 
-        for trade in trades:
-            exporter, importer, good_out, qty_out, good_in, qty_in = trade
+        queue = list(trades)
+        while queue:
+            waiting, settled = [], False
+            for trade in queue:
+                exporter, importer, good_out, qty_out, good_in, qty_in = trade
 
-            # Reject self-trade: net effect is zero but tariffs would silently
-            # destroy goods. Catches typos in the trade list.
-            if exporter == importer:
+                # Reject self-trade: net effect is zero but tariffs would silently
+                # destroy goods. Catches typos in the trade list.
+                if exporter == importer:
+                    trade_log.append(
+                        f"  FAILED: self-trade -- {exporter} cannot trade with itself"
+                    )
+                    continue
+
+                # Short of goods? Wait: another trade may deliver them (passing on
+                # an import), so the order trades are listed in never decides it.
+                if self._shortfall(consumption, trade):
+                    waiting.append(trade)
+                    continue
+
+                # Look up tariffs (default 0). Phase 4+ populist regimes may
+                # impose a country-wide tariff_floor (minimum applied to all
+                # imports regardless of declared rate).
+                t_importer = (
+                    decisions[importer]
+                    .get("tariffs", {})
+                    .get(exporter, {})
+                    .get(good_out, 0.0)
+                )
+                t_exporter = (
+                    decisions[exporter]
+                    .get("tariffs", {})
+                    .get(importer, {})
+                    .get(good_in, 0.0)
+                )
+                t_importer = max(
+                    t_importer,
+                    self.countries[importer].get("tariff_floor", 0.0),
+                )
+                t_exporter = max(
+                    t_exporter,
+                    self.countries[exporter].get("tariff_floor", 0.0),
+                )
+
+                # FX friction (Phase 5+) stacks multiplicatively on tariffs and
+                # applies symmetrically to both legs of the barter. Phase 7 layers
+                # institutional effects (hegemon provision, WTO dividend) on top.
+                fx = self._compute_fx_friction(exporter, importer)
+                if self.phase >= 6:
+                    fx += self._debt_friction_delta(exporter, importer)
+                if self.phase >= 7:
+                    fx += self._institutional_friction_delta(
+                        exporter, importer, defected
+                    )
+                if self.phase >= 6:
+                    fx = max(0.0, min(fx, 1.0))
+                # A weak currency buys less abroad: each side's imports shrink
+                # with its OWN currency's weakness (Phase 5+).
+                wfx_importer = self._weak_fx_cost(importer, exporter)  # on good_out
+                wfx_exporter = self._weak_fx_cost(exporter, importer)  # on good_in
+                loss_importer = 1 - (1 - t_importer) * (1 - fx) * (1 - wfx_importer)
+                loss_exporter = 1 - (1 - t_exporter) * (1 - fx) * (1 - wfx_exporter)
+
+                received_by_importer = qty_out * (1 - loss_importer)
+                received_by_exporter = qty_in * (1 - loss_exporter)
+                destroyed_at_importer = qty_out * loss_importer
+                destroyed_at_exporter = qty_in * loss_exporter
+
+                # Update consumption (scalar totals)
+                consumption[exporter][good_out] -= qty_out
+                consumption[exporter][good_in] += received_by_exporter
+                consumption[importer][good_in] -= qty_in
+                consumption[importer][good_out] += received_by_importer
+
+                # Update per-variety inventories (Phase 3+)
+                if varieties is not None:
+                    self._transfer_varieties(
+                        varieties, exporter, importer, good_out, qty_out, loss_importer
+                    )
+                    self._transfer_varieties(
+                        varieties, importer, exporter, good_in, qty_in, loss_exporter
+                    )
+
+                # Track losses (tariff + FX, combined)
+                tariff_losses[importer][good_out] += destroyed_at_importer
+                tariff_losses[exporter][good_in] += destroyed_at_exporter
+
+                # Log: implicit terms of trade, tariffs, FX friction
+                tot_str = ""
+                if qty_out > 0:
+                    tot = qty_in / qty_out
+                    tot_str = f"  [ToT: 1 {good_out} = {tot:.2f} {good_in}]"
+                tariff_str = ""
+                if t_importer > 0 or t_exporter > 0:
+                    tariff_str = (
+                        f" [tariffs: {t_importer:.0%} on {good_out}, "
+                        f"{t_exporter:.0%} on {good_in}]"
+                    )
+                fx_str = f" [FX friction: {fx:.0%}]" if fx > 0 else ""
+                weak = [f"{c} {w:.0%}" for c, w in
+                        ((importer, wfx_importer), (exporter, wfx_exporter))
+                        if w > 0.0005]
+                weak_str = f" [weak currency: {', '.join(weak)}]" if weak else ""
                 trade_log.append(
-                    f"  FAILED: self-trade -- {exporter} cannot trade with itself"
+                    f"  {exporter} -> {importer}: "
+                    f"{qty_out:.0f} {good_out} for {qty_in:.0f} {good_in}"
+                    f"{tot_str}{tariff_str}{fx_str}{weak_str}"
                 )
-                continue
-
-            # Validate quantities available
-            if consumption[exporter].get(good_out, 0) < qty_out - 0.01:
-                trade_log.append(
-                    f"  FAILED: {exporter} cannot export {qty_out:.1f} {good_out} "
-                    f"(has {consumption[exporter][good_out]:.1f})"
-                )
-                continue
-            if consumption[importer].get(good_in, 0) < qty_in - 0.01:
-                trade_log.append(
-                    f"  FAILED: {importer} cannot export {qty_in:.1f} {good_in} "
-                    f"(has {consumption[importer][good_in]:.1f})"
-                )
-                continue
-
-            # Look up tariffs (default 0). Phase 4+ populist regimes may
-            # impose a country-wide tariff_floor (minimum applied to all
-            # imports regardless of declared rate).
-            t_importer = (
-                decisions[importer]
-                .get("tariffs", {})
-                .get(exporter, {})
-                .get(good_out, 0.0)
-            )
-            t_exporter = (
-                decisions[exporter]
-                .get("tariffs", {})
-                .get(importer, {})
-                .get(good_in, 0.0)
-            )
-            t_importer = max(
-                t_importer,
-                self.countries[importer].get("tariff_floor", 0.0),
-            )
-            t_exporter = max(
-                t_exporter,
-                self.countries[exporter].get("tariff_floor", 0.0),
-            )
-
-            # FX friction (Phase 5+) stacks multiplicatively on tariffs and
-            # applies symmetrically to both legs of the barter. Phase 7 layers
-            # institutional effects (hegemon provision, WTO dividend) on top.
-            fx = self._compute_fx_friction(exporter, importer)
-            if self.phase >= 6:
-                fx += self._debt_friction_delta(exporter, importer)
-            if self.phase >= 7:
-                fx += self._institutional_friction_delta(
-                    exporter, importer, defected
-                )
-            if self.phase >= 6:
-                fx = max(0.0, min(fx, 1.0))
-            # A weak currency buys less abroad: each side's imports shrink
-            # with its OWN currency's weakness (Phase 5+).
-            wfx_importer = self._weak_fx_cost(importer, exporter)  # on good_out
-            wfx_exporter = self._weak_fx_cost(exporter, importer)  # on good_in
-            loss_importer = 1 - (1 - t_importer) * (1 - fx) * (1 - wfx_importer)
-            loss_exporter = 1 - (1 - t_exporter) * (1 - fx) * (1 - wfx_exporter)
-
-            received_by_importer = qty_out * (1 - loss_importer)
-            received_by_exporter = qty_in * (1 - loss_exporter)
-            destroyed_at_importer = qty_out * loss_importer
-            destroyed_at_exporter = qty_in * loss_exporter
-
-            # Update consumption (scalar totals)
-            consumption[exporter][good_out] -= qty_out
-            consumption[exporter][good_in] += received_by_exporter
-            consumption[importer][good_in] -= qty_in
-            consumption[importer][good_out] += received_by_importer
-
-            # Update per-variety inventories (Phase 3+)
-            if varieties is not None:
-                self._transfer_varieties(
-                    varieties, exporter, importer, good_out, qty_out, loss_importer
-                )
-                self._transfer_varieties(
-                    varieties, importer, exporter, good_in, qty_in, loss_exporter
-                )
-
-            # Track losses (tariff + FX, combined)
-            tariff_losses[importer][good_out] += destroyed_at_importer
-            tariff_losses[exporter][good_in] += destroyed_at_exporter
-
-            # Log: implicit terms of trade, tariffs, FX friction
-            tot_str = ""
-            if qty_out > 0:
-                tot = qty_in / qty_out
-                tot_str = f"  [ToT: 1 {good_out} = {tot:.2f} {good_in}]"
-            tariff_str = ""
-            if t_importer > 0 or t_exporter > 0:
-                tariff_str = (
-                    f" [tariffs: {t_importer:.0%} on {good_out}, "
-                    f"{t_exporter:.0%} on {good_in}]"
-                )
-            fx_str = f" [FX friction: {fx:.0%}]" if fx > 0 else ""
-            weak = [f"{c} {w:.0%}" for c, w in
-                    ((importer, wfx_importer), (exporter, wfx_exporter))
-                    if w > 0.0005]
-            weak_str = f" [weak currency: {', '.join(weak)}]" if weak else ""
-            trade_log.append(
-                f"  {exporter} -> {importer}: "
-                f"{qty_out:.0f} {good_out} for {qty_in:.0f} {good_in}"
-                f"{tot_str}{tariff_str}{fx_str}{weak_str}"
-            )
-            trade_records.append({
-                "exporter": exporter,
-                "importer": importer,
-                "good_out": good_out,
-                "qty_out_sent": qty_out,
-                "qty_out_received": received_by_importer,
-                "tariff_importer": t_importer,
-                "good_in": good_in,
-                "qty_in_sent": qty_in,
-                "qty_in_received": received_by_exporter,
-                "tariff_exporter": t_exporter,
-                "fx_friction": fx,
-                "weak_fx_importer": wfx_importer,
-                "weak_fx_exporter": wfx_exporter,
-                "tot": qty_in / qty_out if qty_out > 0 else 0.0,
-            })
+                trade_records.append({
+                    "exporter": exporter,
+                    "importer": importer,
+                    "good_out": good_out,
+                    "qty_out_sent": qty_out,
+                    "qty_out_received": received_by_importer,
+                    "tariff_importer": t_importer,
+                    "good_in": good_in,
+                    "qty_in_sent": qty_in,
+                    "qty_in_received": received_by_exporter,
+                    "tariff_exporter": t_exporter,
+                    "fx_friction": fx,
+                    "weak_fx_importer": wfx_importer,
+                    "weak_fx_exporter": wfx_exporter,
+                    "tot": qty_in / qty_out if qty_out > 0 else 0.0,
+                })
+                settled = True
+            if not settled or not waiting:
+                # Nothing moved this pass: what's still waiting can't settle.
+                for trade in waiting:
+                    trade_log.append(self._shortfall(consumption, trade))
+                break
+            queue = waiting
 
         return trade_log, tariff_losses, trade_records
+
+    @staticmethod
+    def _shortfall(consumption, trade):
+        """Why a trade can't settle yet, as a FAILED log line -- or None."""
+        exporter, importer, good_out, qty_out, good_in, qty_in = trade
+        if consumption[exporter].get(good_out, 0) < qty_out - 0.01:
+            return (f"  FAILED: {exporter} cannot export {qty_out:.1f} {good_out} "
+                    f"(has {consumption[exporter].get(good_out, 0):.1f})")
+        if consumption[importer].get(good_in, 0) < qty_in - 0.01:
+            return (f"  FAILED: {importer} cannot export {qty_in:.1f} {good_in} "
+                    f"(has {consumption[importer].get(good_in, 0):.1f})")
+        return None
 
     def _weak_fx_cost(self, receiver, sender):
         """
@@ -2270,6 +2378,16 @@ class IPESimulation:
 
     # ── End-of-Phase-4 ceremonies ─────────────────────────────────
 
+    def gains_shown(self, res_c):
+        """
+        The gains figure to show for one country's round: the one this game's
+        reserve race counts. Under "best_mix", the gain over the country's best
+        mix with no trade; otherwise the gain over what it produced.
+        """
+        if self.reserve_rule == "best_mix" and "gains_vs_best_pct" in res_c:
+            return res_c["gains_vs_best_pct"]
+        return res_c.get("gains_from_trade_pct", 0.0)
+
     def award_reserve_currency(self, rule: str = None):
         """
         Rank countries by their average gains from trade (%) across all
@@ -2277,13 +2395,15 @@ class IPESimulation:
         self.reserve_currency_holder to the top country.
 
         rule : None uses the game's own (self.reserve_rule), or name one:
-          "half_size"  each round's gain weighted by the square root of the
-                       country's size (no-trade welfare relative to the
-                       average country's). A large economy isn't held back
-                       because its partners can't supply it, and a small one
-                       doesn't win by being small.
-          "gains"      the plain average, which tilts toward small open
-                       economies.
+          "best_mix"   each round's gain over the country's best mix with no
+                       trade (best_autarky), weighted by the square root of
+                       its size (that best welfare relative to the average
+                       country's). Neither specialising hard nor being small
+                       decides it. Needs rounds that recorded the best mix.
+          "half_size"  the gain over what the country produced, weighted by
+                       the square root of its no-trade welfare's size.
+          "gains"      the plain average gain over what the country produced,
+                       which favours small, specialised economies.
 
         Call at the end of Phase 4. The winner becomes the Phase 5 reserve
         currency holder and the Phase 7 hegemon -- contested on how well each
@@ -2298,20 +2418,31 @@ class IPESimulation:
         if not self.history:
             print("No rounds played; cannot award reserve currency.")
             return []
+        if rule == "best_mix":
+            missing = sorted({h.get("round") for h in self.history
+                              for n in self.countries if n in h["results"]
+                              and "gains_vs_best_pct" not in h["results"][n]})
+            if missing:
+                raise ValueError(
+                    f"Round(s) {missing} were played before each country's best "
+                    f"mix was recorded, so this game can't use 'best_mix'. "
+                    f"Award it with rule='gains' or rule='half_size'.")
+        gain_key = "gains_vs_best_pct" if rule == "best_mix" else "gains_from_trade_pct"
+        size_key = "best_autarky_welfare" if rule == "best_mix" else "no_trade_welfare"
         cum_welfare = {n: 0.0 for n in self.countries}
         sum_gains = {n: 0.0 for n in self.countries}
         rounds_played = {n: 0 for n in self.countries}
         for h in self.history:
             res = h["results"]
             here = [n for n in self.countries if n in res]
-            no_trade = {n: max(float(res[n].get("no_trade_welfare", 0.0) or 0.0), 0.0)
-                        for n in here}
-            mean_no_trade = (sum(no_trade.values()) / len(here)) if here else 0.0
+            sizes = {n: max(float(res[n].get(size_key, 0.0) or 0.0), 0.0)
+                     for n in here}
+            mean_size = (sum(sizes.values()) / len(here)) if here else 0.0
             for n in here:
                 cum_welfare[n] += res[n]["welfare"]
-                gain = res[n].get("gains_from_trade_pct", 0.0)
-                if rule == "half_size":
-                    size = (no_trade[n] / mean_no_trade) if mean_no_trade > 0 else 1.0
+                gain = res[n].get(gain_key, 0.0)
+                if rule in ("best_mix", "half_size"):
+                    size = (sizes[n] / mean_size) if mean_size > 0 else 1.0
                     gain = gain * math.sqrt(size) if size > 0 else 0.0
                 sum_gains[n] += gain
                 rounds_played[n] += 1
@@ -2329,7 +2460,11 @@ class IPESimulation:
         print(f"\n{'':=<65}")
         print(f"  RESERVE CURRENCY AWARDED")
         print(f"{'':=<65}")
-        if rule == "half_size":
+        if rule == "best_mix":
+            print("  Average gains over each country's best mix with no trade, each")
+            print("  round weighted by the square root of the country's size "
+                  "(cumulative welfare breaks ties):\n")
+        elif rule == "half_size":
             print("  Average gains from trade across all rounds, each round weighted")
             print("  by the square root of the country's size "
                   "(cumulative welfare breaks ties):\n")
@@ -2484,23 +2619,30 @@ class IPESimulation:
 
     def inject_populist_backlash(self, country: str, description: str = None,
                                  tariff_floor: float = 0.20,
-                                 mnc_tax_rate: float = 0.10):
+                                 mnc_tax_rate: float = 0.10,
+                                 rounds: int = POPULIST_ROUNDS):
         """
         Phase 4+ political shock: a country swings populist.
 
-        Effects (until reversed):
+        Effects, for the next `rounds` rounds (default POPULIST_ROUNDS):
           - tariff_floor: minimum tariff on ALL imports into this country
           - mnc_tax_rate: the lowest MNC tax the country may charge once
                           firms arrive (its own choice can be higher). What
                           it collects counts toward its welfare.
 
-        Reverse later via a follow-up inject_shock setting both to 0.
+        After the last of those rounds the populist government steps down and
+        both lift by themselves. rounds=None keeps them until you reverse them
+        with an inject_shock setting both to 0.
         """
+        if rounds is not None and rounds < 1:
+            raise ValueError("rounds must be at least 1, or None to keep the "
+                             "populist government until you lift it")
         if description is None:
+            term = "" if rounds is None else f" for {_rounds(rounds)}"
             description = (
                 f"Populist backlash in {country}: "
                 f"{tariff_floor:.0%} tariff floor + "
-                f"{mnc_tax_rate:.0%} MNC tax"
+                f"{mnc_tax_rate:.0%} MNC tax{term}"
             )
         self.inject_shock(description, {
             country: {
@@ -2508,6 +2650,10 @@ class IPESimulation:
                 "mnc_tax_rate": mnc_tax_rate,
             }
         })
+        if rounds is None:
+            self.countries[country].pop("populist_rounds_left", None)
+        else:
+            self.countries[country]["populist_rounds_left"] = int(rounds)
 
     # ── Monetary instructor moves & unions (Phase 5+) ─────────────
 
@@ -3143,11 +3289,70 @@ class IPESimulation:
             "government_fell": False,
         }
 
+    def _populist_in_office(self, name):
+        """True while a populist floor or MNC tax minimum is in force."""
+        cfg = self.countries[name]
+        return (float(cfg.get("tariff_floor", 0.0) or 0.0) > 0
+                or float(cfg.get("mnc_tax_rate", 0.0) or 0.0) > 0)
+
+    def _end_populist_terms(self, results):
+        """
+        Count down every populist government that governed this round. One
+        whose term is up steps down: its tariff floor and MNC tax minimum lift
+        from the next round. Marks each country's approval record (populist,
+        populist_rounds_left, populist_ends) and returns those that stepped
+        down. Runs before _resolve_governments, so a government that falls
+        this round serves its whole term from the next one.
+        """
+        ended = []
+        for name, cfg in self.countries.items():
+            appr = results.get(name, {}).get("approval")
+            if not self._populist_in_office(name):
+                cfg.pop("populist_rounds_left", None)     # lifted by hand
+                if appr is not None:
+                    appr["populist"] = False
+                continue
+            left = cfg.get("populist_rounds_left")
+            if left is not None:
+                left = cfg["populist_rounds_left"] = left - 1
+            if appr is not None:
+                appr["populist"] = True
+                appr["tariff_floor"] = float(cfg.get("tariff_floor", 0.0) or 0.0)
+                appr["populist_rounds_left"] = max(left, 0) if left is not None else None
+                appr["populist_ends"] = left is not None and left <= 0
+            if left is not None and left <= 0:
+                ended.append(name)
+        for name in ended:
+            self.inject_shock(
+                f"{name}'s populist government steps down: its tariff floor "
+                f"and MNC tax minimum lift from the next round.",
+                {name: {"tariff_floor": 0.0, "mnc_tax_rate": 0.0}})
+            self.countries[name].pop("populist_rounds_left", None)
+        return ended
+
+    def _date_populist_terms(self):
+        """
+        A game saved before populist governments served a set term: start
+        each one's clock from its recorded fall, so it serves what is left of
+        POPULIST_ROUNDS -- at least one more round, so nothing lifts unseen
+        on loading. A backlash with no recorded fall (one injected by hand)
+        stays until lifted by hand, as it did.
+        """
+        for name, cfg in self.countries.items():
+            if "populist_rounds_left" in cfg or not self._populist_in_office(name):
+                continue
+            fell = [i for i, rd in enumerate(self.history)
+                    if name in (rd.get("governments_fallen") or [])]
+            if fell:
+                served = len(self.history) - 1 - fell[-1]
+                cfg["populist_rounds_left"] = max(1, POPULIST_ROUNDS - served)
+
     def _resolve_governments(self, results):
         """
-        Any country that has sat below the approval floor for too long loses
-        its government: the populist regime takes over and imposes protection.
-        Fires AFTER the round resolves, so it bites from the next one.
+        Any country that has sat below the approval floor for
+        APPROVAL_CRISIS_ROUNDS rounds in a row loses its government: the
+        populist regime takes over and imposes protection for POPULIST_ROUNDS
+        rounds. Fires AFTER the round resolves, so it bites from the next one.
         """
         fallen = []
         for name, cfg in self.countries.items():
@@ -3158,13 +3363,16 @@ class IPESimulation:
                 if "approval" in results.get(name, {}):
                     results[name]["approval"]["government_fell"] = True
                     results[name]["approval"]["approval"] = APPROVAL_START
+        why = (f"approval fell below {APPROVAL_CRISIS_FLOOR:.0f}"
+               if APPROVAL_CRISIS_ROUNDS == 1 else
+               f"approval stayed below {APPROVAL_CRISIS_FLOOR:.0f} for "
+               f"{_rounds(APPROVAL_CRISIS_ROUNDS)}")
         for name in fallen:
             self.inject_populist_backlash(
                 name,
-                description=(f"Government falls in {name}: approval stayed below "
-                             f"{APPROVAL_CRISIS_FLOOR:.0f} for "
-                             f"{APPROVAL_CRISIS_ROUNDS} rounds. A protectionist "
-                             "coalition takes power.")
+                description=(f"Government falls in {name}: {why}. A protectionist "
+                             f"coalition takes power for the next "
+                             f"{_rounds(POPULIST_ROUNDS)}.")
             )
         return fallen
 
@@ -3322,7 +3530,7 @@ class IPESimulation:
             for g in goods:
                 row += f"{res[name]['consumption'].get(g, 0):12.1f}"
             row += f"{res[name]['welfare']:12.1f}"
-            gains = res[name]["gains_from_trade_pct"]
+            gains = self.gains_shown(res[name])
             if gains == float("inf"):
                 row += f"{'n/a (0)':>11s}"
             else:
@@ -3380,17 +3588,25 @@ class IPESimulation:
                     f"{fr['profit']:10.1f}{fr['cumulative_profit']:10.1f}{tag}"
                 )
 
-        # Tariff floor in effect (Phase 4+; populist regimes)
+        # Tariff floor in effect (Phase 4+; populist regimes) -- from the
+        # round's own record, so a floor that lifted afterwards still shows
         if phase >= 4:
-            floors = {
-                n: self.countries[n].get("tariff_floor", 0.0)
-                for n in names
-                if self.countries[n].get("tariff_floor", 0.0) > 0
-            }
+            appr = {n: res[n].get("approval") or {} for n in names}
+            if any("populist" in a for a in appr.values()):
+                floors = {n: a for n, a in appr.items()
+                          if a.get("populist") and a.get("tariff_floor", 0.0) > 0}
+            else:                                  # a round saved before the record
+                floors = {n: {"tariff_floor": self.countries[n].get("tariff_floor", 0.0)}
+                          for n in names
+                          if self.countries[n].get("tariff_floor", 0.0) > 0}
             if floors:
                 print(f"\n  TARIFF FLOORS (populist regimes)")
-                for n, f in floors.items():
-                    print(f"  {n:16s}{f:.0%} floor on all imports")
+                for n, a in floors.items():
+                    left = a.get("populist_rounds_left")
+                    term = ("" if left is None else
+                            "  (steps down: lifted from next round)" if left <= 0 else
+                            f"  ({left} more round{'' if left == 1 else 's'})")
+                    print(f"  {n:16s}{a['tariff_floor']:.0%} floor on all imports{term}")
 
         # MNC tax revenue (Phase 4+; separate ledger, NOT in welfare)
         if phase >= 3 and "mnc_tax_this_round" in rd:
@@ -3667,7 +3883,7 @@ class IPESimulation:
         rd = self.history[-1]
         res = rd["results"]
         names = list(self.countries.keys())
-        gains = [res[n]["gains_from_trade_pct"] for n in names]
+        gains = [self.gains_shown(res[n]) for n in names]
         colors = ["#2ecc71" if g >= 0 else "#e74c3c" for g in gains]
 
         fig, ax = plt.subplots(figsize=figsize)
@@ -4131,7 +4347,7 @@ class IPESimulation:
             entry += f"    Production: {r['production']}\n"
             entry += f"    Consumption: {r['consumption']}\n"
             entry += f"    Welfare: {r['welfare']:.1f}\n"
-            entry += f"    Gains from trade: {r['gains_from_trade_pct']:+.1f}%\n"
+            entry += f"    Gains from trade: {self.gains_shown(r):+.1f}%\n"
             if "factor_prices" in r:
                 fp = r["factor_prices"]
                 entry += f"    Avg wage: {fp['avg_wage']:.2f}, "
@@ -4181,6 +4397,9 @@ class IPESimulation:
             "mnc_tax_revenue": self.mnc_tax_revenue,
             "reserve_currency_holder": self.reserve_currency_holder,
             "reserve_rule": self.reserve_rule,
+            # Populist governments serve a counted term (populist_rounds_left,
+            # inside `countries`); a save without this flag pre-dates the count.
+            "populist_terms": True,
             # Phase 5+ state (monetary fields live inside `countries`)
             "monetary_unions": self.monetary_unions,
             # Phase 7+ state (WTO/binding fields live inside `countries`)
@@ -4214,4 +4433,6 @@ class IPESimulation:
         sim.hegemon_provides = state.get("hegemon_provides", True)
         sim._pending_global_crisis = state.get("_pending_global_crisis", None)
         sim.final_round = state.get("final_round", None)
+        if not state.get("populist_terms"):
+            sim._date_populist_terms()
         return sim

@@ -415,13 +415,63 @@ def test_page_data():
           calculator._page_data(path)["inbox_url"] == "https://www.dropbox.com/request/abc")
 
 
+def test_pass_through_listed_first():
+    print("\n[12] passing on an import settles though its pair sorts first")
+    # Round 12: Bosque buys machinery from Trinity and passes some to Sabine.
+    # Bosque-Sabine sorts before Bosque-Trinity, so the relay comes up first.
+    sim, folder = game("relay")
+    relay = {"Bosque": [("Trinity", 20, "cloth", 15, "machinery"),
+                        ("Sabine", 12, "machinery", 8, "wine")],
+             "Trinity": [("Bosque", 15, "machinery", 20, "cloth")],
+             "Sabine": [("Bosque", 8, "wine", 12, "machinery")]}
+    no_machines = ((48, 12, 0), (20, 5, 0))             # and hosts no machinery firm
+    for c in KEEP:
+        drop(folder, f"{c}.json", country_file(
+            c, relay.get(c, ()), alloc=no_machines if c == "Bosque" else None))
+    path = os.path.join(folder, "round02.xlsx")
+    quiet(sim.play_round, path)                          # builds
+    order = [t[:2] for t in sim.load_round(path)["trades"]]
+    check("  the relay is listed before the trade that supplies it",
+          order == [("Bosque", "Sabine"), ("Bosque", "Trinity")], str(order))
+    quiet(sim.play_round, path)                          # plays
+    r = sim.history[-1]
+    log = "\n".join(r["trade_log"])
+    check("  both trades settle", sim.round_num == 2 and "FAILED" not in log
+          and len(r["trades_executed"]) == 2, log)
+    check("  Bosque keeps the 3 machinery it didn't pass on",
+          abs(r["results"]["Bosque"]["consumption"]["machinery"] - 3.0) < 1e-9,
+          str(r["results"]["Bosque"]["consumption"]))
+
+
+def test_file_times_survive_excel():
+    print("\n[13] Excel's rounding of a file time doesn't look like a new file")
+    sim, folder = game("rounding")
+    all_four(folder)
+    inbox = os.path.join(folder, "inbox")
+    base = int(time.time()) * 10**9
+    for i, name in enumerate(sorted(os.listdir(inbox))):
+        t = base + i * 10**9 + 123_499_000              # x.123499 s
+        os.utime(os.path.join(inbox, name), ns=(t, t))
+    path = os.path.join(folder, "round02.xlsx")
+    quiet(sim.play_round, path)                          # builds
+    book = pd.read_excel(path, sheet_name=None)
+    book[classroom.INBOX_SHEET]["mtime"] += 2e-6         # x.123501: across a rounding line
+    _write(path, book)
+    check("  a time a hair off is the same file",
+          not classroom._inbox_changed(path, inbox))
+    quiet(sim.play_round, path)
+    check("  ...so the next run plays the round instead of rebuilding it",
+          sim.round_num == 2)
+
+
 def main():
     for t in [test_newest_wins_and_junk_is_set_aside, test_stale_files_wait,
               test_trades_need_both_sides, test_build_and_play,
               test_absent_teams_repeat_last_round,
               test_unusable_files_are_never_half_applied, test_paper_rounds_unchanged,
               test_money_debt_institutions_fields, test_report_writes_nothing,
-              test_real_round8_through_the_inbox, test_page_data]:
+              test_real_round8_through_the_inbox, test_page_data,
+              test_pass_through_listed_first, test_file_times_survive_excel]:
         try:
             t()
         except Exception:

@@ -731,6 +731,22 @@ def test_firm_calibration():
           old.variety_rho == VARIETY_RHO)
 
 
+def test_hosted_firms_count_as_gains():
+    print("\n[22] a hosted firm counts in welfare, not in the no-trade baseline")
+    base = fresh_phase3()
+    a, b = copy.deepcopy(base), copy.deepcopy(base)
+    r_on = a.run_round(BAL_DEC, [], firm_decisions=full_firm_dec(a, scale=40))
+    r_off = b.run_round(BAL_DEC, [], firm_decisions=full_firm_dec(b, scale=0))
+    on, off = r_on["results"]["Trinity"], r_off["results"]["Trinity"]
+    check("  the baseline is the country's own output, firms or no firms",
+          on["no_trade_welfare"] == off["no_trade_welfare"])
+    check("  hosting raises welfare, and the gains with it",
+          on["welfare"] > off["welfare"] and on["gains_from_trade_pct"] > 0,
+          f"{on['gains_from_trade_pct']:.1f}%")
+    check("  no firms and no trade: no gains",
+          abs(off["gains_from_trade_pct"]) < 1e-9, str(off["gains_from_trade_pct"]))
+
+
 def main():
     tests = [
         test_zero_firms,
@@ -754,6 +770,7 @@ def main():
         test_off_map_firm_hosts_rejected,
         test_build_firm_roster,
         test_mnc_tax_decision,
+        test_hosted_firms_count_as_gains,
         test_owners_no_reshoring,
         test_firm_calibration,
     ]

@@ -232,6 +232,65 @@ def test_trade_order_dependence():
 
 
 # ────────────────────────────────────────────────────────────────────
+# 6b. Passing on an import settles whatever order it is listed in
+# ────────────────────────────────────────────────────────────────────
+def test_pass_through_any_order():
+    print("\n[6b] passing on an import: listing order doesn't decide it")
+    dec = {
+        "Brazos":  {"production": {"cloth": 75, "wine": 75}},
+        "Bosque":  {"production": {"cloth": 60, "wine": 0}},   # 240 cloth, no wine
+        "Llano":   {"production": {"cloth": 0,  "wine": 100}},  # 300 wine
+        "Trinity": {"production": {"cloth": 60, "wine": 60}},
+        "Pecos":   {"production": {"cloth": 0,  "wine": 50}},   # no cloth
+        "Sabine":  {"production": {"cloth": 100, "wine": 0}},   # no wine
+    }
+    buy = ("Bosque", "Llano", "cloth", 100, "wine", 80)    # Bosque gets 80 wine
+    relay = ("Bosque", "Sabine", "wine", 30, "cloth", 40)  # ...and passes 30 on
+
+    def play(trades, d=dec):
+        r = fresh_phase1().run_round(d, trades)
+        cons = {c: r["results"][c]["consumption"] for c in PHASE1_COUNTRIES}
+        return r, cons
+
+    r1, first = play([relay, buy])
+    r2, second = play([buy, relay])
+    log = "\n".join(r1["trade_log"])
+    check("  relay listed before its supply: both settle",
+          "FAILED" not in log and len(r1["trades_executed"]) == 2, f"log:\n{log}")
+    check("  same outcome in either order",
+          all(abs(first[c][g] - second[c][g]) < 1e-9
+              for c in first for g in first[c]), f"{first}\n{second}")
+
+    # A three-step chain listed backwards: each leg waits for the one before.
+    chain = [
+        ("Pecos", "Brazos", "cloth", 30, "wine", 25),   # cloth Pecos got from Llano
+        ("Llano", "Pecos", "cloth", 50, "wine", 60),    # cloth Llano got from Bosque
+        ("Bosque", "Llano", "cloth", 100, "wine", 80),
+    ]
+    r3, backwards = play(chain)
+    _, forwards = play(chain[::-1])
+    log3 = "\n".join(r3["trade_log"])
+    check("  a chain listed backwards settles every leg",
+          "FAILED" not in log3 and len(r3["trades_executed"]) == 3, f"log:\n{log3}")
+    check("  ...with the same outcome as listed forwards",
+          all(abs(backwards[c][g] - forwards[c][g]) < 1e-9
+              for c in backwards for g in backwards[c]))
+
+    # Can never be covered: a 50% tariff leaves Bosque 40 of the 80 wine,
+    # so passing on 60 fails -- in either order -- and says what it had.
+    taxed = {c: dict(d) for c, d in dec.items()}
+    taxed["Bosque"]["tariffs"] = {"Llano": {"wine": 0.5}}
+    too_much = ("Bosque", "Sabine", "wine", 60, "cloth", 40)
+    for order in ([too_much, buy], [buy, too_much]):
+        r, _ = play(order, taxed)
+        log = "\n".join(r["trade_log"])
+        check(f"  uncoverable relay fails ({'relay first' if order[0] is too_much else 'supply first'})",
+              len(r["trades_executed"]) == 1
+              and "FAILED: Bosque cannot export 60.0 wine (has 40.0)" in log,
+              f"log:\n{log}")
+
+
+# ────────────────────────────────────────────────────────────────────
 # 7. Insane tariffs (100% destruction)
 # ────────────────────────────────────────────────────────────────────
 def test_full_tariff():
@@ -630,6 +689,7 @@ def main():
         test_validation_failures,
         test_allocation_tolerance,
         test_trade_order_dependence,
+        test_pass_through_any_order,
         test_full_tariff,
         test_trade_exceeds_inventory,
         test_phase2_stranded_labor,

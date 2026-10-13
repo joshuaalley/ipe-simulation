@@ -145,7 +145,7 @@ watches each result appear.
 `print_results()` renders at the notebook's own font size, with fixed 12-character
 columns — small and padding-heavy on a projector. `sim.show()` exists to fix that:
 large type, tight cells, colored gains, and event badges (CRISIS, DEFAULT,
-defected, WTO, hegemon).
+GOVT FELL, populist, defected, WTO, hegemon).
 
 ```python
 sim.show()                              # good in a normal classroom
@@ -217,9 +217,13 @@ From Phase 2, output is TFP · L^α · K^β, which nobody works out in their hea
 The calculator is one web page: students tap the phase and their country, type
 where their workers and capital go, and see exactly what the engine will
 produce, plus whether their totals match their endowment. That is the same check the engine
-runs, so a form that passes the calculator won't bounce in the notebook. It
-shows nothing else: no welfare, no prices, no suggested allocation. What to
-make, what to trade, and on what terms stay the students' problem.
+runs, so a form that passes the calculator won't bounce in the notebook. Under
+the table it shows what the plan is worth with no trade, so a team can search
+for its best mix with no trade: the bar its trades have to beat, and what the
+reserve race measures against in new games. The page never gives that mix away
+(it isn't in the page's data either), and there are no prices and no advice on
+what to trade: what to make, what to trade, and on what terms stay the
+students' problem.
 
 **Set up once.** `sim.export_calculator()` writes `docs/index.html` from the
 live simulation, with one button per country in play, so it follows your class
@@ -377,7 +381,7 @@ deal paid.
 Run the relevant `inject_*` cell so the next round opens with a new wrinkle:
 
 - `sim.inject_productivity_surge(country, industry, multiplier)` — automation / new tech / foreign-cost collapse
-- `sim.inject_populist_backlash(country)` — tariff floor + MNC tax
+- `sim.inject_populist_backlash(country)` — tariff floor + MNC tax minimum for two rounds, then both lift (`rounds=3` for longer; `rounds=None` keeps them until you lift them)
 - `sim.inject_monetary_shock(country, growth)` — forced money printing
 - `sim.inject_speculative_attack(country)` — currency crisis on a named country
 - `sim.inject_capital_flight(country, severity)` — balance-of-payments shock
@@ -472,7 +476,9 @@ in force, so a blank or untouched cell keeps last round's rate.
   of revenue, so even a modest tax wipes out its profit and it moves first.
   HIGH firms are stickier, because moving costs a whole round of output.
 - **The populist minimum:** a government that falls gets a tariff floor and a
-  minimum MNC tax. Its own choices can go higher, never lower.
+  minimum MNC tax. Its own choices can go higher, never lower. The populist
+  government governs two rounds (`POPULIST_ROUNDS` in `engine.py`), then steps
+  down and both lift; the board shows `populist`, then `populist ends`.
 
 That is the obsolescing bargain in one number. Once a firm is sunk, the host
 can raise the rate, right up to the point where the owner decides moving
@@ -519,7 +525,10 @@ fifth of its output (`FIRM_LOCAL_SHARE`), reach the host's economy. The rest
 sells on world markets at world prices. At full scale the roster makes about
 as much as the four countries combined, so when hosts got all of it, small
 economies doubled or tripled overnight. At a fifth, hosting two firms is worth
-roughly what a country gains from trade. Love of variety is set at
+roughly what a country gains from trade. Local sales count as a gain from
+openness: the no-trade baseline ("vs. autarky") is the country's own output
+without its firms, so attracting a firm raises its gains and losing one lowers
+them. Love of variety is set at
 `VARIETY_RHO = 0.75` (an elasticity of 4, mid-range of the estimates). At 0.6,
 even a sliver of a new variety was worth a lot.
 
@@ -556,19 +565,24 @@ constant.
 ### Who gets the reserve currency (end of Phase 4)
 
 The award ranks countries by their average gains from trade across every
-round, with cumulative welfare breaking ties. A plain average favors small open
-economies: a big country's partners can't supply it much relative to its size,
-so its percentage gains stay low however well it plays. New games therefore
-weight each round's gain by the square root of the country's size (its no-trade
-welfare relative to the average country's). A big economy is no longer held
-back, and a small one no longer wins just by being small, but size alone
-doesn't decide it.
+round, with cumulative welfare breaking ties. New games measure each round
+against the country's **best mix with no trade**: the split of its own workers
+and capital that would serve it best on its own (`best_autarky` in `engine.py`).
+Measured against what a country chose to produce instead, a country that
+specializes hard starts from a low bar and posts huge percentages whether or
+not trade really paid. Each round's gain is also weighted by the square root of
+the country's size (that best welfare relative to the average country's), so a
+small economy doesn't win just by being small and a big one isn't held back
+because its partners can't supply it much. The board's "vs. autarky" column
+shows the same measure, so students see the number the race counts, and it can
+go negative: a country that trades badly ends up below what it could have made
+alone.
 
-A game that began before this rule existed keeps the plain average, so a term
-already under way isn't changed. Either rule can be named:
-`sim.award_reserve_currency("gains")` or `sim.award_reserve_currency("half_size")`.
-Each call awards the currency, so if you show the class the other rule's
-ranking, run the one that counts last.
+A game that began before this rule existed keeps the plain average against what
+each country produced (`"gains"`), so a term already under way isn't changed.
+Any rule can be named: `sim.award_reserve_currency("gains")`, `"half_size"` or
+`"best_mix"`. Each call awards the currency, so if you show the class another
+rule's ranking, run the one that counts last.
 
 ## Phase transitions
 

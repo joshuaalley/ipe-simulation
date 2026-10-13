@@ -9,6 +9,7 @@ approval, and a country that ignores its losers must eventually lose office.
 """
 import contextlib
 import io
+import json
 import sys
 import traceback
 
@@ -21,6 +22,7 @@ from engine import (
     PHASE2_COUNTRIES, PHASE2_GOODS,
     APPROVAL_START, APPROVAL_CRISIS_FLOOR, APPROVAL_CRISIS_ROUNDS,
     APPROVAL_COMPENSATION, COMPENSATION_MAX_SHARE, COMPENSATION_DEADWEIGHT,
+    POPULIST_ROUNDS,
 )
 
 PASS, FAIL = [], []
@@ -120,14 +122,117 @@ def test_backlash_is_endogenous():
     check("  a government fell", bool(fell))
     if fell:
         victim = fell[0]
-        check("  the fall is recorded on the round",
-              any(victim in rd.get("governments_fallen", [])
-                  for rd in sim.history))
-        check("  a tariff floor was imposed on the victim",
-              sim.countries[victim].get("tariff_floor", 0) > 0,
-              str(sim.countries[victim].get("tariff_floor")))
+        k = next((i for i, rd in enumerate(sim.history)
+                  if victim in rd.get("governments_fallen", [])), None)
+        check("  the fall is recorded on the round", k is not None)
+        after = sim.history[k + 1]["results"][victim]["approval"]
+        check("  a tariff floor governs the victim's next round",
+              after.get("populist") and after.get("tariff_floor", 0) > 0, str(after))
         check("  the new government starts fresh",
-              sim.countries[victim]["approval"] > APPROVAL_CRISIS_FLOOR)
+              sim.history[k]["results"][victim]["approval"]["approval"]
+              > APPROVAL_CRISIS_FLOOR)
+
+
+def test_populist_term():
+    print("\n[13] a populist government serves its term, then steps down")
+    import classroom
+    tar = {c: {p: {g: 0.0 for g in PHASE1_GOODS} for p in C if p != c} for c in C}
+    dec = {c: {"production": PROD[c], "tariffs": tar[c]} for c in C}
+
+    def fresh():
+        return IPESimulation({c: PHASE1_COUNTRIES[c] for c in C}, PHASE1_GOODS, phase=1)
+
+    def run(sim, n):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            got = [sim.run_round(dec, SWAPS) for _ in range(n)]
+        return got, out.getvalue()
+
+    # Bosque imports wine from Llano; what it charges on it is its floor, if any.
+    levied = lambda r: next(t["tariff_exporter"] for t in r["trades_executed"]
+                            if t["exporter"] == "Bosque")
+    populist = lambda r, c="Bosque": r["results"][c]["approval"].get("populist")
+
+    sim = fresh()            # polling at zero: ends this round below 30
+    sim.countries["Bosque"].update(approval=0.0,
+                                   low_approval_rounds=APPROVAL_CRISIS_ROUNDS - 1)
+    r, out = run(sim, 4)
+    check("  one round below 30 brings the fall",
+          APPROVAL_CRISIS_ROUNDS == 1 and r[0]["governments_fallen"] == ["Bosque"]
+          and "approval fell below 30" in out)
+    check("  ...and the populists aren't in office until the next round",
+          not populist(r[0]) and levied(r[0]) == 0.0)
+    check(f"  they govern the next {POPULIST_ROUNDS} rounds, floor and all",
+          POPULIST_ROUNDS == 2 and all(populist(x) and levied(x) == 0.20 for x in r[1:3]),
+          str([(populist(x), levied(x)) for x in r]))
+    check("  the board counts down: 1 round left, then 0",
+          [x["results"]["Bosque"]["approval"]["populist_rounds_left"] for x in r[1:3]]
+          == [1, 0])
+    check("  ...and the last one says they step down",
+          r[2]["populist_ended"] == ["Bosque"]
+          and r[2]["results"]["Bosque"]["approval"]["populist_ends"]
+          and "steps down" in out)
+    check("  then the floor and the MNC tax minimum are gone",
+          not populist(r[3]) and levied(r[3]) == 0.0
+          and sim.countries["Bosque"]["tariff_floor"] == 0.0
+          and sim.countries["Bosque"]["mnc_tax_rate"] == 0.0
+          and "populist_rounds_left" not in sim.countries["Bosque"])
+    check("  the scoreboard shows it",
+          ("populist", classroom.NEGATIVE) in classroom._badges(r[1]["results"]["Bosque"])
+          and ("populist ends", classroom.MUTED)
+          in classroom._badges(r[2]["results"]["Bosque"]))
+
+    # The same term when the instructor imposes it; longer, or open-ended, on request
+    for rounds, expect in ((POPULIST_ROUNDS, [True, True, False]),
+                           (3, [True, True, True, False]), (None, [True] * 5)):
+        sim = fresh()
+        with contextlib.redirect_stdout(io.StringIO()):
+            if rounds == POPULIST_ROUNDS:
+                sim.inject_populist_backlash("Bosque")
+            else:
+                sim.inject_populist_backlash("Bosque", rounds=rounds)
+        r, _ = run(sim, len(expect))
+        check(f"  imposed by hand, rounds={rounds}: in office {sum(expect)} round(s)",
+              [bool(populist(x)) for x in r] == expect,
+              str([populist(x) for x in r]))
+    try:
+        fresh().inject_populist_backlash("Bosque", rounds=0)
+        check("  a term of 0 rounds is refused", False)
+    except ValueError:
+        check("  a term of 0 rounds is refused", True)
+
+    sim = fresh()            # lifted early by hand: no step-down later
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim.inject_populist_backlash("Bosque")
+        sim.run_round(dec, SWAPS)
+        sim.inject_shock("Reform", {"Bosque": {"tariff_floor": 0.0, "mnc_tax_rate": 0.0}})
+    r, _ = run(sim, 2)
+    check("  lifted early by hand: no countdown left, no step-down announced",
+          not any(populist(x) for x in r) and all(x["populist_ended"] == [] for x in r)
+          and "populist_rounds_left" not in sim.countries["Bosque"])
+
+    # Saved mid-term: the count carries; a save from before the count is dated
+    sim = fresh()
+    sim.countries["Bosque"].update(approval=0.0,
+                                   low_approval_rounds=APPROVAL_CRISIS_ROUNDS - 1)
+    run(sim, 2)                                       # the fall, then round 1 of 2
+    state = json.loads(json.dumps(sim.get_state()))
+    with contextlib.redirect_stdout(io.StringIO()):
+        back = IPESimulation.from_state(state)
+    check("  save/restore mid-term keeps the count",
+          back.countries["Bosque"]["populist_rounds_left"] == 1)
+    r, _ = run(back, 2)
+    check("  ...and the government steps down on schedule",
+          populist(r[0]) and not populist(r[1]))
+    old = json.loads(json.dumps(sim.get_state()))
+    old.pop("populist_terms")
+    old["countries"]["Bosque"].pop("populist_rounds_left")
+    old["countries"]["Llano"].update(tariff_floor=0.15)   # imposed by hand, unrecorded
+    with contextlib.redirect_stdout(io.StringIO()):
+        dated = IPESimulation.from_state(old)
+    check("  an older save counts the term from the recorded fall",
+          dated.countries["Bosque"].get("populist_rounds_left") == 1)
+    check("  ...and a hand-imposed floor with no record stays until lifted",
+          "populist_rounds_left" not in dated.countries["Llano"])
 
 
 def test_compensation_helps():
@@ -256,7 +361,8 @@ def main():
               test_side_payments_are_net_and_move_goods,
               test_openness_topples_a_government, test_backlash_is_endogenous,
               test_compensation_helps, test_survives_upgrade_and_restore,
-              test_bounds, test_phase_change_rebases_prosperity]:
+              test_bounds, test_phase_change_rebases_prosperity,
+              test_populist_term]:
         try:
             t()
         except Exception:

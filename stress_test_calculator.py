@@ -140,6 +140,22 @@ def test_check_values_are_engine_output():
     check("  at least 3 checks per country", min(per.values()) >= 3, str(per))
 
 
+def test_best_mix_not_given_away():
+    print("\n[8] the page shows a plan's no-trade welfare, never the best mix")
+    sim = p2_sim()
+    html, data, raw = page(export(sim, "best"))
+    check("  no country carries a best mix in the page data",
+          all("best" not in c for era in data["eras"].values() for c in era["countries"]))
+    check("  ...and the page has nothing that fills one in",
+          "best mix" not in html.lower().replace("its own best mix", ""))
+    ok = True
+    for k in data["checks"]:
+        dec = {"production": {"labor": k["labor"], "capital": k["capital"]}}
+        out = sim._compute_production({n: dec for n in sim.countries})[k["country"]]
+        ok &= abs(sim._utility(out) - k["welfare"]) < 1e-12
+    check("  the self-check's welfare values are the engine's own", ok)
+
+
 def test_phase1_export():
     print("\n[5] Phase 1 (labor only) exports cleanly")
     sim = IPESimulation({k: PHASE1_COUNTRIES[k] for k in KEEP}, PHASE1_GOODS,
@@ -205,7 +221,7 @@ def main():
     for t in [test_one_button_per_country, test_numbers_match_live_sim,
               test_reexport_follows_shocks, test_check_values_are_engine_output,
               test_phase1_export, test_data_cannot_break_the_page,
-              test_guards_and_defaults]:
+              test_guards_and_defaults, test_best_mix_not_given_away]:
         try:
             t()
         except Exception:

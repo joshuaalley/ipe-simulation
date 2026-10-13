@@ -5,9 +5,11 @@ Student calculator and round form -- one static web page.
     sim.export_calculator(inbox_url="https://www.dropbox.com/request/...")
 
 Students pick the phase, then their country (or their firm). The calculator
-shows what their workers and capital produce -- no welfare, no prices, no
-advice: deciding what to make and trade is the lesson, the arithmetic of
-L^0.7 * K^0.3 is not. Below it they fill in the rest of the round (tariffs,
+shows what their workers and capital produce and what that plan is worth with
+no trade, so a team can search for its best mix with no trade -- the bar its
+trades have to beat. It never gives that mix away (the page data doesn't carry
+it), and it offers no prices and no advice on what to trade: working those out
+is the lesson, the arithmetic of L^0.7 * K^0.3 is not. Below it they fill in the rest of the round (tariffs,
 trades, policies) and submit: the page saves one small decision file and
 opens the class's Dropbox upload page, and play_round builds the round from
 those files (classroom.py, "decision files").
@@ -100,7 +102,9 @@ def _era(sim):
             out = _engine_output(sim, labor, capital)[name]
             checks.append({"country": name, "labor": labor,
                            "capital": capital,
-                           "expected": {g: float(out[g]) for g in sim.goods}})
+                           "expected": {g: float(out[g]) for g in sim.goods},
+                           "welfare": float(sim._utility(
+                               {g: float(out[g]) for g in sim.goods}))})
     return {"uses_capital": sim.phase != 1, "goods": list(sim.goods),
             "countries": [_country_spec(sim, n) for n in names],
             "checks": checks}
