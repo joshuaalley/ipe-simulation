@@ -2504,14 +2504,14 @@ class IPESimulation:
         print(f"  MNC PROFIT RANKINGS")
         print(f"{'':=<65}")
         print(
-            f"  {'Rank':5s}{'ID':4s}{'Variety':10s}"
+            f"  {'Rank':6s}{'ID':5s}{'Variety':10s}"
             f"{'Host':10s}{'Industry':11s}{'Cum.Profit':>12s}"
         )
-        print(f"  {'-'*56}")
+        print(f"  {'-'*58}")
         for i, (fid, fstate) in enumerate(ranked, 1):
             cfg = self.firm_config[fid]
             print(
-                f"  {i:5d}{fid:4s}{cfg['variety']:10s}"
+                f"  {i:<6d}{fid:5s}{cfg['variety']:10s}"
                 f"{fstate['host']:10s}{cfg['industry']:11s}"
                 f"{fstate['cumulative_profit']:12.2f}"
             )
@@ -2710,7 +2710,7 @@ class IPESimulation:
         """
         Sudden capital outflow. `severity` is the multiplier applied to the
         currency: 0.5 halves it, 0.7 costs 30% of its value. Models a
-        balance-of-payments shock for Round 22. Capital controls do not stop
+        balance-of-payments shock (the Phase 6 debt crisis). Capital controls do not stop
         it here, but in the debrief discuss whether they should have.
         """
         if not (0 < severity < 1):
@@ -2893,7 +2893,7 @@ class IPESimulation:
         Fire a balance-of-payments shock on the MOST EXPOSED country, chosen
         by the countries' own choices rather than by you: from Phase 6 the
         debt exposure table (leverage, original sin, open capital); before
-        that -- the Round 20 slot in Phase 5 -- the currency exposure table,
+        that, in Phase 5, the currency exposure table,
         since there is no debt yet to run from. No clear target (a dead heat,
         or no exposure at all) means no capital flight, and None is returned.
 

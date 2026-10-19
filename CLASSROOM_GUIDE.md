@@ -630,8 +630,8 @@ is saved yet. Below the two setup cells:
 - the next round's cell writes its blank workbook, says it is still blank, or
   plays it once you've filled it in;
 - later rounds wait their turn and write nothing;
-- each phase change, the Phase 4 switch and the Round 14 ceremony wait for
-  their round and happen once.
+- each phase change, the Phase 4 switch and the trade-era ceremony (after
+  Round 13) wait for their round and happen once.
 
 If you'd rather not re-render every old board, run the two setup cells and
 then your round's cell. Don't build a fresh simulation by hand mid-term: that
@@ -647,7 +647,7 @@ them in the right order.
 Odds and ends:
 
 - The snapshots are small (about 5 KB per round of history, so ~130 KB by
-  Round 26) and live inside `rounds/`, which is git-ignored. Dropbox versions
+  Round 25) and live inside `rounds/`, which is git-ignored. Dropbox versions
   them.
 - Each round only ever overwrites its own snapshot. If you deliberately
   *replay* an earlier round, later snapshots are stale; `resume()` takes the
@@ -673,14 +673,14 @@ Odds and ends:
 - Keep **one cell per round** (copy the template each time) so you have a
   scrollable record of the whole game to revisit in the capstone debrief.
 
-## Phase / round map (26 sessions)
+## Phase / round map (25 rounds)
 
 | Phase | Rounds | Theme |
 |---|---|---|
 | 1 | 1–3 | Ricardo — comparative advantage, gains from trade, tariffs |
 | 2 | 4–7 | Heckscher-Ohlin — factor endowments, Stolper-Samuelson |
 | 3 | 8–10 | MNCs & varieties — new trade theory, divided loyalty |
-| 4 | 11–14 | Heterogeneous firms — Melitz selection, populist backlash |
-| 5 | 15–20 | Money & FX — the trilemma, speculative attacks, unions |
-| 6 | 21–22 | Sovereign debt — original sin, default, IMF |
-| 7 | 23–26 | Institutions & capstone — WTO, hegemonic stability |
+| 4 | 11–13 | Heterogeneous firms — Melitz selection, populist backlash; reserve currency awarded after Round 13 |
+| 5 | 14–19 | Money & FX — the trilemma, speculative attacks, unions |
+| 6 | 20–21 | Sovereign debt — original sin, default, IMF |
+| 7 | 22–25 | Institutions & capstone — WTO, hegemonic stability |
