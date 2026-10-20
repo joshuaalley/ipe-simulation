@@ -500,8 +500,6 @@ def finance_form_page(name):
     eg = _pct(engine.WEAK_FX_IMPORT_COST * 0.10)
     drag = f"{engine.WEAK_FX_WELFARE_DRAG * 10:g}"          # % per 10 points
     dcost = f"{engine.DEBT_DEFAULT_COST:g}"
-    warn, crisis = _pct(1 - engine.WARNING_DEVALUATION), _pct(1 - engine.CRISIS_DEVALUATION)
-    hit = _pct(engine.CRISIS_WELFARE_HIT)
     cap, base = _pct(engine.BORROW_CAP_SHARE), _pct(engine.DEBT_BASE_RATE)
     prem, ban = _pct(engine.DEBT_RISK_PREMIUM), engine.DEBT_DEFAULT_BAN_ROUNDS
     dfric = _pct(engine.DEBT_DEFAULT_FRICTION)
@@ -527,8 +525,6 @@ def finance_form_page(name):
     index. Your FX index falls by the same \% for good. A weak currency shrinks every
     import you receive by {half} the drop, and costs {drag}\% of welfare every round
     for each 10 points below 1.00 (FX 0.90 $\to$ imports $-${eg}\%, welfare $-${drag}\%).
-  \item[Trilemma] Peg + open + printing: a warning (FX $-${warn}\%). Again next round:
-    a crisis (FX $-${crisis}\%, welfare $-${hit}\%).
 \end{{description}}}}
 
 \vspace{{4pt}}

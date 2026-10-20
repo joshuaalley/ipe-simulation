@@ -2279,13 +2279,10 @@ class IPESimulation:
         print(f"{'':=<55}")
         print(f"  Reserve currency: {self.countries[self.reserve_currency_holder]['currency']} "
               f"({self.reserve_currency_holder})")
+        # Projected as the phase opens: what the choices are, not what breaks
+        # them -- students find the trilemma's limits by playing.
         print(f"  Money-growth choices: "
-              f"{[f'{g:.0%}' for g in PHASE5_MONEY_GROWTH_CHOICES]}")
-        print(f"  Overreach (peg + open capital + independent money) "
-              f"accumulates stress.")
-        print(f"  stress=1 -> warning ({1-WARNING_DEVALUATION:.0%} devaluation); "
-              f"stress=2 -> crisis ({1-CRISIS_DEVALUATION:.0%} + "
-              f"{CRISIS_WELFARE_HIT:.0%} welfare).\n")
+              f"{[f'{g:.0%}' for g in PHASE5_MONEY_GROWTH_CHOICES]}\n")
 
     def upgrade_to_phase6(self):
         """
@@ -2552,8 +2549,8 @@ class IPESimulation:
             print(f"\n  Monetary unions:")
             for name, u in self.monetary_unions.items():
                 print(f"    {name}: {', '.join(u['members'])}")
-        print(f"\n  (Overreach = peg + open capital + independent money. "
-              f"stress>=2 -> crisis.)\n")
+        # Projected to the class: show the state, never the rule that breaks it.
+        print()
 
     # ── Instructor shock injection ────────────────────────────────
 
@@ -3662,8 +3659,7 @@ class IPESimulation:
                 elif m.get("warning"):
                     print(
                         f"\n  ! WARNING in {n}: currency slipped "
-                        f"{1 - WARNING_DEVALUATION:.0%} (one more overreach round "
-                        f"= full crisis)"
+                        f"{1 - WARNING_DEVALUATION:.0%}"
                     )
 
         # Sovereign debt (Phase 6+)

@@ -548,7 +548,9 @@ a round per 10 points below par, heavier debt). Borrowing is capped at a
 quarter of consumption; default costs 1.25 times the debt, so defaulting in a
 calm round is a visible mistake and it pays only after a big devaluation; and
 in `sim.final_round` (set in the Phase 6 upgrade cell) everything still owed
-falls due.
+falls due. The trilemma's own rule (what brings a warning, then a crisis) is
+left off the form and off everything projected on purpose: students find it by
+playing.
 
 Expect trading countries to settle on a peg or a float at 0%: printing every
 round pays only for an economy that barely trades, and otherwise works as a
