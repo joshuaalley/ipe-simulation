@@ -128,6 +128,8 @@
     text-decoration: underline; cursor: pointer;
   }
   .hint { color: var(--muted); font-size: .85rem; margin: .2rem 0 .5rem; }
+  .alone { margin: .7rem 0 0; }
+  .alone p { margin: 0; }
   .row { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .45rem; margin: 0 0 .5rem; }
   .row .x { margin-left: auto; }
   .field { display: flex; align-items: center; gap: .5rem; margin: 0 0 .55rem; flex-wrap: wrap; }
@@ -212,6 +214,7 @@
         </tfoot>
       </table>
       <div class="status" id="status" aria-live="polite"></div>
+      <div class="alone" id="alone"></div>
       <div class="actions"><button type="button" class="linkbtn" id="clear">Clear</button></div>
       <p class="note">What your own workers and capital produce this round, before
         trade. Firms located in your country (from Phase 3) add their local sales
@@ -358,7 +361,8 @@
     "cloth": 19.911443777681814,
     "wine": 10.790086440767862,
     "machinery": 8.275239078777787
-   }
+   },
+   "welfare": 12.114423221873642
   },
   {
    "country": "Bosque",
@@ -376,7 +380,8 @@
     "cloth": 55.36931158768579,
     "wine": 0.0,
     "machinery": 0.0
-   }
+   },
+   "welfare": 0.0
   },
   {
    "country": "Bosque",
@@ -394,7 +399,8 @@
     "cloth": 0.0,
     "wine": 0.0,
     "machinery": 0.0
-   }
+   },
+   "welfare": 0.0
   },
   {
    "country": "Llano",
@@ -412,7 +418,8 @@
     "cloth": 26.90609126681055,
     "wine": 39.19336858344437,
     "machinery": 28.92342308200746
-   }
+   },
+   "welfare": 31.244311886338288
   },
   {
    "country": "Llano",
@@ -430,7 +437,8 @@
     "cloth": 74.81987582580969,
     "wine": 0.0,
     "machinery": 0.0
-   }
+   },
+   "welfare": 0.0
   },
   {
    "country": "Llano",
@@ -448,7 +456,8 @@
     "cloth": 0.0,
     "wine": 0.0,
     "machinery": 0.0
-   }
+   },
+   "welfare": 0.0
   },
   {
    "country": "Sabine",
@@ -466,7 +475,8 @@
     "cloth": 28.869996177831403,
     "wine": 41.56610792453998,
     "machinery": 10.372703747942278
-   }
+   },
+   "welfare": 23.175334996299316
   },
   {
    "country": "Sabine",
@@ -484,7 +494,8 @@
     "cloth": 80.28106006543695,
     "wine": 0.0,
     "machinery": 0.0
-   }
+   },
+   "welfare": 0.0
   },
   {
    "country": "Sabine",
@@ -502,7 +513,8 @@
     "cloth": 0.0,
     "wine": 0.0,
     "machinery": 0.0
-   }
+   },
+   "welfare": 0.0
   },
   {
    "country": "Trinity",
@@ -520,7 +532,8 @@
     "cloth": 50.30017532828786,
     "wine": 45.303779838466696,
     "machinery": 120.37325489575595
-   }
+   },
+   "welfare": 64.97475446213278
   },
   {
    "country": "Trinity",
@@ -538,7 +551,8 @@
     "cloth": 139.87363808288586,
     "wine": 0.0,
     "machinery": 0.0
-   }
+   },
+   "welfare": 0.0
   },
   {
    "country": "Trinity",
@@ -556,7 +570,8 @@
     "cloth": 0.0,
     "wine": 0.0,
     "machinery": 0.0
-   }
+   },
+   "welfare": 0.0
   }
  ],
  "eras": {
@@ -674,7 +689,8 @@
       "cloth": 19.911443777681814,
       "wine": 10.790086440767862,
       "machinery": 8.275239078777787
-     }
+     },
+     "welfare": 12.114423221873642
     },
     {
      "country": "Bosque",
@@ -692,7 +708,8 @@
       "cloth": 55.36931158768579,
       "wine": 0.0,
       "machinery": 0.0
-     }
+     },
+     "welfare": 0.0
     },
     {
      "country": "Bosque",
@@ -710,7 +727,8 @@
       "cloth": 0.0,
       "wine": 0.0,
       "machinery": 0.0
-     }
+     },
+     "welfare": 0.0
     },
     {
      "country": "Llano",
@@ -728,7 +746,8 @@
       "cloth": 26.90609126681055,
       "wine": 39.19336858344437,
       "machinery": 28.92342308200746
-     }
+     },
+     "welfare": 31.244311886338288
     },
     {
      "country": "Llano",
@@ -746,7 +765,8 @@
       "cloth": 74.81987582580969,
       "wine": 0.0,
       "machinery": 0.0
-     }
+     },
+     "welfare": 0.0
     },
     {
      "country": "Llano",
@@ -764,7 +784,8 @@
       "cloth": 0.0,
       "wine": 0.0,
       "machinery": 0.0
-     }
+     },
+     "welfare": 0.0
     },
     {
      "country": "Sabine",
@@ -782,7 +803,8 @@
       "cloth": 28.869996177831403,
       "wine": 41.56610792453998,
       "machinery": 10.372703747942278
-     }
+     },
+     "welfare": 23.175334996299316
     },
     {
      "country": "Sabine",
@@ -800,7 +822,8 @@
       "cloth": 80.28106006543695,
       "wine": 0.0,
       "machinery": 0.0
-     }
+     },
+     "welfare": 0.0
     },
     {
      "country": "Sabine",
@@ -818,7 +841,8 @@
       "cloth": 0.0,
       "wine": 0.0,
       "machinery": 0.0
-     }
+     },
+     "welfare": 0.0
     },
     {
      "country": "Trinity",
@@ -836,7 +860,8 @@
       "cloth": 50.30017532828786,
       "wine": 45.303779838466696,
       "machinery": 120.37325489575595
-     }
+     },
+     "welfare": 64.97475446213278
     },
     {
      "country": "Trinity",
@@ -854,7 +879,8 @@
       "cloth": 139.87363808288586,
       "wine": 0.0,
       "machinery": 0.0
-     }
+     },
+     "welfare": 0.0
     },
     {
      "country": "Trinity",
@@ -872,7 +898,8 @@
       "cloth": 0.0,
       "wine": 0.0,
       "machinery": 0.0
-     }
+     },
+     "welfare": 0.0
     }
    ]
   },
@@ -966,7 +993,8 @@
      "expected": {
       "cloth": 160.0,
       "wine": 20.0
-     }
+     },
+     "welfare": 56.56854249492381
     },
     {
      "country": "Bosque",
@@ -981,7 +1009,8 @@
      "expected": {
       "cloth": 240.0,
       "wine": 0.0
-     }
+     },
+     "welfare": 0.0
     },
     {
      "country": "Llano",
@@ -996,7 +1025,8 @@
      "expected": {
       "cloth": 66.66666666666667,
       "wine": 100.0
-     }
+     },
+     "welfare": 81.64965809277261
     },
     {
      "country": "Llano",
@@ -1011,7 +1041,8 @@
      "expected": {
       "cloth": 100.0,
       "wine": 0.0
-     }
+     },
+     "welfare": 0.0
     },
     {
      "country": "Sabine",
@@ -1026,7 +1057,8 @@
      "expected": {
       "cloth": 66.66666666666667,
       "wine": 50.0
-     }
+     },
+     "welfare": 57.73502691896258
     },
     {
      "country": "Sabine",
@@ -1041,7 +1073,8 @@
      "expected": {
       "cloth": 100.0,
       "wine": 0.0
-     }
+     },
+     "welfare": 0.0
     },
     {
      "country": "Trinity",
@@ -1056,7 +1089,8 @@
      "expected": {
       "cloth": 240.0,
       "wine": 60.0
-     }
+     },
+     "welfare": 120.00000000000001
     },
     {
      "country": "Trinity",
@@ -1071,7 +1105,8 @@
      "expected": {
       "cloth": 360.0,
       "wine": 0.0
-     }
+     },
+     "welfare": 0.0
     }
    ]
   }
@@ -1156,6 +1191,7 @@
   "mnc_tax_min": 0.0,
   "mnc_tax_max": 50.0,
   "money_growth": [
+   -2.0,
    0.0,
    2.0,
    5.0,
@@ -1163,7 +1199,7 @@
   ]
  },
  "inbox_url": "https://www.dropbox.com/request/1r08vksl83w15kf8ilba",
- "updated": "October 6, 2026"
+ "updated": "October 21, 2026"
 }</script>
 <script>
 (function () {
@@ -1192,6 +1228,17 @@
     }
     if (L > 0 && t.capital_share === 0) return t.tfp * Math.pow(L, t.labor_share);
     return 0;
+  }
+
+  // The engine's welfare for what a country makes and keeps -- engine.py,
+  // _utility(): Cobb-Douglas across goods with equal weights.
+  function welfare(outputs) {
+    var u = 1, J = outputs.length;
+    for (var i = 0; i < J; i++) {
+      if (!(outputs[i] > 0)) return 0;
+      u *= Math.pow(outputs[i], 1 / J);
+    }
+    return u;
   }
 
   // Every production era the page knows: Phase 1 (labor only) and Phase 2 on.
@@ -1224,13 +1271,23 @@
           return;
         }
       }
+      if (typeof chk.welfare === "number") {
+        var gotW = welfare(era0.goods.map(function (g1) {
+          return output(c0.tech[g1], chk.labor[g1] || 0, (chk.capital || {})[g1] || 0);
+        }));
+        if (!(Math.abs(gotW - chk.welfare) <= 1e-9 * Math.max(1, chk.welfare))) {
+          broken("self-check failed for " + chk.country + " welfare: page " + gotW +
+                 ", engine " + chk.welfare);
+          return;
+        }
+      }
     }
   }
 
   var PHASES = [[1, "Ricardo"], [2, "Factors"], [3, "Firms"], [4, "Export"],
                 [5, "Money"], [6, "Debt"], [7, "Rules"]];
   var rules = data.rules || { tariff_max: 100, compensation_max: 25, mnc_tax_min: 0,
-                              mnc_tax_max: 50, money_growth: [0, 2, 5, 10] };
+                              mnc_tax_max: 50, money_growth: [-2, 0, 2, 5, 10] };
   var firms = data.firms || [];
   var firmById = {};
   firms.forEach(function (f) { firmById[f.id] = f; });
@@ -1467,6 +1524,7 @@
     });
     var status = $("status");
     status.textContent = "";
+    renderAlone(era, c, p);
     if (p.bad) {
       $("totL").textContent = $("totK").textContent = "—";
       status.appendChild(el("div", { cls: "over", text: "Use numbers of 0 or more." }));
@@ -1479,6 +1537,21 @@
       $("totK").className = "num k " + p.lines[1].cls;
     }
     p.lines.forEach(function (line) { status.appendChild(el("div", { cls: line.cls, text: line.text })); });
+  }
+
+  // With no trade: what this plan is worth (engine.py, _utility), so a team
+  // can search for its own best mix -- the bar its trades must beat. The page
+  // never gives that mix away; finding it is the students' job.
+  function renderAlone(era, c, p) {
+    var box = $("alone");
+    box.textContent = "";
+    var placed = !p.bad && p.lines.every(function (line) { return line.cls === "ok"; });
+    box.appendChild(el("p", { cls: "hint", text: placed
+      ? "With no trade, this plan gives a welfare of " + welfare(era.goods.map(function (g) {
+          return output(c.tech[g], p.L[g], p.K[g] || 0);
+        })).toFixed(1) + (st.phase >= 3 ? ", before any foreign firms." : ".")
+      : "Place all your " + (era.uses_capital ? "workers and capital" : "workers") +
+        " to see what this plan gives with no trade." }));
   }
 
   $("clear").addEventListener("click", function () {
@@ -1589,7 +1662,8 @@
                               function (v) { f.controls = v; save(); }));
       box.appendChild(el("p", { cls: "hint", text: "Money growth" }));
       box.appendChild(choices("mg", [keep].concat(rules.money_growth.map(function (g) {
-        return [String(g), fmt(g) + "%"]; })), f.growth, function (v) { f.growth = v; save(); }));
+        return [String(g), (g < 0 ? "\u2212" + fmt(-g) : fmt(g)) + "%"]; })), f.growth,
+        function (v) { f.growth = v; save(); }));
     }
     if (phase >= 6) {
       box.appendChild(el("h3", { text: "Debt" }));

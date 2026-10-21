@@ -333,7 +333,7 @@
   var PHASES = [[1, "Ricardo"], [2, "Factors"], [3, "Firms"], [4, "Export"],
                 [5, "Money"], [6, "Debt"], [7, "Rules"]];
   var rules = data.rules || { tariff_max: 100, compensation_max: 25, mnc_tax_min: 0,
-                              mnc_tax_max: 50, money_growth: [0, 2, 5, 10] };
+                              mnc_tax_max: 50, money_growth: [-2, 0, 2, 5, 10] };
   var firms = data.firms || [];
   var firmById = {};
   firms.forEach(function (f) { firmById[f.id] = f; });
@@ -708,7 +708,8 @@
                               function (v) { f.controls = v; save(); }));
       box.appendChild(el("p", { cls: "hint", text: "Money growth" }));
       box.appendChild(choices("mg", [keep].concat(rules.money_growth.map(function (g) {
-        return [String(g), fmt(g) + "%"]; })), f.growth, function (v) { f.growth = v; save(); }));
+        return [String(g), (g < 0 ? "\u2212" + fmt(-g) : fmt(g)) + "%"]; })), f.growth,
+        function (v) { f.growth = v; save(); }));
     }
     if (phase >= 6) {
       box.appendChild(el("h3", { text: "Debt" }));

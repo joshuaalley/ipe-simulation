@@ -335,13 +335,55 @@ def test_final_round_settlement():
           == s.final_round)
 
 
+def test_debt_measured_against_the_reserve():
+    print("\n[16] debt is owed in the reserve currency: what counts is FX against it")
+    base = fresh_phase6()
+    anchor = base.reserve_currency_holder
+    peg, flo = [c for c in base.countries if c != anchor][:2]
+    run6(base, debt={c: {"borrow": 30} for c in (anchor, peg, flo)})
+
+    def next_round(prints, second_pegs):
+        s = copy.deepcopy(base)
+        mon = md()
+        mon[peg]["fx_regime"] = "peg" if second_pegs else "float"
+        if prints:
+            mon[anchor]["money_supply_growth"] = 0.10
+        r = run6(s, debt={c: {"repay": 5} for c in (anchor, peg, flo)}, mon=mon)
+        return {c: r["results"][c]["debt"]["fx_vs_reserve"] for c in (anchor, peg, flo)}, r
+
+    calm, _ = next_round(False, True)
+    check("  a calm reserve: everyone's FX against it is 1, the old rule unchanged",
+          all(abs(v - 1.0) < 1e-12 for v in calm.values()), str(calm))
+    hot, r = next_round(True, True)
+    check("  the reserve holder owes in its own money: printing doesn't weigh on it",
+          abs(hot[anchor] - 1.0) < 1e-12)
+    check("  a peg falls with the reserve, so its debt gets no heavier",
+          abs(hot[peg] - 1.0) < 1e-12
+          and r["results"][peg]["debt"]["depreciation_factor"] < 1.0)
+    check("  a currency that holds while the reserve prints owes less",
+          abs(hot[flo] - 1 / 0.90) < 1e-12, str(hot[flo]))
+    s_served = lambda res, c: res["results"][c]["debt"]["service"] / res["results"][c]["debt"]["fx_vs_reserve"]
+    check("  ...so the same payment costs it less in real terms",
+          s_served(r, flo) < r["results"][flo]["debt"]["service"])
+    s = copy.deepcopy(base)                       # the Volcker shock
+    mon = md(); mon[anchor]["money_supply_growth"] = -0.02
+    rv = run6(s, debt={c: {"repay": 5} for c in (anchor, peg, flo)}, mon=mon)
+    check("  the reserve tightens: everyone else's reserve debt gets heavier",
+          abs(rv["results"][flo]["debt"]["fx_vs_reserve"] - 1 / 1.02) < 1e-12
+          and abs(rv["results"][anchor]["debt"]["fx_vs_reserve"] - 1.0) < 1e-12)
+    rows = {row[0]: row[2] for row in copy.deepcopy(base).debt_vulnerability()}
+    check("  the debt exposure table scores original sin against the reserve too",
+          all(rows[c]["original sin (weak currency)"] == 0.0 for c in rows), str(rows)[:200])
+
+
 def main():
     for t in [test_upgrade, test_borrow_grows_welfare_and_stock, test_interest_and_rate,
               test_service_lowers_welfare_and_stock, test_original_sin, test_default,
               test_ban_blocks_borrow_and_adds_friction, test_borrow_cap,
               test_imf_bailout, test_save_restore, test_display,
               test_validation_ordering, test_default_costs_face_value,
-              test_controls_block_borrowing, test_final_round_settlement]:
+              test_controls_block_borrowing, test_final_round_settlement,
+              test_debt_measured_against_the_reserve]:
         try:
             t()
         except Exception:

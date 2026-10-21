@@ -434,6 +434,7 @@ def test_phase5_finance_sheet():
              "money_supply_growth": 0} for n in countries]
     rows[0].update({"fx_regime": "Peg", "capital_controls": "yes",
                     "money_supply_growth": 5})          # typed as a percent
+    rows[1].update({"money_supply_growth": -2})         # tightening, typed as a percent
     book["finance"] = pd.DataFrame(rows)
     write(path, book)
     kw = sim.load_round(path)
@@ -441,6 +442,8 @@ def test_phase5_finance_sheet():
     check("  'Peg' read as peg", first["fx_regime"] == "peg")
     check("  money growth typed as 5 read as 5%",
           abs(first["money_supply_growth"] - 0.05) < 1e-12)
+    check("  tightening typed as -2 read as -2%",
+          abs(kw["monetary_decisions"][rows[1]["country"]]["money_supply_growth"] + 0.02) < 1e-12)
     sim.run_round(**kw)
     check("  the round runs", sim.round_num == 3)
 

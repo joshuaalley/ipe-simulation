@@ -541,10 +541,18 @@ changing, not a government delivering.
 Every Phase 5 and 6 choice has an upside and a downside, and the finance form
 (`handouts/forms-finance.pdf`) prints them with their numbers, so students
 never need a calculator for these: a peg trades friction-free with other pegs
-but is what speculators attack; capital controls keep speculators out but cost
+but is what speculators attack, and it moves with the reserve currency (when
+the reserve holder prints or crashes, every peg falls with it: imported
+inflation, the end-of-Bretton-Woods story); capital controls keep speculators out but cost
 foreign firms 15% of their output and close off borrowing; printing money buys
 a stimulus now and a weaker currency for good (smaller imports, 1% of welfare
-a round per 10 points below par, heavier debt). Borrowing is capped at a
+a round per 10 points below par, heavier debt); tightening (−2%) is the mirror:
+the currency strengthens 2% for good, even past par, for 2% of welfare that round,
+and builds no trilemma stress. When the reserve holder tightens, everyone else's
+reserve-currency debt gets heavier (the Volcker shock). Debt is owed in the reserve
+currency, so its weight follows a currency's value against the reserve's: the
+reserve holder owes in its own money, a peg that falls with the reserve owes no
+more, and a currency that holds while the reserve prints owes less. Borrowing is capped at a
 quarter of consumption; default costs 1.25 times the debt, so defaulting in a
 calm round is a visible mistake and it pays only after a big devaluation; and
 in `sim.final_round` (set in the Phase 6 upgrade cell) everything still owed

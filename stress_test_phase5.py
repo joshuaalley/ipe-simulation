@@ -573,6 +573,115 @@ def test_capital_flight_in_phase5():
         check("  trigger_capital_flight runs before Phase 6", False, repr(e))
 
 
+def test_pegs_follow_the_anchor():
+    print("\n[24] a peg follows the reserve currency down")
+    sim = fresh_phase5()
+    anchor = sim.reserve_currency_holder
+    peg, flo, late, u1, u2 = [c for c in sim.countries if c != anchor][:5]
+    md = base_md()
+    md[anchor]["money_supply_growth"] = 0.10
+    md[peg]["fx_regime"] = "peg"
+    run = lambda: quiet(sim.run_round, BAL_DEC, [], firm_decisions=fd(sim),
+                        monetary_decisions=md)["results"]
+    dep = lambda r, c: r[c]["monetary"]["depreciation_factor"]
+
+    r = run()
+    check("  the anchor prints 10%: the peg falls with it, the same round",
+          abs(dep(r, anchor) - 0.90) < 1e-12 and abs(dep(r, peg) - 0.90) < 1e-12
+          and abs(r[peg]["monetary"]["anchor_follow"] - 0.90) < 1e-12)
+    check("  a float doesn't", dep(r, flo) == 1.0 and r[flo]["monetary"]["anchor_follow"] == 1.0)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        sim.print_results()
+    check("  the round's summary says so",
+          f"{peg}'s peg followed the reserve currency down 10%" in out.getvalue())
+
+    md[late]["fx_regime"] = "peg"                       # pegs after the anchor fell
+    r = run()
+    check("  pegging later starts from there: no retroactive drop",
+          abs(dep(r, late) - 0.90) < 1e-12 and abs(dep(r, peg) - 0.81) < 1e-12)
+
+    md[peg]["fx_regime"] = "float"                      # unpeg
+    r = run()
+    check("  a peg that floats stops following",
+          abs(dep(r, peg) - 0.81) < 1e-12 and abs(dep(r, late) - 0.81) < 1e-12)
+
+    md[anchor]["money_supply_growth"] = 0.0             # the anchor stops printing...
+    quiet(sim.inject_speculative_attack, anchor)        # ...but is attacked between rounds
+    before = sim.countries[late]["depreciation_factor"]
+    r = run()
+    check("  an attack on the anchor between rounds reaches the peg too",
+          abs(dep(r, late) - before * CRISIS_DEVALUATION) < 1e-12, str(dep(r, late)))
+
+    md[late].update(capital_controls=True, money_supply_growth=0.05)   # peg + controls + print
+    md[anchor]["money_supply_growth"] = 0.10
+    before = dep(r, late)
+    r = run()
+    check("  a peg behind controls that prints falls by both",
+          abs(dep(r, late) - before * 0.95 * 0.90) < 1e-12)
+
+    state = json.loads(json.dumps(sim.get_state()))     # save and come back
+    back = IPESimulation.from_state(state)
+    rb = quiet(back.run_round, BAL_DEC, [], firm_decisions=fd(back), monetary_decisions=md)["results"]
+    r = run()
+    check("  save/restore keeps the peg tracking where it was",
+          abs(dep(rb, late) - dep(r, late)) < 1e-12)
+
+    quiet(sim.form_monetary_union, u1, u2, name="Pact")
+    for c in (u1, u2):
+        md[c] = {"fx_regime": "peg", "capital_controls": False, "money_supply_growth": 0.0}
+    before = sim.monetary_unions["Pact"]["state"]["depreciation_factor"]
+    r = run()
+    check("  a pegged union follows as one",
+          abs(dep(r, u1) - before * 0.90) < 1e-12 and dep(r, u1) == dep(r, u2))
+
+    new_anchor = flo                                     # the reserve currency changes hands
+    sim.reserve_currency_holder = new_anchor
+    md[anchor]["money_supply_growth"] = 0.0
+    before = dep(r, late)
+    r = run()
+    check("  a new reserve holder: pegs start tracking it, no spurious drop",
+          abs(dep(r, late) - before * 0.95) < 1e-12, f"{before} -> {dep(r, late)}")
+
+
+def test_tightening():
+    print("\n[25] tightening (-2%): a stronger currency for a welfare cost")
+    base = fresh_phase5()
+    anchor = base.reserve_currency_holder
+    a, peg = [c for c in base.countries if c != anchor][:2]
+    calm, tight = copy.deepcopy(base), copy.deepcopy(base)
+    md = base_md()
+    r0 = quiet(calm.run_round, BAL_DEC, [], firm_decisions=fd(calm), monetary_decisions=md)
+    md[a].update(fx_regime="peg", money_supply_growth=-0.02)   # peg + open + tighten
+    r1 = quiet(tight.run_round, BAL_DEC, [], firm_decisions=fd(tight), monetary_decisions=md)
+    m = r1["results"][a]["monetary"]
+    check("  the currency strengthens 2%, above par", abs(m["depreciation_factor"] - 1.02) < 1e-12)
+    check("  welfare falls 2% this round",
+          abs(r1["results"][a]["welfare"] / r0["results"][a]["welfare"] - 0.98) < 1e-12,
+          f'{r1["results"][a]["welfare"] / r0["results"][a]["welfare"]:.6f}')
+    check("  it is independent policy, but a peg that tightens builds no stress",
+          m["independent_monetary"] is True and m["stress"] == 0 and not m["warning"])
+    errs = tight._validate_monetary_decisions(
+        {a: {"fx_regime": "float", "capital_controls": False,
+             "money_supply_growth": -0.02, "independent_monetary": False}})
+    check("  '-2% but not independent' is refused", any("tightening" in e for e in errs), str(errs))
+
+    s = copy.deepcopy(base)                                    # print, then climb back
+    md = base_md(); md[a]["money_supply_growth"] = 0.10
+    quiet(s.run_round, BAL_DEC, [], firm_decisions=fd(s), monetary_decisions=md)
+    md[a]["money_supply_growth"] = -0.02
+    r = quiet(s.run_round, BAL_DEC, [], firm_decisions=fd(s), monetary_decisions=md)
+    check("  a currency can climb back after printing (0.90 -> 0.918)",
+          abs(r["results"][a]["monetary"]["depreciation_factor"] - 0.90 * 1.02) < 1e-12)
+
+    s = copy.deepcopy(base)                                    # the anchor tightens
+    md = base_md(); md[anchor]["money_supply_growth"] = -0.02; md[peg]["fx_regime"] = "peg"
+    r = quiet(s.run_round, BAL_DEC, [], firm_decisions=fd(s), monetary_decisions=md)
+    check("  a peg follows its anchor up as well as down",
+          abs(r["results"][peg]["monetary"]["depreciation_factor"] - 1.02) < 1e-12
+          and abs(r["results"][peg]["monetary"]["anchor_follow"] - 1.02) < 1e-12)
+
+
 def main():
     for t in [test_upgrade, test_validation, test_trilemma_graduated,
               test_money_decay, test_fx_friction, test_host_currency_profits,
@@ -582,7 +691,8 @@ def main():
               test_weak_currency_welfare_drag,
               test_controls_cost_foreign_firms, test_peg_to_peg_friction,
               test_open_peg_exposure, test_no_clear_target,
-              test_capital_flight_in_phase5]:
+              test_capital_flight_in_phase5, test_pegs_follow_the_anchor,
+              test_tightening]:
         try:
             t()
         except Exception:

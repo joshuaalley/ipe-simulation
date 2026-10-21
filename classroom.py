@@ -1001,7 +1001,7 @@ def load_round(sim, path):
                 cur = sim._mon(country)
                 growth = _as_num(row.get("money_supply_growth"),
                                  cur.get("money_supply_growth", 0.0), where)
-                if growth > 1:                       # typed as a percent: 5 -> 0.05
+                if abs(growth) > 1:                  # typed as a percent: 5 -> 0.05, -2 -> -0.02
                     growth = growth / 100
                 regime = _as_text(row.get("fx_regime"), cur.get("fx_regime", "float"))
                 monetary[country] = {
@@ -1360,7 +1360,7 @@ def _plan_from_inbox(sim, workbook, inbox):
                     if money.get("money_supply_growth") not in (None, ""):
                         fin_row["money_supply_growth"] = _number(
                             money["money_supply_growth"], "money growth", problems,
-                            lo=0, hi=100) / 100
+                            lo=-100, hi=100) / 100
                     if phase >= 6:
                         debt = d.get("debt") or {}
                         fin_row["borrow"] = _number(debt.get("borrow"), "borrowing",

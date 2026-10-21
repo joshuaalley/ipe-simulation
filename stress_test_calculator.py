@@ -154,6 +154,8 @@ def test_best_mix_not_given_away():
         out = sim._compute_production({n: dec for n in sim.countries})[k["country"]]
         ok &= abs(sim._utility(out) - k["welfare"]) < 1e-12
     check("  the self-check's welfare values are the engine's own", ok)
+    check("  the money buttons include tightening (-2%)",
+          data["rules"]["money_growth"][0] == -2 and "\\u2212" in html, str(data["rules"]["money_growth"]))
 
 
 def test_phase1_export():

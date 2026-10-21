@@ -492,9 +492,12 @@ def _pct(x):
 
 
 def finance_form_page(name):
-    pct = " \\quad ".join(rf"\boxx\ {g*100:.0f}\%" for g in MONEY_CHOICES)
+    pct = " \\quad ".join(rf"\boxx\ {'$-$' if g < 0 else ''}{abs(g) * 100:.0f}\%"
+                          for g in MONEY_CHOICES)
     fric, cut = _pct(engine.BASE_FX_FRICTION), _pct(engine.CONTROLS_FIRM_CUT)
     stim = f"{engine.STIMULUS_PER_POINT:g}"
+    tight = _pct(-min(MONEY_CHOICES))                       # the tightening step, e.g. 2
+    tight_cost = f"{engine.STIMULUS_PER_POINT * -min(MONEY_CHOICES) * 100:g}"
     half = {0.5: "half", 1.0: "all"}.get(engine.WEAK_FX_IMPORT_COST,
                                           f"{engine.WEAK_FX_IMPORT_COST:g} times")
     eg = _pct(engine.WEAK_FX_IMPORT_COST * 0.10)
@@ -518,13 +521,17 @@ def finance_form_page(name):
 \begin{{description}}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
   \item[Peg] No currency friction on trades with other pegged currencies; other
     cross-currency trades lose {fric}\%. Trades with the reserve country are always
-    friction-free. An open peg is what speculators attack.
+    friction-free. An open peg is what speculators attack. A peg is tied to the
+    reserve currency and moves with it: when the reserve country prints, tightens,
+    or its currency crashes, yours moves the same way.
   \item[Controls] Foreign firms in your country produce {cut}\% less, and (Phase 6)
     you cannot borrow abroad. Speculators cannot run on a closed account.
   \item[Printing] +{stim}\% welfare this round for each point printed, times your FX
     index. Your FX index falls by the same \% for good. A weak currency shrinks every
     import you receive by {half} the drop, and costs {drag}\% of welfare every round
     for each 10 points below 1.00 (FX 0.90 $\to$ imports $-${eg}\%, welfare $-${drag}\%).
+  \item[Tightening] $-${tight}\%: your FX index rises {tight}\% for good (it can pass
+    1.00), and welfare falls {tight_cost}\% this round.
 \end{{description}}}}
 
 \vspace{{4pt}}
@@ -538,12 +545,15 @@ def finance_form_page(name):
   \item[Borrow] Up to {cap}\% of your consumption a round; welfare rises by the same
     share this round. Not under capital controls.
   \item[Interest] {base}\% + {prem}\% $\times$ (debt $\div$ consumption), every round.
-    Debt is owed in the reserve currency, so payments are divided by your FX index
-    (FX 0.70 $\to$ 43\% heavier).
+    Debt is owed in the reserve currency, so what counts is your currency against
+    it: payments are divided by (your FX index $\div$ the reserve's). Yours at 0.70
+    while the reserve's holds at 1.00 $\to$ 43\% heavier. A peg falls with the
+    reserve, so its debt gets no heavier; if the reserve falls and yours holds,
+    your debt gets lighter.
   \item[Default] The debt disappears, but welfare falls by {dcost} $\times$
     (debt $\div$ consumption) that round --- more than repaying would cost at par;
     no borrowing for {ban} rounds and +{dfric}\% friction on your trades meanwhile.
-    It only pays after a big fall in your currency.
+    It only pays after a big fall in your currency against the reserve's.
   \item[Last round] Everything still owed is repaid.
 \end{{description}}}}
 

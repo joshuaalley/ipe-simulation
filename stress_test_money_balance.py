@@ -94,7 +94,7 @@ WORLDS = {
 TRADING = [w for w in WORLDS if w != "no trade"]
 
 STRATS = list(itertools.product(("peg", "float"), (False, True),
-                                (0.0, 0.02, 0.05, 0.10)))
+                                (-0.02, 0.0, 0.02, 0.05, 0.10)))
 OLD_WINNER = ("peg", True, 0.0)
 PRINT_FOREVER = ("float", False, 0.10)
 BASELINES = (("peg", False, 0.0), ("float", False, 0.0))

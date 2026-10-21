@@ -21,19 +21,23 @@
 \begin{itemize}[nosep,leftmargin=1.4em]
   \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
   \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
-  \item Money growth: \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\% \quad \textit{(0\% = follow the anchor)}
+  \item Money growth: \quad \boxx\ $-$2\% \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\% \quad \textit{(0\% = follow the anchor)}
 \end{itemize}
 {\small
 \begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
   \item[Peg] No currency friction on trades with other pegged currencies; other
     cross-currency trades lose 2\%. Trades with the reserve country are always
-    friction-free. An open peg is what speculators attack.
+    friction-free. An open peg is what speculators attack. A peg is tied to the
+    reserve currency and moves with it: when the reserve country prints, tightens,
+    or its currency crashes, yours moves the same way.
   \item[Controls] Foreign firms in your country produce 15\% less, and (Phase 6)
     you cannot borrow abroad. Speculators cannot run on a closed account.
   \item[Printing] +1\% welfare this round for each point printed, times your FX
     index. Your FX index falls by the same \% for good. A weak currency shrinks every
     import you receive by half the drop, and costs 1\% of welfare every round
     for each 10 points below 1.00 (FX 0.90 $\to$ imports $-$5\%, welfare $-$1\%).
+  \item[Tightening] $-$2\%: your FX index rises 2\% for good (it can pass
+    1.00), and welfare falls 2\% this round.
 \end{description}}
 
 \vspace{4pt}
@@ -47,12 +51,15 @@
   \item[Borrow] Up to 25\% of your consumption a round; welfare rises by the same
     share this round. Not under capital controls.
   \item[Interest] 5\% + 15\% $\times$ (debt $\div$ consumption), every round.
-    Debt is owed in the reserve currency, so payments are divided by your FX index
-    (FX 0.70 $\to$ 43\% heavier).
+    Debt is owed in the reserve currency, so what counts is your currency against
+    it: payments are divided by (your FX index $\div$ the reserve's). Yours at 0.70
+    while the reserve's holds at 1.00 $\to$ 43\% heavier. A peg falls with the
+    reserve, so its debt gets no heavier; if the reserve falls and yours holds,
+    your debt gets lighter.
   \item[Default] The debt disappears, but welfare falls by 1.25 $\times$
     (debt $\div$ consumption) that round --- more than repaying would cost at par;
     no borrowing for 2 rounds and +5\% friction on your trades meanwhile.
-    It only pays after a big fall in your currency.
+    It only pays after a big fall in your currency against the reserve's.
   \item[Last round] Everything still owed is repaid.
 \end{description}}
 
@@ -74,19 +81,23 @@
 \begin{itemize}[nosep,leftmargin=1.4em]
   \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
   \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
-  \item Money growth: \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\% \quad \textit{(0\% = follow the anchor)}
+  \item Money growth: \quad \boxx\ $-$2\% \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\% \quad \textit{(0\% = follow the anchor)}
 \end{itemize}
 {\small
 \begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
   \item[Peg] No currency friction on trades with other pegged currencies; other
     cross-currency trades lose 2\%. Trades with the reserve country are always
-    friction-free. An open peg is what speculators attack.
+    friction-free. An open peg is what speculators attack. A peg is tied to the
+    reserve currency and moves with it: when the reserve country prints, tightens,
+    or its currency crashes, yours moves the same way.
   \item[Controls] Foreign firms in your country produce 15\% less, and (Phase 6)
     you cannot borrow abroad. Speculators cannot run on a closed account.
   \item[Printing] +1\% welfare this round for each point printed, times your FX
     index. Your FX index falls by the same \% for good. A weak currency shrinks every
     import you receive by half the drop, and costs 1\% of welfare every round
     for each 10 points below 1.00 (FX 0.90 $\to$ imports $-$5\%, welfare $-$1\%).
+  \item[Tightening] $-$2\%: your FX index rises 2\% for good (it can pass
+    1.00), and welfare falls 2\% this round.
 \end{description}}
 
 \vspace{4pt}
@@ -100,12 +111,15 @@
   \item[Borrow] Up to 25\% of your consumption a round; welfare rises by the same
     share this round. Not under capital controls.
   \item[Interest] 5\% + 15\% $\times$ (debt $\div$ consumption), every round.
-    Debt is owed in the reserve currency, so payments are divided by your FX index
-    (FX 0.70 $\to$ 43\% heavier).
+    Debt is owed in the reserve currency, so what counts is your currency against
+    it: payments are divided by (your FX index $\div$ the reserve's). Yours at 0.70
+    while the reserve's holds at 1.00 $\to$ 43\% heavier. A peg falls with the
+    reserve, so its debt gets no heavier; if the reserve falls and yours holds,
+    your debt gets lighter.
   \item[Default] The debt disappears, but welfare falls by 1.25 $\times$
     (debt $\div$ consumption) that round --- more than repaying would cost at par;
     no borrowing for 2 rounds and +5\% friction on your trades meanwhile.
-    It only pays after a big fall in your currency.
+    It only pays after a big fall in your currency against the reserve's.
   \item[Last round] Everything still owed is repaid.
 \end{description}}
 
@@ -127,19 +141,23 @@
 \begin{itemize}[nosep,leftmargin=1.4em]
   \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
   \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
-  \item Money growth: \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\% \quad \textit{(0\% = follow the anchor)}
+  \item Money growth: \quad \boxx\ $-$2\% \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\% \quad \textit{(0\% = follow the anchor)}
 \end{itemize}
 {\small
 \begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
   \item[Peg] No currency friction on trades with other pegged currencies; other
     cross-currency trades lose 2\%. Trades with the reserve country are always
-    friction-free. An open peg is what speculators attack.
+    friction-free. An open peg is what speculators attack. A peg is tied to the
+    reserve currency and moves with it: when the reserve country prints, tightens,
+    or its currency crashes, yours moves the same way.
   \item[Controls] Foreign firms in your country produce 15\% less, and (Phase 6)
     you cannot borrow abroad. Speculators cannot run on a closed account.
   \item[Printing] +1\% welfare this round for each point printed, times your FX
     index. Your FX index falls by the same \% for good. A weak currency shrinks every
     import you receive by half the drop, and costs 1\% of welfare every round
     for each 10 points below 1.00 (FX 0.90 $\to$ imports $-$5\%, welfare $-$1\%).
+  \item[Tightening] $-$2\%: your FX index rises 2\% for good (it can pass
+    1.00), and welfare falls 2\% this round.
 \end{description}}
 
 \vspace{4pt}
@@ -153,12 +171,15 @@
   \item[Borrow] Up to 25\% of your consumption a round; welfare rises by the same
     share this round. Not under capital controls.
   \item[Interest] 5\% + 15\% $\times$ (debt $\div$ consumption), every round.
-    Debt is owed in the reserve currency, so payments are divided by your FX index
-    (FX 0.70 $\to$ 43\% heavier).
+    Debt is owed in the reserve currency, so what counts is your currency against
+    it: payments are divided by (your FX index $\div$ the reserve's). Yours at 0.70
+    while the reserve's holds at 1.00 $\to$ 43\% heavier. A peg falls with the
+    reserve, so its debt gets no heavier; if the reserve falls and yours holds,
+    your debt gets lighter.
   \item[Default] The debt disappears, but welfare falls by 1.25 $\times$
     (debt $\div$ consumption) that round --- more than repaying would cost at par;
     no borrowing for 2 rounds and +5\% friction on your trades meanwhile.
-    It only pays after a big fall in your currency.
+    It only pays after a big fall in your currency against the reserve's.
   \item[Last round] Everything still owed is repaid.
 \end{description}}
 
@@ -180,19 +201,23 @@
 \begin{itemize}[nosep,leftmargin=1.4em]
   \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
   \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
-  \item Money growth: \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\% \quad \textit{(0\% = follow the anchor)}
+  \item Money growth: \quad \boxx\ $-$2\% \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\% \quad \textit{(0\% = follow the anchor)}
 \end{itemize}
 {\small
 \begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
   \item[Peg] No currency friction on trades with other pegged currencies; other
     cross-currency trades lose 2\%. Trades with the reserve country are always
-    friction-free. An open peg is what speculators attack.
+    friction-free. An open peg is what speculators attack. A peg is tied to the
+    reserve currency and moves with it: when the reserve country prints, tightens,
+    or its currency crashes, yours moves the same way.
   \item[Controls] Foreign firms in your country produce 15\% less, and (Phase 6)
     you cannot borrow abroad. Speculators cannot run on a closed account.
   \item[Printing] +1\% welfare this round for each point printed, times your FX
     index. Your FX index falls by the same \% for good. A weak currency shrinks every
     import you receive by half the drop, and costs 1\% of welfare every round
     for each 10 points below 1.00 (FX 0.90 $\to$ imports $-$5\%, welfare $-$1\%).
+  \item[Tightening] $-$2\%: your FX index rises 2\% for good (it can pass
+    1.00), and welfare falls 2\% this round.
 \end{description}}
 
 \vspace{4pt}
@@ -206,12 +231,15 @@
   \item[Borrow] Up to 25\% of your consumption a round; welfare rises by the same
     share this round. Not under capital controls.
   \item[Interest] 5\% + 15\% $\times$ (debt $\div$ consumption), every round.
-    Debt is owed in the reserve currency, so payments are divided by your FX index
-    (FX 0.70 $\to$ 43\% heavier).
+    Debt is owed in the reserve currency, so what counts is your currency against
+    it: payments are divided by (your FX index $\div$ the reserve's). Yours at 0.70
+    while the reserve's holds at 1.00 $\to$ 43\% heavier. A peg falls with the
+    reserve, so its debt gets no heavier; if the reserve falls and yours holds,
+    your debt gets lighter.
   \item[Default] The debt disappears, but welfare falls by 1.25 $\times$
     (debt $\div$ consumption) that round --- more than repaying would cost at par;
     no borrowing for 2 rounds and +5\% friction on your trades meanwhile.
-    It only pays after a big fall in your currency.
+    It only pays after a big fall in your currency against the reserve's.
   \item[Last round] Everything still owed is repaid.
 \end{description}}
 

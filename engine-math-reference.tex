@@ -368,8 +368,9 @@ monetary policy. Pushing all three invites a speculative attack.
 
 \textbf{Engine} (\code{\_apply\_monetary\_decisions}, \code{\_compute\_fx\_friction},
 \code{\_weak\_fx\_cost}). Each round a country picks a regime (peg or float), capital
-controls (on or off) and money growth $g\in\{0,2,5,10\%\}$. Printing ($g>0$)
-\emph{is} independent monetary policy; $g=0$ follows the anchor. Let $s$ be the
+controls (on or off) and money growth $g\in\{-2,0,2,5,10\%\}$. Printing ($g>0$)
+or tightening ($g<0$) \emph{is} independent monetary policy; $g=0$ follows the
+anchor. Only printing can overreach: tight money invites no run on the currency. Let $s$ be the
 stress counter and $d$ the FX index (depreciation factor, $1=$ par). Overreach is
 peg $\wedge$ open capital $\wedge$ $g>0$. Per round:
 \[
@@ -383,13 +384,22 @@ What each choice buys or costs:
 \begin{align*}
 \text{printing } g>0:&\quad d \mathrel{\times}= (1-g), \qquad
   U \mathrel{\times}= (1 + \sigma\, g\, d), \quad \sigma = 1 \\
+\text{tightening } g=-0.02:&\quad d \mathrel{\times}= (1-g) = 1.02 \ \text{(it can pass par)},
+  \qquad U \mathrel{\times}= (1 + \sigma\, g) = 0.98 \\
 \text{weak currency:}&\quad \text{each import received} \times
   \big(1 - \lambda\,(1-d_{\text{receiver}})\big), \quad \lambda = 0.5 \\
   &\quad U \mathrel{\times}= \big(1 - \mu\,(1-d)\big) \text{ every round}, \quad \mu = 0.10 \\
 \text{capital controls:}&\quad \text{hosted firms' output} \times (1-0.15),
   \ \text{no foreign borrowing} \\
-\text{FX friction:}&\quad \mathrm{fx} = 0.02 \ (+0.03 \text{ just after a warning})
+\text{FX friction:}&\quad \mathrm{fx} = 0.02 \ (+0.03 \text{ just after a warning}) \\
+\text{a peg:}&\quad d \mathrel{\times}= d^{R}_{t} / d^{R}_{t-1}
 \end{align*}
+A peg is fixed to the reserve currency $R$, so it imports the anchor's monetary
+policy: after its own moves, a pegged currency falls by whatever the reserve
+currency lost since the peg last tracked it --- the anchor's printing, a warning
+or crisis, an attack between rounds. Tracking starts the round a country pegs
+(no retroactive drop) and stops when it floats; the anchor's own union does not
+follow itself.
 FX friction is zero with the reserve holder, inside a monetary union, or between
 two pegged currencies. Friction and the weak-currency cut stack on tariffs
 multiplicatively:
@@ -443,13 +453,19 @@ $C = \sum_g c_g\, p_g$ (goods at world prices). Then:
 \text{borrow } B:&\quad U \mathrel{\times}= \Big(1 + \tfrac{B}{C}\Big), \quad
   B \le 0.25\,C, \quad B = 0 \text{ under capital controls} \\
 \text{service } (\text{interest}+\text{repay}):&\quad
-U \mathrel{\times}= \max\!\Big(0,\ 1 - \tfrac{\text{service}/d}{C}\Big), \qquad
+U \mathrel{\times}= \max\!\Big(0,\ 1 - \tfrac{\text{service}/\hat d}{C}\Big), \qquad
+\hat d = d / d^{R}, \qquad
 D \leftarrow D + B - \text{repay} \\
 \text{default}:&\quad U \mathrel{\times}= 1 - \min\!\Big(1, 1.25\,\tfrac{D}{C}\Big),
   \qquad D \to 0
 \end{align*}
-The division of service by $d$ \emph{is} original sin: a weak currency ($d<1$)
-inflates the real burden of hard-currency debt. \textbf{Default} costs 1.25 times
+The division of service by $\hat d$ \emph{is} original sin. The debt is owed in
+the reserve currency $R$, so what counts is a currency's value against it,
+$\hat d = d/d^{R}$ (\code{\_fx\_vs\_reserve}): a currency that falls against the
+reserve ($\hat d<1$) inflates the real burden of the debt. The reserve holder owes
+in its own money ($\hat d=1$); a peg that falls with the reserve owes no more; a
+currency that holds while the reserve falls ($\hat d>1$) owes less. With a calm
+reserve ($d^{R}=1$) this is the original rule, service$/d$. \textbf{Default} costs 1.25 times
 the debt's face value (\emph{not} divided by $d$), bans borrowing for 2 rounds and
 adds trade friction. At par it therefore costs more than repaying; after a large
 devaluation ($1/d$ well above 1.25, a fall of roughly 20\% or more) it escapes the

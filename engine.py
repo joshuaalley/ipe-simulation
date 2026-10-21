@@ -515,10 +515,17 @@ def _rounds(n):
 #                                  for good (smaller imports, a welfare drag,
 #                                  heavier debt)
 # Printing money IS running your own monetary policy; 0% follows the anchor.
+# A peg is fixed to the reserve currency, so it imports the anchor's policy:
+# whatever the reserve currency loses (its printing, a warning, a crisis, an
+# attack), every currency pegged to it loses too.
 # Peg + open capital + printing is the overreach that builds stress.
 
 # Discrete money-supply growth choices. Anything above 0 is "printing".
-PHASE5_MONEY_GROWTH_CHOICES = [0.0, 0.02, 0.05, 0.10]
+# -2% tightens: the currency strengthens 2% for good (it can rise above par),
+# and welfare falls 2% that round -- the mirror of printing. Like printing it is
+# independent monetary policy, but it builds no trilemma stress: tight money
+# doesn't invite a run on the currency.
+PHASE5_MONEY_GROWTH_CHOICES = [-0.02, 0.0, 0.02, 0.05, 0.10]
 PHASE5_REGIMES = ("peg", "float")
 # Older saves and workbooks may say "managed"; it behaves exactly like "float".
 REGIME_ALIASES = {"managed": "float"}
@@ -555,7 +562,10 @@ BASE_FX_FRICTION = 0.02        # 2% baseline on cross-currency, non-union, non-r
 # Rolling debt stock denominated in the reserve currency (numeraire).
 # Borrowing lifts consumption now; servicing/repaying lowers it later.
 # Foreign-currency debt + a weak currency = "original sin": the real burden
-# of servicing rises as your currency depreciates.
+# of servicing rises as your currency falls AGAINST THE RESERVE CURRENCY the
+# debt is owed in (_fx_vs_reserve). A peg that falls with the reserve owes no
+# more; the reserve holder owes in its own money; a currency that holds while
+# the reserve falls finds its debt lighter.
 
 DEBT_BASE_RATE = 0.05          # base interest rate on the debt stock
 DEBT_RISK_PREMIUM = 0.15       # premium scaling with debt/capacity ratio
@@ -908,6 +918,10 @@ class IPESimulation:
                 if growth > 0:
                     stimulus = welfare * STIMULUS_PER_POINT * growth * dep
                     welfare += stimulus
+                elif growth < 0:
+                    # tightening: a contraction this round, point for point
+                    stimulus = welfare * STIMULUS_PER_POINT * growth
+                    welfare += stimulus
                 # A currency below par erodes savings whether or not you
                 # trade -- so printing is never free.
                 if dep < 1.0:
@@ -992,6 +1006,8 @@ class IPESimulation:
                     "crisis_welfare_loss": crisis_welfare_loss,
                     "stimulus": stimulus,
                     "fx_drag": fx_drag,
+                    # how far this round's peg followed the reserve currency
+                    "anchor_follow": ev.get("anchor_follow", 1.0),
                     "union_id": self.countries[name].get("union_id"),
                 }
 
@@ -1432,11 +1448,11 @@ class IPESimulation:
             indep = md.get("independent_monetary")
             if indep is not None and not isinstance(indep, bool):
                 errors.append(f"{c}: independent_monetary must be True/False")
-            elif indep is False and g > 0:
+            elif indep is False and g != 0:
                 errors.append(
-                    f"{c}: money growth {g:.0%} is printing money -- that IS "
-                    f"running your own monetary policy. Set money growth to 0 "
-                    f"to follow the anchor, or drop independent_monetary."
+                    f"{c}: money growth {g:.0%} is {'printing money' if g > 0 else 'tightening'} "
+                    f"-- that IS running your own monetary policy. Set money growth "
+                    f"to 0 to follow the anchor, or drop independent_monetary."
                 )
         # Monetary-union consistency: members must decide together, identically
         keys = ("fx_regime", "capital_controls", "money_supply_growth")
@@ -1474,6 +1490,8 @@ class IPESimulation:
           - stress=2 -> full crisis (30% devaluation, welfare hit), reset
           - printing money decays the currency each round (and buys this
             round's stimulus -- applied in the welfare step)
+          - a peg follows its anchor: whatever the reserve currency lost
+            since the pegged currency last tracked it, the peg loses too
 
         Returns events: {country: {warning, crisis, stress,
                                     depreciation_factor, warning_active}}.
@@ -1493,7 +1511,7 @@ class IPESimulation:
             state["fx_regime"] = self._regime(md["fx_regime"])
             state["capital_controls"] = md["capital_controls"]
             state["money_supply_growth"] = g
-            state["independent_monetary"] = g > 0     # printing = own policy
+            state["independent_monetary"] = g != 0    # printing or tightening = own policy
             applied.add(key)
 
         # 2. Trilemma resolution per monetary entity
@@ -1506,6 +1524,19 @@ class IPESimulation:
             if state.pop("_forced_attack", False):
                 for m in members:
                     events[m]["crisis"] = True
+        # A peg tracks the reserve currency from the round it pegs (no
+        # retroactive drop); a float, or the anchor's own union, never does.
+        anchor = self.reserve_currency_holder
+        anchor_before = (self._mon(anchor)["depreciation_factor"]
+                         if anchor in self.countries else None)
+        for key, state, members in self._monetary_entities():
+            pegged = (anchor_before is not None and anchor not in members
+                      and self._regime(state.get("fx_regime")) == "peg")
+            ref = state.get("anchor_ref")
+            if not pegged:
+                state.pop("anchor_ref", None)
+            elif not ref or ref.get("anchor") != anchor:
+                state["anchor_ref"] = {"anchor": anchor, "dep": anchor_before}
         for key, state, members in self._monetary_entities():
             overreach = self._overreach(state)
             if overreach:
@@ -1526,10 +1557,26 @@ class IPESimulation:
                 for m in members:
                     events[m]["warning"] = True
 
-            # Money-supply decay (gradual depreciation) -- printing only
+            # Money supply: printing decays the currency, tightening (g < 0)
+            # strengthens it -- for good, either way
             growth = state.get("money_supply_growth", 0.0)
-            if growth > 0:
+            if growth != 0:
                 state["depreciation_factor"] *= (1 - growth)
+
+        # 2b. Pegs follow the anchor, after the anchor's own moves this round
+        # (printing, a warning or crisis) and any attack on it since last round.
+        if anchor_before is not None:
+            anchor_now = self._mon(anchor)["depreciation_factor"]
+            for key, state, members in self._monetary_entities():
+                ref = state.get("anchor_ref")
+                if not ref:
+                    continue
+                if ref["dep"] > 0 and abs(anchor_now / ref["dep"] - 1.0) > 1e-12:
+                    move = anchor_now / ref["dep"]
+                    state["depreciation_factor"] *= move
+                    for m in members:
+                        events[m]["anchor_follow"] = move
+                state["anchor_ref"] = {"anchor": anchor, "dep": anchor_now}
 
         # 3. Snapshot resolved state per country
         for c in self.countries:
@@ -1537,6 +1584,7 @@ class IPESimulation:
             events[c]["stress"] = s["stress"]
             events[c]["depreciation_factor"] = s["depreciation_factor"]
             events[c]["warning_active"] = s.get("warning_active", False)
+            events[c].setdefault("anchor_follow", 1.0)
         return events
 
     def _compute_fx_friction(self, exporter, importer):
@@ -1592,6 +1640,20 @@ class IPESimulation:
             delta += DEBT_DEFAULT_FRICTION
         return delta
 
+    def _fx_vs_reserve(self, name):
+        """
+        A currency's value against the reserve currency: its FX index divided
+        by the reserve's. Debt is owed in the reserve currency, so this -- not
+        the index against par -- decides how heavy it is. 1.0 for the reserve
+        holder (it owes in its own money) and for a peg that has followed the
+        reserve down; above 1 when the reserve has fallen and this currency held.
+        """
+        dep = self._mon(name).get("depreciation_factor", 1.0)
+        r = self.reserve_currency_holder
+        r_dep = (self._mon(r).get("depreciation_factor", 1.0)
+                 if r in self.countries else 1.0)
+        return dep / r_dep if r_dep > 0 else dep
+
     def _apply_country_debt(self, name, welfare, consumption, dd):
         """
         Resolve one country's debt this round and return an info dict
@@ -1599,8 +1661,9 @@ class IPESimulation:
 
         Borrowing of B lifts welfare by (1 + B/C); servicing interest+repay
         lowers it by (1 - service_real/C), where C is consumption capacity at
-        world prices and service_real = service / depreciation_factor
-        (a weak currency makes hard-currency debt more painful). Borrowing is
+        world prices and service_real = service / (the country's FX index
+        against the reserve currency, _fx_vs_reserve): a currency that has
+        fallen against the reserve makes the debt more painful. Borrowing is
         capped at BORROW_CAP_SHARE of C, and closed to countries with capital
         controls. Default wipes the stock at a welfare cost equal to its face
         value (DEBT_DEFAULT_COST x stock/C), plus the ban + friction
@@ -1612,6 +1675,7 @@ class IPESimulation:
         cfg = self.countries[name]
         stock = cfg.get("debt_stock", 0.0)
         dep = self._mon(name).get("depreciation_factor", 1.0)
+        fx = self._fx_vs_reserve(name)
         C = max(sum(consumption.get(g, 0.0) * self.world_prices[g]
                     for g in self.goods), 1e-9)
         rate = DEBT_BASE_RATE + DEBT_RISK_PREMIUM * (stock / C)
@@ -1646,7 +1710,7 @@ class IPESimulation:
             repay = min(repay, stock + borrow)
             service = interest + repay
             w = w * (1 + borrow / C)
-            service_real = service / dep if dep > 0 else service
+            service_real = service / fx if fx > 0 else service
             w *= max(0.0, 1 - service_real / C)
             cfg["debt_stock"] = max(0.0, stock + borrow - repay)
 
@@ -1657,6 +1721,7 @@ class IPESimulation:
 
         return {
             "welfare_after": w,
+            "fx_vs_reserve": fx,
             "debt_stock": cfg["debt_stock"],
             "rate": rate,
             "interest": interest,
@@ -2319,8 +2384,8 @@ class IPESimulation:
               f"({self.countries[self.reserve_currency_holder]['currency']}).")
         print(f"  Rate = {DEBT_BASE_RATE:.0%} + {DEBT_RISK_PREMIUM:.0%} x "
               f"(debt / consumption capacity).")
-        print(f"  Borrow to consume now; service + repay later. A weak currency")
-        print(f"  makes hard-currency debt more painful to service (original sin).")
+        print(f"  Borrow to consume now; service + repay later. A currency that")
+        print(f"  falls against the reserve makes the debt more painful (original sin).")
         print(f"  Default wipes the stock but bans borrowing for "
               f"{DEBT_DEFAULT_BAN_ROUNDS} rounds + adds trade friction.\n")
 
@@ -2805,7 +2870,8 @@ class IPESimulation:
                     )
             parts = {
                 "leverage (debt/consumption)": 4.0 * (stock / capacity),
-                "original sin (weak currency)": 2.0 * max(0.0, 1.0 - dep),
+                # weak against the reserve currency the debt is owed in
+                "original sin (weak currency)": 2.0 * max(0.0, 1.0 - self._fx_vs_reserve(name)),
                 "open capital account": 0.0 if m.get("capital_controls") else 1.0,
                 "post-default ban": 1.0 if self._is_debt_banned(name) else 0.0,
             }
@@ -2946,6 +3012,7 @@ class IPESimulation:
         }
         for c in members:
             self.countries[c]["union_id"] = name
+            self.countries[c].pop("anchor_ref", None)
         print(f"\n{'':=<55}")
         print(f"  MONETARY UNION FORMED: {name}")
         print(f"{'':=<55}")
@@ -2965,6 +3032,7 @@ class IPESimulation:
             self.countries[c]["depreciation_factor"] = final_dep
             self.countries[c]["stress"] = 0
             self.countries[c]["warning_active"] = False
+            self.countries[c].pop("anchor_ref", None)
         print(f"\n{'':=<55}")
         print(f"  MONETARY UNION DISSOLVED: {name}")
         print(f"{'':=<55}")
@@ -3660,6 +3728,11 @@ class IPESimulation:
                     print(
                         f"\n  ! WARNING in {n}: currency slipped "
                         f"{1 - WARNING_DEVALUATION:.0%}"
+                    )
+                if m.get("anchor_follow", 1.0) < 1 - 1e-9:
+                    print(
+                        f"\n  {n}'s peg followed the reserve currency down "
+                        f"{1 - m['anchor_follow']:.0%}"
                     )
 
         # Sovereign debt (Phase 6+)
