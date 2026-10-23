@@ -451,7 +451,13 @@ three answers: protect, grow, or compensate. All three are now playable.
   or a line on the trade form): a partner who profits from your openness can
   keep your government alive. They work from Phase 1 on, not just Phase 7, and
   only the *net* counts, so two countries can't pass the same crate back and
-  forth and both bank the approval.
+  forth and both bank the approval. Goods paid this way can be passed on in a
+  trade the same round (the trade waits for the payment), and a payment the
+  donor can't cover fails and counts for nothing. Two countries that pay each
+  other in the same round are trading, so the engine settles it as a trade:
+  tariffs, FX friction and currency costs apply, and it counts as imports, not
+  compensation (a good sent both ways nets out first). Token gifts back turn
+  real compensation into a trade, so side payments should be one-way.
 
 Debrief question when someone uses it: *who paid, and who did the paying buy
 off?* When nobody uses it — the usual case — that reluctance is the lesson.

@@ -327,7 +327,13 @@ approval a 20\% tariff does for roughly two-thirds of the welfare, and without
 shrinking anyone's trade. That is the ``compensate rather than protect'' move of
 Block 7 made playable. Side payments ($S_i$) are goods one country hands another,
 also available from Phase 1 on; only the \emph{net} counts, so two countries
-cannot pass the same crate back and forth and both bank approval for it.
+cannot pass the same crate back and forth and both bank approval for it, and
+only payments actually made count (one the donor cannot cover fails and buys
+nothing). Side payments that go both ways between two countries in one round
+are a trade in disguise, and are settled as one: a good sent both ways nets
+out, and the rest pays tariffs, FX friction and currency costs and counts in
+$M_i$, not $S_i$ (several goods split into one trade per pair of goods, by
+world-price value).
 
 \textbf{The endogenous backlash.} If a round ends with $A_i < 30$ the
 government falls (one round is enough; \code{APPROVAL\_CRISIS\_ROUNDS}): \code{inject\_populist\_backlash} fires automatically (20\%
@@ -512,7 +518,10 @@ severity $\varsigma$ scales every country's welfare by
 so leadership and broad membership both soften it. A \textbf{hegemonic challenge}
 succeeds when the challenger coalition's cumulative welfare exceeds that of all
 non-coalition countries; hegemony and the reserve-currency role then transfer.
-Side payments are goods transfers applied before welfare.
+Side payments are goods transfers applied before welfare. They land once the
+trades have settled, and a trade still short of goods is then retried, so goods
+received as a side payment can be passed on in a trade the same round (and a
+side payment can hand on an import).
 
 \textbf{Divergence.} A stylized public-goods/coordination model, not a
 game-theoretic equilibrium. The challenge rule is a raw weight comparison, not a

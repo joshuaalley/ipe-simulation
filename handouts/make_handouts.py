@@ -240,7 +240,8 @@ def politics_block():
         rf"\textit{{Compensating 10\% buys about +{buys} approval a round and costs "
         rf"{dead}\% of your welfare --- roughly what a 20\% tariff buys, for less, "
         rf"and your trade stays open. A side payment does the same for whoever "
-        rf"receives it (only the net counts).}}"
+        rf"receives it (only the net counts) --- but if you pay each other, it is "
+        rf"a trade, tariffs and all.}}"
     )
 
 

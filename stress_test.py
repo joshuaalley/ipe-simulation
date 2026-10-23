@@ -291,6 +291,115 @@ def test_pass_through_any_order():
 
 
 # ────────────────────────────────────────────────────────────────────
+# 6c. Goods paid as a side payment can be passed on, and the reverse
+# ────────────────────────────────────────────────────────────────────
+def test_pass_on_side_payment():
+    print("\n[6c] passing on a side payment: trades and payments wait for each other")
+    dec = {
+        "Brazos":  {"production": {"cloth": 75, "wine": 75}},
+        "Bosque":  {"production": {"cloth": 60, "wine": 0}},   # 240 cloth, no wine
+        "Llano":   {"production": {"cloth": 0,  "wine": 100}},  # 300 wine
+        "Trinity": {"production": {"cloth": 60, "wine": 60}},
+        "Pecos":   {"production": {"cloth": 0,  "wine": 50}},
+        "Sabine":  {"production": {"cloth": 100, "wine": 0}},   # no wine
+    }
+    gift = ("Llano", "Bosque", "wine", 80)                  # Llano pays Bosque 80 wine
+    relay = ("Bosque", "Sabine", "wine", 30, "cloth", 40)   # ...which Bosque trades on
+
+    def play(trades, payments):
+        r = fresh_phase1().run_round(dec, trades, side_payments=payments)
+        return r, "\n".join(r["trade_log"] + r.get("side_payment_log", []))
+
+    r, log = play([relay], [gift])
+    check("  a trade settles on goods that came as a side payment",
+          "FAILED" not in log and len(r["trades_executed"]) == 1, f"log:\n{log}")
+    wine = r["results"]["Bosque"]["consumption"]["wine"]
+    check("  ...and Bosque keeps the 50 wine it didn't pass on",
+          abs(wine - 50) < 1e-6, f"wine {wine:.2f}")
+
+    buy = ("Bosque", "Llano", "cloth", 100, "wine", 80)
+    r, log = play([buy], [("Bosque", "Sabine", "wine", 30)])
+    check("  a side payment can hand on an import",
+          "FAILED" not in log and abs(r["results"]["Sabine"]["consumption"]["wine"] - 30) < 1e-6,
+          f"log:\n{log}")
+
+    r, log = play([], [("Bosque", "Sabine", "wine", 30), gift])
+    check("  side payments listed backwards both land",
+          "FAILED" not in log and len(r["side_payment_log"]) == 2, f"log:\n{log}")
+
+    r, log = play([], [("Bosque", "Sabine", "wine", 30)])
+    check("  one that can never be covered fails and says what it had",
+          "FAILED: Bosque cannot pay 30 wine (has 0.0)" in log, f"log:\n{log}")
+    check("  ...and buys the recipient no approval",
+          r["results"]["Sabine"]["approval"]["net_side_payments"] == 0.0,
+          f"net {r['results']['Sabine']['approval']['net_side_payments']}")
+
+
+# ────────────────────────────────────────────────────────────────────
+# 6d. Side payments both ways between two countries settle as a trade
+# ────────────────────────────────────────────────────────────────────
+def test_swap_is_a_trade():
+    print("\n[6d] side payments both ways are a trade: border costs and all")
+    dec = {
+        "Brazos":  {"production": {"cloth": 75, "wine": 75}},
+        "Bosque":  {"production": {"cloth": 60, "wine": 0}},
+        "Llano":   {"production": {"cloth": 0,  "wine": 100}},
+        "Trinity": {"production": {"cloth": 60, "wine": 60}},
+        "Pecos":   {"production": {"cloth": 0,  "wine": 50}},
+        "Sabine":  {"production": {"cloth": 100, "wine": 0}},
+    }
+    dec["Bosque"]["tariffs"] = {"Llano": {"wine": 0.25}}
+    swap = [("Bosque", "Llano", "cloth", 100), ("Llano", "Bosque", "wine", 80)]
+    r = fresh_phase1().run_round(dec, [], side_payments=swap)
+    t = fresh_phase1().run_round(dec, [("Bosque", "Llano", "cloth", 100, "wine", 80)])
+    cons = lambda res: {c: res["results"][c]["consumption"] for c in PHASE1_COUNTRIES}
+    check("  a swap settles exactly like the same trade",
+          len(r["trades_executed"]) == 1
+          and all(abs(cons(r)[c][g] - cons(t)[c][g]) < 1e-9
+                  for c in PHASE1_COUNTRIES for g in PHASE1_GOODS),
+          f"{cons(r)}\n{cons(t)}")
+    wine = r["results"]["Bosque"]["consumption"]["wine"]
+    check("  ...pays the tariff (Bosque gets 60 of the 80 wine)",
+          abs(wine - 60) < 1e-6, f"wine {wine:.2f}")
+    a, b = r["results"]["Bosque"]["approval"], t["results"]["Bosque"]["approval"]
+    check("  ...counts as imports for approval, not as compensation",
+          a["exposure"] > 0 and a["net_side_payments"] == 0.0
+          and abs(a["approval"] - b["approval"]) < 1e-9, f"{a}\n{b}")
+    check("  ...and the log says why",
+          any("Bosque and Llano paid each other, so it is a trade: "
+              "100 cloth for 80 wine" in l for l in r["side_payment_log"]),
+          f"{r['side_payment_log']}")
+
+    plain = fresh_phase1().run_round(dec, [])
+    r = fresh_phase1().run_round(dec, [], side_payments=[("Bosque", "Sabine", "cloth", 30),
+                                                         ("Sabine", "Bosque", "cloth", 10)])
+    moved = (r["results"]["Sabine"]["consumption"]["cloth"]
+             - plain["results"]["Sabine"]["consumption"]["cloth"])
+    check("  the same good both ways nets out: only the difference moves",
+          not r["trades_executed"] and abs(moved - 20) < 1e-9
+          and abs(r["results"]["Sabine"]["approval"]["net_side_payments"] - 20) < 1e-9,
+          f"moved {moved:.2f}, log {r['side_payment_log']}")
+
+    # Several goods one way: one trade per pair of goods, totals kept.
+    dec2 = {n: {"production": {
+        "labor":   {g: PHASE2_COUNTRIES[n]["labor"] / 3 for g in PHASE2_GOODS},
+        "capital": {g: PHASE2_COUNTRIES[n]["capital"] / 3 for g in PHASE2_GOODS},
+    }} for n in PHASE2_COUNTRIES}
+    plain = fresh_phase2().run_round(dec2, [])
+    r = fresh_phase2().run_round(dec2, [], side_payments=[
+        ("Brazos", "Llano", "cloth", 10), ("Brazos", "Llano", "wine", 6),
+        ("Llano", "Brazos", "machinery", 4)])
+    delta = {c: {g: r["results"][c]["consumption"][g] - plain["results"][c]["consumption"][g]
+                 for g in PHASE2_GOODS} for c in ("Brazos", "Llano")}
+    want = {"Brazos": {"cloth": -10, "wine": -6, "machinery": 4},
+            "Llano":  {"cloth": 10, "wine": 6, "machinery": -4}}
+    check("  two goods for one: two trades that move exactly what was sent",
+          len(r["trades_executed"]) == 2
+          and all(abs(delta[c][g] - want[c][g]) < 1e-9 for c in want for g in PHASE2_GOODS),
+          f"{delta}")
+
+
+# ────────────────────────────────────────────────────────────────────
 # 7. Insane tariffs (100% destruction)
 # ────────────────────────────────────────────────────────────────────
 def test_full_tariff():
@@ -690,6 +799,8 @@ def main():
         test_allocation_tolerance,
         test_trade_order_dependence,
         test_pass_through_any_order,
+        test_pass_on_side_payment,
+        test_swap_is_a_trade,
         test_full_tariff,
         test_trade_exceeds_inventory,
         test_phase2_stranded_labor,

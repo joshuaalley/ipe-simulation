@@ -1199,7 +1199,7 @@
   ]
  },
  "inbox_url": "https://www.dropbox.com/request/1r08vksl83w15kf8ilba",
- "updated": "October 21, 2026"
+ "updated": "October 22, 2026"
 }</script>
 <script>
 (function () {
@@ -1632,7 +1632,9 @@
     }
 
     // side payments, tucked away
-    var det = el("details", {}, [el("summary", { text: "Side payments (goods you give away)" })]);
+    var det = el("details", {}, [el("summary", { text: "Side payments (goods you give away)" }),
+      el("div", { cls: "hint", text: "Pay a country that also pays you this round and the two " +
+        "payments settle as one trade, tariffs and all." })]);
     if (f.gifts.length) det.open = true;
     f.gifts.forEach(function (sp, k) {
       var set = function (key) { return function (v) { sp[key] = v; save(); }; };

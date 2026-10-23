@@ -829,22 +829,21 @@ class IPESimulation:
             deepcopy(production_varieties) if production_varieties else None
         )
 
-        # Step 3: Execute trades. Varieties move proportionally with their good.
-        trade_log, tariff_losses, trade_records = self._execute_trades(
-            consumption, decisions, trades, varieties=varieties,
-            defected=defected,
+        # Step 3: Execute trades, then side payments -- goods moving between
+        # countries before welfare, which is how one country compensates
+        # another for staying open. Varieties move proportionally with their
+        # good. A trade short of goods waits for the side payments, so a
+        # country can pass on goods it was paid. Side payments that go both
+        # ways between two countries are a trade in disguise and settle as one.
+        side_payments, swaps, swap_log = self._swaps_to_trades(
+            side_payments or []
         )
-
-        # Step 3b: Side payments (Phase 7+) — goods transfers applied after
-        # trade, before welfare. Donor consumption drops; recipient's rises.
-        # Side payments are just goods moving between countries, so they
-        # work from Phase 2 on -- that is how one country compensates another
-        # for staying open.
-        side_payment_log = []
-        if side_payments:
-            side_payment_log = self._apply_side_payments(
-                consumption, varieties, side_payments
-            )
+        (trade_log, tariff_losses, trade_records,
+         side_payment_log, paid) = self._execute_trades(
+            consumption, decisions, list(trades) + swaps, varieties=varieties,
+            defected=defected, side_payments=side_payments,
+        )
+        side_payment_log = swap_log + side_payment_log
 
         # Step 3c: Consume a pending global crisis factor (Phase 7+).
         crisis_factor = self._global_crisis_factor() if self.phase >= 7 else 1.0
@@ -975,7 +974,7 @@ class IPESimulation:
                 # Separate ledger: approval never enters the utility function.
                 "approval": self._update_approval(
                     name, welfare, consumption[name], trade_records,
-                    side_payments, comp_share
+                    paid, comp_share
                 ),
                 "compensation": {
                     "share": comp_share,
@@ -1767,14 +1766,17 @@ class IPESimulation:
     # ── Trade execution ───────────────────────────────────────────
 
     def _execute_trades(self, consumption, decisions, trades, varieties=None,
-                        defected=None):
+                        defected=None, side_payments=None):
         """
-        Execute trades. Tariffs destroy a fraction of imports (deadweight loss).
-        Returns (trade_log, tariff_losses, trade_records).
+        Execute trades, then side payments. Tariffs destroy a fraction of
+        imports (deadweight loss).
+        Returns (trade_log, tariff_losses, trade_records, side_payment_log, paid).
           - trade_log: human-readable strings, one per executed/failed trade
           - tariff_losses: goods destroyed at the border, per (country, good)
           - trade_records: structured dicts, one per SUCCESSFUL trade
             (used by plot_trade_network and any downstream analysis)
+          - side_payment_log: one line per side payment, made or failed
+          - paid: the side payments actually made, (donor, recipient, good, qty)
 
         If `varieties` is provided (Phase 3+), per-variety inventories are
         moved proportionally to the exporter's variety mix and updated in place.
@@ -1782,15 +1784,19 @@ class IPESimulation:
         Trades settle in the order given, except that one short of goods waits
         until the trades that deliver them have settled and is then retried --
         so passing on an import works whatever order the trades were typed or
-        uploaded in. Only a trade that can never be covered fails.
+        uploaded in. Side payments land once the trades are as far as they go,
+        and a trade still waiting is retried after them, so goods a country was
+        paid can be passed on too. Only what can never be covered fails.
         """
         trade_log = []
         trade_records = []
         defected = defected or set()
         tariff_losses = {c: {g: 0.0 for g in self.goods} for c in self.countries}
+        side_payment_log, paid = [], []
+        unpaid = list(side_payments or [])
 
         queue = list(trades)
-        while queue:
+        while True:
             waiting, settled = [], False
             for trade in queue:
                 exporter, importer, good_out, qty_out, good_in, qty_in = trade
@@ -1914,14 +1920,26 @@ class IPESimulation:
                     "tot": qty_in / qty_out if qty_out > 0 else 0.0,
                 })
                 settled = True
-            if not settled or not waiting:
-                # Nothing moved this pass: what's still waiting can't settle.
-                for trade in waiting:
-                    trade_log.append(self._shortfall(consumption, trade))
-                break
             queue = waiting
+            if settled and queue:
+                continue          # a trade delivered goods: retry the rest
+            # Trades are as far as they go. Side payments land now; if one
+            # does, a trade still waiting may be covered by it -- go again.
+            unpaid, landed = self._apply_side_payments(
+                consumption, varieties, unpaid, side_payment_log, paid
+            )
+            if not (landed and queue):
+                break
 
-        return trade_log, tariff_losses, trade_records
+        # Whatever is still waiting can never be covered.
+        for trade in queue:
+            trade_log.append(self._shortfall(consumption, trade))
+        for donor, recipient, good, qty in unpaid:
+            side_payment_log.append(
+                f"  FAILED: {donor} cannot pay {qty:.0f} {good} "
+                f"(has {consumption[donor].get(good, 0):.1f})"
+            )
+        return trade_log, tariff_losses, trade_records, side_payment_log, paid
 
     @staticmethod
     def _shortfall(consumption, trade):
@@ -3209,36 +3227,91 @@ class IPESimulation:
                     break
         return defected
 
-    def _apply_side_payments(self, consumption, varieties, side_payments):
+    def _apply_side_payments(self, consumption, varieties, side_payments,
+                             log, paid):
         """
-        Apply goods-based side payments after trade, before welfare. Each is
-        (donor, recipient, good, qty). Donor must hold the goods. Returns a
-        log of executed / failed transfers.
+        Hand over goods-based side payments, each (donor, recipient, good,
+        qty): donor consumption drops, the recipient's rises. Each one made
+        goes on `paid`, with a line on `log`. One the donor can't cover yet
+        waits while the others land -- they may deliver the goods -- and is
+        then retried. Returns (still_waiting, landed_any); _execute_trades
+        logs whatever is still waiting at the end as FAILED.
         """
-        log = []
-        for sp in side_payments:
+        landed, queue = False, list(side_payments)
+        while queue:
+            waiting, settled = [], False
+            for sp in queue:
+                donor, recipient, good, qty = sp
+                if donor not in self.countries or recipient not in self.countries:
+                    log.append(f"  FAILED side payment: unknown country in {sp}")
+                    continue
+                if consumption[donor].get(good, 0.0) < qty - 0.01:
+                    waiting.append(sp)
+                    continue
+                consumption[donor][good] -= qty
+                consumption[recipient][good] = (
+                    consumption[recipient].get(good, 0.0) + qty
+                )
+                # Keep variety bundles consistent: pull from donor's mix, add to
+                # recipient under a generic side-payment variety key.
+                if varieties is not None:
+                    self._transfer_varieties(
+                        varieties, donor, recipient, good, qty, 0.0
+                    )
+                log.append(f"  {donor} -> {recipient}: {qty:.0f} {good} (side payment)")
+                paid.append(sp)
+                settled = landed = True
+            queue = waiting
+            if not settled:
+                break
+        return queue, landed
+
+    def _swaps_to_trades(self, side_payments):
+        """
+        Side payments that go both ways between two countries in one round
+        are a trade in disguise -- and a side payment skips the border. So
+        rewrite each such pair: a good sent both ways nets out, and the rest
+        is a trade, paying tariffs, FX friction and currency costs and
+        counting as imports for approval. A pair sending several goods
+        becomes one trade per pair of goods, each side's goods split by
+        world-price value so the totals still add up.
+        Returns (one_way_payments, trades, log).
+        """
+        def valid(sp):
             donor, recipient, good, qty = sp
-            if donor not in self.countries or recipient not in self.countries:
-                log.append(f"  FAILED side payment: unknown country in {sp}")
-                continue
-            if consumption[donor].get(good, 0.0) < qty - 0.01:
-                log.append(
-                    f"  FAILED: {donor} cannot pay {qty:.0f} {good} "
-                    f"(has {consumption[donor].get(good, 0):.1f})"
-                )
-                continue
-            consumption[donor][good] -= qty
-            consumption[recipient][good] = (
-                consumption[recipient].get(good, 0.0) + qty
-            )
-            # Keep variety bundles consistent: pull from donor's mix, add to
-            # recipient under a generic side-payment variety key.
-            if varieties is not None:
-                self._transfer_varieties(
-                    varieties, donor, recipient, good, qty, 0.0
-                )
-            log.append(f"  {donor} -> {recipient}: {qty:.0f} {good} (side payment)")
-        return log
+            return (donor in self.countries and recipient in self.countries
+                    and donor != recipient and good in self.goods and qty > 0)
+
+        sent = {}                            # (donor, recipient) -> {good: qty}
+        for donor, recipient, good, qty in filter(valid, side_payments):
+            box = sent.setdefault((donor, recipient), {})
+            box[good] = box.get(good, 0.0) + qty
+        pairs = sorted({tuple(sorted(p)) for p in sent if p[::-1] in sent})
+        one_way = [sp for sp in side_payments
+                   if not (valid(sp) and tuple(sorted(sp[:2])) in pairs)]
+
+        trades, log = [], []
+        for a, b in pairs:
+            ab, ba = sent[(a, b)], sent[(b, a)]
+            net = {g: ab.get(g, 0.0) - ba.get(g, 0.0) for g in self.goods}
+            out_a = {g: q for g, q in net.items() if q > 1e-9}
+            out_b = {g: -q for g, q in net.items() if q < -1e-9}
+            if out_a and out_b:
+                worth_a = {g: q * self.world_prices.get(g, 1.0) for g, q in out_a.items()}
+                worth_b = {g: q * self.world_prices.get(g, 1.0) for g, q in out_b.items()}
+                legs = [(a, b, ga, qa * worth_b[gb] / sum(worth_b.values()),
+                         gb, qb * worth_a[ga] / sum(worth_a.values()))
+                        for ga, qa in out_a.items() for gb, qb in out_b.items()]
+                trades += legs
+                log.append(f"  {a} and {b} paid each other, so it is a trade: "
+                           + "; ".join(f"{qa:.0f} {ga} for {qb:.0f} {gb}"
+                                       for _, _, ga, qa, gb, qb in legs))
+            else:
+                donor, recipient, box = (a, b, out_a) if out_a else (b, a, out_b)
+                one_way += [(donor, recipient, g, q) for g, q in box.items()]
+                log.append(f"  {a} and {b} paid each other in the same goods: "
+                           f"only the difference moves")
+        return one_way, trades, log
 
     # ── Political approval (separate ledger; never enters welfare) ─
 
