@@ -5,11 +5,12 @@ Stress test Phase 7 institutions & power:
 - defection (tariff above binding) -> loses dividend, no welfare penalty
 - hegemon provision: cost to hegemon, global friction cut; withhold: global friction up
 - goods-based side payments
-- hegemonic challenge via coalition cumulative welfare; reserve currency moves
+- hegemonic challenge under the game's challenge_rule (a majority of the
+  countries by default, or cumulative welfare); reserve currency moves
 - global crisis mitigated by hegemon provision + WTO breadth
 - save/restore; dashboard renders
 """
-import sys, json, traceback
+import contextlib, copy, io, sys, json, traceback
 import matplotlib
 matplotlib.use("Agg")
 
@@ -182,7 +183,7 @@ def test_side_payments():
 
 # ───────────────────────────────────────────────────────────────
 def test_hegemonic_challenge():
-    print("\n[6] hegemonic challenge via coalition weight")
+    print("\n[6] hegemonic challenge under the game's challenge rule")
     sim = fresh_phase7()
     heg = sim.hegemon
     cum = sim._cumulative_welfare()
@@ -204,6 +205,50 @@ def test_hegemonic_challenge():
     check("  lone weak challenger fails", not ok2)
     check("  hegemon unchanged after failed challenge",
           sim2.hegemon == sim2.reserve_currency_holder)
+
+    # One giant economy and many small ones: the two rules disagree.
+    base = fresh_phase7()
+    heg = base.hegemon
+    rest = [c for c in base.countries if c != heg]
+    giant, small = rest[0], rest[1:]
+    need = len(base.countries) // 2 + 1
+    split = {c: 10.0 for c in base.countries}
+    split[giant] = 1000.0
+
+    def tried(rule, challenger, backers):
+        s = copy.deepcopy(base)
+        s.challenge_rule = rule
+        s._cumulative_welfare = lambda: dict(split)
+        with contextlib.redirect_stdout(io.StringIO()):
+            ok = s.challenge_hegemon(challenger, backers=backers)
+        return ok, s
+
+    check("  majority is the default rule", base.challenge_rule == "majority")
+    ok, s = tried("majority", giant, [])
+    check("  majority: the giant alone fails, however big", not ok and s.hegemon == heg)
+    ok, s = tried("majority", small[0], small[1:need])
+    check("  majority: small countries that are a majority win",
+          ok and s.hegemon == small[0] and s.reserve_currency_holder == small[0])
+    ok, s = tried("welfare", giant, [])
+    check("  welfare: the giant alone wins on size", ok and s.hegemon == giant)
+    ok, s = tried("welfare", small[0], small[1:need])
+    check("  welfare: a majority of small countries is outweighed", not ok and s.hegemon == heg)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        base.print_institutions_dashboard()
+        s.print_institutions_dashboard()
+    check("  the dashboard states the game's own rule",
+          "majority of the countries" in out.getvalue()
+          and "outweighs the rest of the world" in out.getvalue(), out.getvalue()[-300:])
+    s = copy.deepcopy(base)
+    s.challenge_rule = "coinflip"
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            s.challenge_hegemon(giant, backers=small)
+        check("  an unknown rule is refused", False, "no error")
+    except ValueError as e:
+        check("  an unknown rule is refused, nothing moves",
+              "coinflip" in str(e) and s.hegemon == heg)
 
 
 # ───────────────────────────────────────────────────────────────

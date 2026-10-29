@@ -417,6 +417,20 @@ recent warning, an open peg, loose money, open capital and a weak currency; a de
 heat at the top, or no exposure at all, fires nothing. \code{"managed"} is accepted
 as a synonym for \code{"float"}.
 
+\textbf{Challenging for the reserve currency} (\code{\_settle\_reserve\_challenge}).
+Each round a country may name the country whose challenge it backs, or itself to
+challenge (the holder's own challenge is void). After the round, a challenger
+wins if its coalition $C$, itself and its backers, passes the game's rule
+(\code{challenge\_rule}) among the $N$ countries:
+\[
+\text{\code{"majority"} (default): } |C| > N/2,
+\qquad
+\text{\code{"welfare"}: } \sum_{i\in C}\sum_{s\le t} W_{is} > \sum_{i\notin C}\sum_{s\le t} W_{is},
+\]
+with cumulative welfare counted through this round. The winner is $R$ from the
+next round. Two coalitions cannot both pass either test, so at most one
+challenge wins.
+
 \textbf{Why this form.} Under the original rules printing only depreciated the
 currency, independence only enabled printing, capital controls cost nothing, and
 \code{managed} behaved exactly like \code{float} --- so peg $+$ controls $+$ 0\%
@@ -516,16 +530,18 @@ severity $\varsigma$ scales every country's welfare by
 1 - \varsigma\cdot\big(0.5 \text{ if hegemon provides}\big)\cdot\big(1 - 0.5\,\text{wto\_share}\big),
 \]
 so leadership and broad membership both soften it. A \textbf{hegemonic challenge}
-succeeds when the challenger coalition's cumulative welfare exceeds that of all
-non-coalition countries; hegemony and the reserve-currency role then transfer.
+is decided by the same rule as a reserve-currency challenge (Phase 5): by default
+the coalition must be a majority of the countries, or under \code{"welfare"} its
+cumulative welfare must exceed that of all non-coalition countries; hegemony and
+the reserve-currency role then transfer.
 Side payments are goods transfers applied before welfare. They land once the
 trades have settled, and a trade still short of goods is then retried, so goods
 received as a side payment can be passed on in a trade the same round (and a
 side payment can hand on an import).
 
 \textbf{Divergence.} A stylized public-goods/coordination model, not a
-game-theoretic equilibrium. The challenge rule is a raw weight comparison, not a
-bargaining solution; ``defection'' is simply applying a tariff above a binding.
+game-theoretic equilibrium. The challenge rule is a head count (or, by choice, a
+raw weight comparison), not a bargaining solution; ``defection'' is simply applying a tariff above a binding.
 The hegemony parameters are tuned (see the simulation notes) so that provision is
 collectively beneficial in both WTO-none and WTO-all settings while the hegemon is
 still individually tempted to free-ride.

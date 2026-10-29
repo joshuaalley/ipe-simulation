@@ -13,6 +13,9 @@ Stress test Phase 5 monetary mechanics:
 - what each choice buys: printing's stimulus, a weak currency's import cost,
   controls' cost to foreign firms; 'managed' = float; the open-peg exposure;
   no attack without a clear target; capital flight works in Phase 5
+- reserve-currency challenges: a majority of the countries, not size, decides
+  by default ("welfare" lets size decide); settled after the round; the
+  hegemony follows from Phase 7
 """
 import copy, contextlib, io, sys, json, traceback
 import matplotlib
@@ -682,6 +685,138 @@ def test_tightening():
           and abs(r["results"][peg]["monetary"]["anchor_follow"] - 1.02) < 1e-12)
 
 
+def test_reserve_challenge():
+    print("\n[26] a challenge for the reserve currency: a majority of the countries by default")
+    base = fresh_phase5()
+    holder = base.reserve_currency_holder
+    n = len(base.countries)
+    need = n // 2 + 1
+    cum = base._cumulative_welfare()
+    others = sorted((c for c in base.countries if c != holder), key=cum.get)
+    small, big = others[0], others[-1]
+
+    def play(backing, sim=None, trades=()):
+        s = sim or copy.deepcopy(base)
+        r = quiet(s.run_round, BAL_DEC, list(trades), firm_decisions=fd(s),
+                  monetary_decisions=base_md(), reserve_challenge=backing)
+        return s, r
+
+    s, r = play({big: big})
+    ch = r["reserve_challenge"]["challenges"][0]
+    check("  the biggest economy alone can't take it",
+          s.reserve_currency_holder == holder and not ch["succeeded"] and ch["votes"] == 1)
+    short = [c for c in others if c != big][:need - 2]
+    s, r = play({big: big, **{b: big for b in short}})
+    ch = r["reserve_challenge"]["challenges"][0]
+    check(f"  {need - 1} of {n} countries is one short",
+          s.reserve_currency_holder == holder and ch["votes"] == need - 1
+          and ch["needed"] == need and r["reserve_challenge"]["rule"] == "majority",
+          str(r["reserve_challenge"]))
+
+    backers = [c for c in others if c != small][:need - 1]
+    x = next(c for c in others if c != small)
+    y = next(c for c in others if c not in (small, x))
+    swaps = [(holder, x, "cloth", 2, "wine", 2), (small, y, "cloth", 2, "wine", 2)]
+    s, r = play({small: small, **{b: small for b in backers}}, trades=swaps)
+    rec = r["reserve_challenge"]
+    check("  the smallest economy wins with a majority",
+          s.reserve_currency_holder == small and rec["holder_before"] == holder
+          and rec["holder_after"] == small and rec["challenges"][0]["votes"] == need,
+          str(rec))
+    fx = {(t["exporter"], t["importer"]): t["fx_friction"] for t in r["trades_executed"]}
+    check("  settled after the round: this round still ran on the old holder",
+          fx.get((holder, x)) == 0.0 and fx.get((small, y)) == BASE_FX_FRICTION, str(fx))
+    check("  from the next round the new holder trades friction-free, the old one doesn't",
+          s._compute_fx_friction(small, x) == 0.0
+          and s._compute_fx_friction(holder, x) == BASE_FX_FRICTION)
+    back = IPESimulation.from_state(json.loads(json.dumps(s.get_state())))
+    check("  the new holder and the record survive save/restore",
+          back.reserve_currency_holder == small
+          and back.history[-1]["reserve_challenge"]["holder_after"] == small)
+
+    s, r = play({holder: holder})
+    check("  the holder can't challenge itself: nothing to settle",
+          "reserve_challenge" not in r and s.reserve_currency_holder == holder)
+    s, r = play({small: small, holder: small, **{b: small for b in backers[:need - 2]}})
+    check("  the holder may concede: its voice counts toward the majority",
+          s.reserve_currency_holder == small
+          and holder in r["reserve_challenge"]["challenges"][0]["backers"])
+    s, r = play({small: small, big: x})
+    check("  backing a country that didn't challenge counts for nothing",
+          r["reserve_challenge"]["void"] == [big]
+          and r["reserve_challenge"]["challenges"][0]["votes"] == 1)
+    half = (n - 1) // 2
+    split = {small: small, big: big}
+    split.update({b: small for b in [c for c in others if c not in (small, big)][:half - 1]})
+    split.update({b: big for b in [c for c in others if c not in split][:half - 1]})
+    s, r = play(split)
+    check("  two challenges split the vote: neither wins",
+          s.reserve_currency_holder == holder
+          and len(r["reserve_challenge"]["challenges"]) == 2
+          and not any(c["succeeded"] for c in r["reserve_challenge"]["challenges"]),
+          str(r["reserve_challenge"]))
+    s, r = play({small: "", big: None})
+    check("  blank picks are no challenge", "reserve_challenge" not in r)
+
+    s = copy.deepcopy(base)
+    try:
+        play({small: "Atlantis"}, sim=s)
+        check("  an unknown country is refused", False, "no error")
+    except ValueError as e:
+        check("  an unknown country is refused, the round not advanced",
+              "Atlantis" in str(e) and s.round_num == base.round_num)
+    early = IPESimulation(PHASE2_COUNTRIES, PHASE2_GOODS, phase=2)
+    try:
+        quiet(early.run_round, BAL_DEC, [], reserve_challenge={"Bosque": "Bosque"})
+        check("  no challenge before Phase 5", False, "no error")
+    except ValueError as e:
+        check("  no challenge before Phase 5", "Phase 5" in str(e) and early.round_num == 0)
+
+    s7 = copy.deepcopy(base)
+    quiet(s7.upgrade_to_phase6)
+    quiet(s7.upgrade_to_phase7)
+    s7, r = play({small: small, **{b: small for b in backers}}, sim=s7)
+    check("  from Phase 7 the hegemony goes with it",
+          s7.reserve_currency_holder == small and s7.hegemon == small
+          and r["hegemon"] == holder)
+
+    # The other rule, for a game that wants power to follow size.
+    split = {c: 10.0 for c in base.countries}
+    split[big] = 1000.0
+
+    def by_welfare(backing):
+        s = copy.deepcopy(base)
+        s.challenge_rule = "welfare"
+        s._cumulative_welfare = lambda: dict(split)
+        return play(backing, sim=s)
+
+    s, r = by_welfare({big: big})
+    ch = r["reserve_challenge"]["challenges"][0]
+    check("  'welfare': the biggest economy alone takes it on size",
+          s.reserve_currency_holder == big and r["reserve_challenge"]["rule"] == "welfare"
+          and ch["weight"] == 1000.0 and ch["rest"] == 10.0 * (n - 1), str(ch))
+    s, r = by_welfare({small: small, **{b: small for b in backers if b != big}})
+    check("  'welfare': a majority of small countries is outweighed",
+          s.reserve_currency_holder == holder, str(r["reserve_challenge"]))
+    s = copy.deepcopy(base)
+    s.challenge_rule = "coinflip"
+    try:
+        play({small: small}, sim=s)
+        check("  an unknown rule is refused", False, "no error")
+    except ValueError as e:
+        check("  an unknown rule is refused before the round plays",
+              "coinflip" in str(e) and s.round_num == base.round_num
+              and len(s.history) == len(base.history))
+    s = copy.deepcopy(base)
+    s.challenge_rule = "welfare"
+    state = json.loads(json.dumps(s.get_state()))
+    check("  the rule is saved with the game",
+          IPESimulation.from_state(state).challenge_rule == "welfare")
+    state.pop("challenge_rule")
+    check("  a game saved before the rule existed resumes on the default",
+          IPESimulation.from_state(state).challenge_rule == "majority")
+
+
 def main():
     for t in [test_upgrade, test_validation, test_trilemma_graduated,
               test_money_decay, test_fx_friction, test_host_currency_profits,
@@ -692,7 +827,7 @@ def main():
               test_controls_cost_foreign_firms, test_peg_to_peg_friction,
               test_open_peg_exposure, test_no_clear_target,
               test_capital_flight_in_phase5, test_pegs_follow_the_anchor,
-              test_tightening]:
+              test_tightening, test_reserve_challenge]:
         try:
             t()
         except Exception:

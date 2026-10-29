@@ -219,11 +219,27 @@ def test_guards_and_defaults():
     check("  and says how to publish", "commit and push" in out.getvalue())
 
 
+def test_reserve_challenge_choice():
+    print("\n[9] the reserve-currency challenge on the page")
+    sim = p2_sim()
+    html, data, _ = page(export(sim, "reserve"))
+    check("  the page offers the challenge and sends the pick in the file",
+          'choices("rc"' in html and "out.reserve_challenge = f.rc" in html)
+    check("  the majority comes from the countries on the page, not a fixed 3 of 4",
+          "Math.floor(countryNames.length / 2) + 1" in html and "3 of 4" not in html)
+    sim.challenge_rule = "welfare"
+    _, data2, _ = page(export(sim, "reserve-welfare"))
+    check("  the page carries the game's challenge rule, so its hint matches",
+          data["rules"]["challenge"] == "majority" and data2["rules"]["challenge"] == "welfare"
+          and 'rules.challenge === "welfare"' in html)
+
+
 def main():
     for t in [test_one_button_per_country, test_numbers_match_live_sim,
               test_reexport_follows_shocks, test_check_values_are_engine_output,
               test_phase1_export, test_data_cannot_break_the_page,
-              test_guards_and_defaults, test_best_mix_not_given_away]:
+              test_guards_and_defaults, test_best_mix_not_given_away,
+              test_reserve_challenge_choice]:
         try:
             t()
         except Exception:

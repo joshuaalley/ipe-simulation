@@ -128,6 +128,17 @@ Omit the flag for the full six-country set. The generator uses
 the same `build_firm_roster`, so the printed MNC forms always match what the
 engine will accept.
 
+### Two rules to choose for your game
+
+Who leads the money system is decided by two rules, and both are yours to set
+for each game. Each is saved with the game, so set it before it first matters.
+
+- **How the reserve currency is awarded** at the end of Phase 4. New games use
+  `"best_mix"`. See [Who gets the reserve currency](#who-gets-the-reserve-currency-end-of-phase-4).
+- **How a challenge for it is decided**, from Phase 5, and for the hegemony in
+  Phase 7. New games use `"majority"`; `"welfare"` lets size decide. See
+  [Challenging for the reserve currency](#challenging-for-the-reserve-currency-phase-5-on).
+
 ## What projects well
 
 Three kinds of output:
@@ -266,9 +277,9 @@ door.
 **What students do.**
 
 - A **country**: tap the phase and the country, enter production (the
-  calculator), then tariffs, trades, compensation and the MNC tax, and money,
-  debt and WTO choices once those phases arrive. Then Submit and drop the file
-  into Dropbox. The page refuses to save until the allocations add up and every
+  calculator), then tariffs, trades, compensation and the MNC tax, and money
+  (with any reserve-currency challenge), debt and WTO choices once those phases
+  arrive. Then Submit and drop the file into Dropbox. The page refuses to save until the allocations add up and every
   number is in range.
 - A **firm owner**: tap "A firm I own", pick the firm, then set scale, move
   and export. Owners submit only when something changes; a firm with no file
@@ -599,6 +610,46 @@ each country produced (`"gains"`), so a term already under way isn't changed.
 Any rule can be named: `sim.award_reserve_currency("gains")`, `"half_size"` or
 `"best_mix"`. Each call awards the currency, so if you show the class another
 rule's ranking, run the one that counts last.
+
+### Challenging for the reserve currency (Phase 5 on)
+
+From Phase 5, a country can challenge for the reserve currency. On the round
+form, the Money part has a **Reserve currency** choice: no challenge, challenge
+for it, or back another country's challenge. In the workbook it is the
+`reserve_challenge` column of the finance sheet: the country this one backs,
+its own name to challenge, or blank for none.
+
+- The round report lists each challenge and its backers before you play, so
+  you can read them out.
+- The challenge is settled **after** the round. A winner holds the reserve
+  currency from the next round, so nobody's decisions change under them
+  mid-round. The board says what happened, under the table.
+- The holder can't challenge for what it already holds, but it can back a
+  challenger, and then it counts for them.
+- A challenge counts only in the round it's sent. A country with no file makes
+  no challenge and backs nobody.
+- From Phase 7 the hegemony goes with the reserve currency. The same rule
+  decides `sim.challenge_hegemon(challenger, backers=[...])` when you run a
+  challenge from the notebook.
+
+**Your choice: how a challenge is decided** (`sim.challenge_rule`).
+
+- `"majority"`, the default: the challenger and its backers must be more than
+  half of the countries, so 3 of 4 or 4 of 6. One country, one voice. The
+  biggest economy can't take the currency on size alone; it has to win over
+  the others.
+- `"welfare"`: the challenger and its backers must have more cumulative welfare
+  than everyone else. Power follows size, so the biggest economies need few
+  friends. In a four-country game, one large economy and a single friend can
+  outweigh everyone else, which is why majority is the default.
+
+Consider `"welfare"` for a game with more countries, where no single economy
+comes close to half the total, and whose reserve currency was awarded on
+`"best_mix"`, which already measures each country against its best mix with no
+trade. Set the rule right after creating the game (`sim.challenge_rule =
+"welfare"`), then re-export the calculator so the form's explanation matches.
+It is saved with the game; a game saved before this setting existed resumes on
+`"majority"`.
 
 ## Phase transitions
 

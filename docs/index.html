@@ -1196,10 +1196,11 @@
    2.0,
    5.0,
    10.0
-  ]
+  ],
+  "challenge": "majority"
  },
  "inbox_url": "https://www.dropbox.com/request/1r08vksl83w15kf8ilba",
- "updated": "October 22, 2026"
+ "updated": "October 28, 2026"
 }</script>
 <script>
 (function () {
@@ -1666,6 +1667,16 @@
       box.appendChild(choices("mg", [keep].concat(rules.money_growth.map(function (g) {
         return [String(g), (g < 0 ? "\u2212" + fmt(-g) : fmt(g)) + "%"]; })), f.growth,
         function (v) { f.growth = v; save(); }));
+      box.appendChild(el("h3", { text: "Reserve currency" }));
+      box.appendChild(choices("rc", [["", "No challenge"], [me, "We challenge for it"]].concat(
+        partners.map(function (n) { return [n, "Back " + n + "\u2019s challenge"]; })), f.rc,
+        function (v) { f.rc = v; save(); }));
+      box.appendChild(el("p", { cls: "hint", text: "A challenge wins if the challenger and the " +
+        "countries backing it " + (rules.challenge === "welfare"
+          ? "have more cumulative welfare than everyone else"
+          : "are a majority: " + (Math.floor(countryNames.length / 2) + 1) + " of the " +
+            countryNames.length + " countries") +
+        ". It is settled after the round; the winner holds the reserve currency from the next one." }));
     }
     if (phase >= 6) {
       box.appendChild(el("h3", { text: "Debt" }));
@@ -1762,6 +1773,7 @@
       if (f.fx) out.money.fx_regime = f.fx;
       if (f.controls) out.money.capital_controls = f.controls === "controls";
       if (f.growth !== undefined && f.growth !== "") out.money.money_supply_growth = Number(f.growth);
+      if (f.rc && countryNames.indexOf(f.rc) >= 0) out.reserve_challenge = f.rc;
     }
     if (phase >= 6) {
       var b = read(f.borrow), r = read(f.repay);
@@ -1778,7 +1790,9 @@
       (era.uses_capital ? " · capital " + era.goods.map(function (g) { return fmt(p.K[g] || 0); }).join(" / ") : "") +
       " · " + out.trades.length + " trade" + (out.trades.length === 1 ? "" : "s") +
       " · " + Object.keys(out.tariffs).reduce(function (n, pn) { return n + Object.keys(out.tariffs[pn]).length; }, 0) +
-      " tariff(s)" + (phase >= 3 && out.mnc_tax_pct != null ? " · MNC tax " + fmt(out.mnc_tax_pct) + "%" : "");
+      " tariff(s)" + (phase >= 3 && out.mnc_tax_pct != null ? " · MNC tax " + fmt(out.mnc_tax_pct) + "%" : "") +
+      (!out.reserve_challenge ? "" : out.reserve_challenge === me ? " · challenging for the reserve currency"
+        : " · backing " + out.reserve_challenge + "’s reserve challenge");
     return { errors: errs, data: out, file: me + ".json", summary: summary };
   }
 

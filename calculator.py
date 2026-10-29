@@ -171,6 +171,7 @@ def calculator_data(sim, inbox_url=""):
             "mnc_tax_min": engine.MNC_TAX_MIN * 100,
             "mnc_tax_max": engine.MNC_TAX_MAX * 100,
             "money_growth": [g * 100 for g in engine.PHASE5_MONEY_GROWTH_CHOICES],
+            "challenge": getattr(sim, "challenge_rule", engine.CHALLENGE_RULE),
         },
         "inbox_url": inbox_url or "",
         "updated": f"{today:%B} {today.day}, {today.year}",

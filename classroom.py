@@ -246,6 +246,13 @@ def scoreboard_html(sim, round_num=None, scale=1.0, sort=None, trades=True,
 
     parts.append("</table>")
 
+    if rd.get("reserve_challenge"):
+        parts.append(
+            f'<div style="margin-top:{0.7*f:.0f}px;font-size:{0.8*f:.0f}px;">'
+            f'<span style="font-weight:600;">Reserve currency</span>'
+            f'&nbsp;-- {_challenge_text(rd["reserve_challenge"], rd["round"])}</div>'
+        )
+
     if trades:
         log = rd.get("trade_log") or []
         parts.append(
@@ -289,7 +296,24 @@ def scoreboard_text(sim, round_num=None, sort=None, columns=None):
             text, _c = _fmt(key, vals[key])
             line += f"{text:>12s}"
         out.append(line)
+    if rd.get("reserve_challenge"):
+        out.append("Reserve currency -- "
+                   + _challenge_text(rd["reserve_challenge"], rd["round"]))
     return "\n".join(out)
+
+
+def _challenge_text(ch, rnd):
+    """A round's challenge for the reserve currency, in one line."""
+    def tally(c):
+        if "votes" in c:
+            return f"{c['votes']} of {c['countries']} countries, {c['needed']} needed"
+        return f"{c['weight']:,.0f} vs {c['rest']:,.0f} in cumulative welfare"
+    sides = [f"{' + '.join([c['challenger']] + c['backers'])} challenged: {tally(c)}"
+             for c in ch["challenges"]]
+    end = (f"{ch['holder_after']} holds it from Round {rnd + 1}."
+           if ch["holder_after"] != ch["holder_before"]
+           else f"{ch['holder_before']} keeps it.")
+    return "; ".join(sides) + ". " + end
 
 
 def show(sim, round_num=None, scale=1.0, sort=None, trades=True, columns=None):
@@ -451,6 +475,9 @@ def _template_sheets(sim, rnd):
             "yes" if m.get("capital_controls") else "no" for m in mon]
         fin["money_supply_growth"] = [
             m.get("money_supply_growth", 0.0) for m in mon]
+        # whose challenge for the reserve currency the country backs: its own
+        # name is a challenge, blank is none. Settled after the round.
+        fin["reserve_challenge"] = ""
         if phase >= 6:
             fin["borrow"] = 0
             fin["repay"] = 0
@@ -989,7 +1016,7 @@ def load_round(sim, path):
         elif not _require_columns(fin_df, "finance", fin_need, problems):
             pass
         else:
-            monetary, debt, inst = {}, {}, {}
+            monetary, debt, inst, backing = {}, {}, {}, {}
             for i, row in fin_df.iterrows():
                 country = _as_text(row.get("country"))
                 if country is None:
@@ -1016,6 +1043,13 @@ def load_round(sim, path):
                 if not _blank(row.get("independent_monetary")):
                     monetary[country]["independent_monetary"] = _as_bool(
                         row.get("independent_monetary"), True, where)
+                # Optional: a workbook made before the column existed has none.
+                pick = _as_text(row.get("reserve_challenge"))
+                if pick in sim.countries:
+                    backing[country] = pick
+                elif pick is not None:
+                    problems.append(
+                        f"{where}: reserve_challenge {pick!r} is not a country")
                 if phase >= 6:
                     debt[country] = {
                         "borrow": _as_num(row.get("borrow"), 0.0, where),
@@ -1034,6 +1068,8 @@ def load_round(sim, path):
                         inst["hegemon_provides"] = _as_bool(
                             row.get("hegemon_provides"), True, where)
             kwargs["monetary_decisions"] = monetary
+            if backing:
+                kwargs["reserve_challenge"] = backing
             if phase >= 6:
                 kwargs["debt_decisions"] = debt
             if phase >= 7 and inst:
@@ -1361,6 +1397,11 @@ def _plan_from_inbox(sim, workbook, inbox):
                         fin_row["money_supply_growth"] = _number(
                             money["money_supply_growth"], "money growth", problems,
                             lo=-100, hi=100) / 100
+                    pick = d.get("reserve_challenge")
+                    if pick in names:
+                        fin_row["reserve_challenge"] = pick
+                    elif pick not in (None, ""):
+                        problems.append(f"reserve challenge: {pick!r} is not a country")
                     if phase >= 6:
                         debt = d.get("debt") or {}
                         fin_row["borrow"] = _number(debt.get("borrow"), "borrowing",
@@ -1475,6 +1516,23 @@ def _plan_from_inbox(sim, workbook, inbox):
         lines.append(f"         MISMATCH: {m}")
     if unconfirmed or mismatched:
         lines.append("         (these don't execute -- a team can resubmit to fix one)")
+    if fin is not None and "reserve_challenge" in fin.columns:
+        backing = {n: fin.loc[n, "reserve_challenge"] for n in names
+                   if not _blank(fin.loc[n, "reserve_challenge"])}
+        holder = sim.reserve_currency_holder
+        for c in [n for n in names if backing.get(n) == n and n != holder]:
+            backers = [b for b in names if b != c and backing.get(b) == c]
+            how = ("on cumulative welfare" if sim.challenge_rule == "welfare" else
+                   f"{1 + len(backers)} of {len(names)} countries, "
+                   f"{len(names) // 2 + 1} needed")
+            lines.append(f"  Reserve currency: {c} challenges {holder}"
+                         + (f", backed by {', '.join(backers)}" if backers else ", alone")
+                         + f" -- {how} (settled after the round)")
+        for b, c in backing.items():
+            if c == holder or backing.get(c) != c:
+                what = ("already holds it" if b == c
+                        else f"backs {c}, which is not challenging")
+                lines.append(f"  Reserve currency: {b} {what} -- no effect")
     for name in box["stale"]:
         lines.append(f"  Set aside {name}: reached the inbox before Round {rnd - 1} was played")
     for name, why in box["rejected"]:

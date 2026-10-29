@@ -250,6 +250,17 @@ SHADOW_PRICE_CAP = 10.0   # max home price, as a multiple of the price index (1)
 RESERVE_CURRENCY_RULE = "best_mix"
 RESERVE_CURRENCY_RULES = ("best_mix", "half_size", "gains")
 
+# How a challenge is decided: for the reserve currency (Phase 5 on, sent from
+# the calculator) and for the hegemony (Phase 7, challenge_hegemon).
+#   "majority"   the challenger and its backers are more than half of the
+#                countries. One country, one voice: size alone can't take it.
+#   "welfare"    their cumulative welfare outweighs everyone else's. Power as
+#                size: the biggest economies need few friends. Worth a look
+#                in a larger game whose reserve currency went by "best_mix".
+# A game takes CHALLENGE_RULE; set sim.challenge_rule to choose the other.
+CHALLENGE_RULE = "majority"
+CHALLENGE_RULES = ("majority", "welfare")
+
 
 def best_autarky(cfg, goods, phase):
     """
@@ -634,6 +645,7 @@ class IPESimulation:
         self.mnc_tax_revenue = {}     # country -> cumulative MNC tax revenue
         self.reserve_currency_holder = None  # set by award_reserve_currency()
         self.reserve_rule = RESERVE_CURRENCY_RULE   # how it is awarded
+        self.challenge_rule = CHALLENGE_RULE        # how a challenge is decided
 
         # Phase 5+ monetary state.
         # Per-country monetary fields (currency, fx_regime, capital_controls,
@@ -660,7 +672,8 @@ class IPESimulation:
                   monetary_decisions: dict = None,
                   debt_decisions: dict = None,
                   institutional_decisions: dict = None,
-                  side_payments: list = None) -> dict:
+                  side_payments: list = None,
+                  reserve_challenge: dict = None) -> dict:
         """
         Execute one round of the simulation.
 
@@ -708,6 +721,12 @@ class IPESimulation:
             Omitted countries keep their current monetary policy. Monetary
             decisions are applied BEFORE production/trade so this round's
             trades feel any crisis devaluation immediately.
+
+        reserve_challenge : dict, Phase 5+ only
+            {country: the country whose challenge for the reserve currency
+            it backs}. Naming itself is a challenge. Settled after the round
+            under the game's challenge_rule (_settle_reserve_challenge); a
+            winner holds the reserve currency from the next round.
 
         Returns
         -------
@@ -761,6 +780,23 @@ class IPESimulation:
                 self.round_num -= 1
                 raise ValueError(
                     "Debt decision validation failed:\n" + "\n".join(dbt_errors)
+                )
+        reserve_challenge = {c: b for c, b in (reserve_challenge or {}).items() if b}
+        if reserve_challenge:
+            if self.phase < 5:
+                rc_errors = ["The reserve currency can be challenged from Phase 5."]
+            elif self.challenge_rule not in CHALLENGE_RULES:
+                rc_errors = [f"challenge_rule must be one of {CHALLENGE_RULES}, "
+                             f"not {self.challenge_rule!r}"]
+            else:
+                rc_errors = [f"Unknown country in reserve_challenge: {x}"
+                             for x in sorted({*reserve_challenge,
+                                              *reserve_challenge.values()})
+                             if x not in self.countries]
+            if rc_errors:
+                self.round_num -= 1
+                raise ValueError(
+                    "Reserve challenge validation failed:\n" + "\n".join(rc_errors)
                 )
 
         # Step 0a: MNC tax choices (Phase 3+). Each stands until changed.
@@ -1074,6 +1110,11 @@ class IPESimulation:
             # Crisis is one-shot: consume it
             self._pending_global_crisis = None
         self.history.append(round_result)
+        # A challenge for the reserve currency is settled now; a winner
+        # holds it from the next round.
+        settled = self._settle_reserve_challenge(reserve_challenge)
+        if settled:
+            round_result["reserve_challenge"] = settled
         return round_result
 
     # ── Production ────────────────────────────────────────────────
@@ -2417,8 +2458,8 @@ class IPESimulation:
           - A hegemon (= current reserve currency holder) that each round
             provides or withholds a global public good
           - Goods-based side payments
-          - Coalition-weight challenges that can transfer hegemony (and the
-            reserve currency with it)
+          - Challenges that can transfer hegemony (and the reserve currency
+            with it), decided by challenge_rule
           - An always-on IMF that bails out distressed debtors with strings
 
         A no-op once a Phase 7 round has been played.
@@ -2451,8 +2492,7 @@ class IPESimulation:
               f"global friction -{HEGEMON_PROVISION_BENEFIT:.0%}")
         print(f"  Hegemon withholds -> global friction +"
               f"{HEGEMON_WITHHOLD_PENALTY:.0%}")
-        print(f"  Hegemony transfers if a challenger coalition outweighs the "
-              f"rest of the world.")
+        print(f"  Hegemony transfers if {self._challenge_rule_text()}.")
         print(f"  IMF stands ready to bail out distressed debtors "
               f"(with conditionality).\n")
 
@@ -3108,12 +3148,46 @@ class IPESimulation:
                     cum[c] += h["results"][c]["welfare"]
         return cum
 
+    def _challenge_tally(self, coalition):
+        """
+        Whether a coalition wins a challenge under the game's challenge_rule,
+        with the numbers that decided it: {"succeeded", "votes", "countries",
+        "needed"} for "majority", {"succeeded", "weight", "rest"} for
+        "welfare".
+        """
+        if self.challenge_rule not in CHALLENGE_RULES:
+            raise ValueError(f"challenge_rule must be one of {CHALLENGE_RULES}, "
+                             f"not {self.challenge_rule!r}")
+        if self.challenge_rule == "welfare":
+            cum = self._cumulative_welfare()
+            weight = sum(cum[c] for c in coalition)
+            rest = sum(cum[c] for c in self.countries if c not in coalition)
+            return {"succeeded": weight > rest, "weight": weight, "rest": rest}
+        n = len(self.countries)
+        return {"succeeded": len(coalition) > n // 2, "votes": len(coalition),
+                "countries": n, "needed": n // 2 + 1}
+
+    @staticmethod
+    def _tally_text(t):
+        """A challenge's tally in words, for the printouts."""
+        if "votes" in t:
+            return f"{t['votes']} of {t['countries']} countries ({t['needed']} needed)"
+        return f"cumulative welfare {t['weight']:.1f} vs {t['rest']:.1f} for everyone else"
+
+    def _challenge_rule_text(self):
+        """What it takes to win a challenge under this game's rule."""
+        if self.challenge_rule == "welfare":
+            return ("a challenger coalition outweighs the rest of the world "
+                    "in cumulative welfare")
+        return "a challenger and its backers are a majority of the countries"
+
     def challenge_hegemon(self, challenger: str, backers=None):
         """
-        A challenger and its backers attempt to displace the hegemon. The
-        coalition's combined cumulative welfare is compared against everyone
-        outside the coalition. If the coalition outweighs the rest, hegemony
-        (and the reserve currency role) transfers to the challenger.
+        A challenger and its backers attempt to displace the hegemon, under
+        the game's challenge_rule: by default they need a majority of the
+        countries; under "welfare", more cumulative welfare than everyone
+        outside the coalition. If they win, hegemony (and the reserve
+        currency role) transfers to the challenger.
 
         Returns True if the challenge succeeds.
         """
@@ -3124,16 +3198,13 @@ class IPESimulation:
         for c in coalition:
             if c not in self.countries:
                 raise ValueError(f"Unknown country: {c}")
-        cum = self._cumulative_welfare()
-        coalition_weight = sum(cum[c] for c in coalition)
-        rest_weight = sum(cum[c] for c in self.countries if c not in coalition)
+        tally = self._challenge_tally(coalition)
         print(f"\n{'':=<55}")
         print(f"  HEGEMONIC CHALLENGE: {challenger} vs {self.hegemon}")
         print(f"{'':=<55}")
         print(f"  Coalition: {sorted(coalition)}")
-        print(f"  Coalition weight: {coalition_weight:.1f}  |  "
-              f"Rest of world: {rest_weight:.1f}")
-        if coalition_weight > rest_weight:
+        print(f"  {self._tally_text(tally)}")
+        if tally["succeeded"]:
             old = self.hegemon
             self.hegemon = challenger
             self.reserve_currency_holder = challenger
@@ -3143,6 +3214,59 @@ class IPESimulation:
             return True
         print(f"  Challenge fails; {self.hegemon} retains hegemony.\n")
         return False
+
+    def _settle_reserve_challenge(self, backing):
+        """
+        Settle a round's challenges for the reserve currency (Phase 5+),
+        under the game's challenge_rule -- by default the challenger and its
+        backers must be a majority of the countries. From Phase 7 the
+        hegemony goes with it.
+
+        backing : {country: the country whose challenge it backs}. Naming
+                  itself is a challenge; the holder's own is void. Backing a
+                  country that did not challenge counts for nothing.
+
+        Returns the record for the round, or None if nobody challenged.
+        """
+        backing = backing or {}
+        holder = self.reserve_currency_holder
+        challengers = [c for c in self.countries
+                       if backing.get(c) == c and c != holder]
+        if not challengers:
+            return None
+        record = {"rule": self.challenge_rule,
+                  "holder_before": holder, "holder_after": holder,
+                  "challenges": [],
+                  "void": sorted(b for b, c in backing.items()
+                                 if c not in challengers)}
+        print(f"\n{'':=<55}")
+        print(f"  RESERVE CURRENCY CHALLENGE: held by {holder}")
+        print(f"{'':=<55}")
+        for c in challengers:
+            backers = [b for b in self.countries
+                       if b != c and backing.get(b) == c]
+            tally = self._challenge_tally([c] + backers)
+            record["challenges"].append(
+                {"challenger": c, "backers": backers, **tally})
+            who = f"{c}, backed by {', '.join(backers)}" if backers else f"{c}, alone"
+            print(f"  {who}: {self._tally_text(tally)}")
+            if tally["succeeded"]:
+                record["holder_after"] = c
+        for b in record["void"]:
+            why = "already holds it" if b == holder else \
+                f"backed {backing[b]}, which did not challenge"
+            print(f"  {b} {why}: no effect")
+        winner = record["holder_after"]
+        if winner == holder:
+            print(f"  The challenge fails; {holder} keeps the reserve currency.\n")
+            return record
+        self.reserve_currency_holder = winner
+        if self.phase >= 7:
+            self.hegemon = winner
+        print(f"  ** CHALLENGE SUCCEEDS ** {winner} holds the reserve currency "
+              f"from Round {self.round_num + 1}"
+              f"{' and is the hegemon' if self.phase >= 7 else ''}.\n")
+        return record
 
     def inject_global_crisis(self, severity: float = 0.20,
                              description: str = None):
@@ -3916,9 +4040,9 @@ class IPESimulation:
                 f"  {c:12s}{wto:>5s}{cfg.get('defections', 0):>12d}"
                 f"{nb:>10d}{cum[c]:12.1f}{star}"
             )
-        print(f"\n  (* = hegemon. Power ranking is cumulative welfare; a "
-              f"challenger coalition\n   that outweighs the rest can take "
-              f"hegemony via challenge_hegemon().)\n")
+        print(f"\n  (* = hegemon, ranked by cumulative welfare. A challenge "
+              f"(challenge_hegemon)\n   takes hegemony if "
+              f"{self._challenge_rule_text()}.)\n")
 
     # ── Visualization ─────────────────────────────────────────────
 
@@ -4539,6 +4663,7 @@ class IPESimulation:
             "mnc_tax_revenue": self.mnc_tax_revenue,
             "reserve_currency_holder": self.reserve_currency_holder,
             "reserve_rule": self.reserve_rule,
+            "challenge_rule": self.challenge_rule,
             # Populist governments serve a counted term (populist_rounds_left,
             # inside `countries`); a save without this flag pre-dates the count.
             "populist_terms": True,
@@ -4568,6 +4693,7 @@ class IPESimulation:
         sim.reserve_currency_holder = state.get("reserve_currency_holder", None)
         # Saved before the rule was recorded: the term began under "gains".
         sim.reserve_rule = state.get("reserve_rule", "gains")
+        sim.challenge_rule = state.get("challenge_rule", CHALLENGE_RULE)
         # Phase 5+ fields
         sim.monetary_unions = state.get("monetary_unions", {})
         # Phase 7+ fields

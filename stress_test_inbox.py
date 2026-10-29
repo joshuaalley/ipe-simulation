@@ -13,6 +13,8 @@ round's workbook from them and plays it. What must hold:
   * the built workbook plays through the ordinary loader, and files that
     arrive between the build and the play trigger a rebuild, not a stale play
   * paper rounds work exactly as before
+  * a reserve-currency challenge reaches the finance sheet, the engine and
+    the board, and never carries over to the next round
 """
 import atexit
 import contextlib
@@ -469,6 +471,83 @@ def test_file_times_survive_excel():
           sim.round_num == 2)
 
 
+def test_reserve_challenge_through_the_inbox():
+    print("\n[14] a reserve-currency challenge goes from the files to the board")
+    sim, folder = game("reserve")
+    quiet(sim.award_reserve_currency)
+    quiet(sim.upgrade_to_phase5)
+    holder = sim.reserve_currency_holder
+    challenger, backer, third = [c for c in KEEP if c != holder]
+
+    def submit(rnd, picks):
+        for c in KEEP:
+            extra = {"reserve_challenge": picks[c]} if c in picks else {}
+            drop(folder, f"{c} r{rnd}.json", country_file(c, phase=5, **extra))
+        path = os.path.join(folder, f"round{rnd:02d}.xlsx")
+        _, out = quiet(sim.play_round, path)                       # builds
+        return path, out
+
+    path, out = submit(2, {challenger: challenger, backer: challenger, holder: holder})
+    fin = pd.read_excel(path, sheet_name="finance").set_index("country")
+    check("  the picks land in the finance sheet",
+          fin.loc[challenger, "reserve_challenge"] == challenger
+          and fin.loc[backer, "reserve_challenge"] == challenger
+          and pd.isna(fin.loc[third, "reserve_challenge"]))
+    check("  the report shows the challenge and the count before anything plays",
+          f"{challenger} challenges {holder}, backed by {backer} -- 2 of 4 countries, "
+          "3 needed" in out and f"{holder} already holds it" in out, out)
+    check("  the loader passes the picks on",
+          sim.load_round(path)["reserve_challenge"]
+          == {challenger: challenger, backer: challenger, holder: holder})
+    sim.challenge_rule = "welfare"
+    _, lines, _ = classroom._plan_from_inbox(sim, path, os.path.join(folder, "inbox"))
+    sim.challenge_rule = "majority"
+    check("  under the 'welfare' rule the report says so instead of counting",
+          any(f"{challenger} challenges" in l and "on cumulative welfare" in l
+              for l in lines), "\n".join(lines))
+    quiet(sim.play_round, path)                                    # plays
+    board = classroom.scoreboard_html(sim)
+    check("  two of four is not enough, and the board says so",
+          sim.round_num == 2 and sim.reserve_currency_holder == holder
+          and "Reserve currency" in board and "2 of 4" in board
+          and f"{holder} keeps it" in board)
+
+    path, out = submit(3, {challenger: challenger, backer: challenger, third: challenger})
+    quiet(sim.play_round, path)
+    check("  three of four wins; the board says from which round",
+          sim.reserve_currency_holder == challenger
+          and f"{challenger} holds it from Round 4" in classroom.scoreboard_text(sim),
+          classroom.scoreboard_text(sim))
+    back, _ = quiet(classroom.resume, os.path.join(folder, "state"), verbose=False)
+    check("  the saved snapshot has the new holder", back.reserve_currency_holder == challenger)
+
+    drop(folder, f"{backer} r4.json",
+         country_file(backer, phase=5, reserve_challenge="Atlantis"))
+    path = os.path.join(folder, "round04.xlsx")
+    _, out = quiet(sim.play_round, path)                           # builds
+    fin = pd.read_excel(path, sheet_name="finance").set_index("country")
+    check("  a file naming no real country is unusable, and says why",
+          "file unusable" in out and "'Atlantis' is not a country" in out, out)
+    check("  picks never carry over: no file, no challenge",
+          fin["reserve_challenge"].isna().all() and "reserve_challenge" not in sim.load_round(path))
+
+    book = pd.read_excel(path, sheet_name=None)
+    book["finance"]["reserve_challenge"] = book["finance"]["reserve_challenge"].astype(object)
+    book["finance"].loc[0, "reserve_challenge"] = "Atlantis"
+    typed = os.path.join(folder, "typed.xlsx")
+    _write(typed, book)
+    try:
+        sim.load_round(typed)
+        check("  a typed workbook naming no real country is refused", False, "no error")
+    except ValueError as e:
+        check("  a typed workbook naming no real country is refused",
+              "reserve_challenge 'Atlantis' is not a country" in str(e), str(e))
+    book["finance"] = book["finance"].drop(columns="reserve_challenge")
+    _write(typed, book)
+    check("  a workbook from before the column still loads, with no challenge",
+          "reserve_challenge" not in sim.load_round(typed))
+
+
 def main():
     for t in [test_newest_wins_and_junk_is_set_aside, test_stale_files_wait,
               test_trades_need_both_sides, test_build_and_play,
@@ -476,7 +555,8 @@ def main():
               test_unusable_files_are_never_half_applied, test_paper_rounds_unchanged,
               test_money_debt_institutions_fields, test_report_writes_nothing,
               test_real_round8_through_the_inbox, test_page_data,
-              test_pass_through_listed_first, test_file_times_survive_excel]:
+              test_pass_through_listed_first, test_file_times_survive_excel,
+              test_reserve_challenge_through_the_inbox]:
         try:
             t()
         except Exception:
