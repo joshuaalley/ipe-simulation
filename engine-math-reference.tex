@@ -97,7 +97,10 @@ For each country the engine computes base utility, then applies multiplicative
 adjustments in this fixed order (later phases only):
 \[
 U_{\text{base}} \xrightarrow{\text{Ph.5 crisis}} \xrightarrow{\text{Ph.7 hegemon cost}}
-\xrightarrow{\text{Ph.7 global crisis}} \underbrace{U_{\text{trade}}}_{\text{gains-from-trade measured here}}
+\xrightarrow{\text{Ph.7 global crisis}} \underbrace{U_{\text{trade}}}_{\text{gains-from-trade measured here}},
+\]
+\[
+U_{\text{trade}} \xrightarrow{\text{Ph.5 money}} \xrightarrow{\text{MNC tax}} \xrightarrow{\text{compensation}}
 \xrightarrow{\text{Ph.6 debt}} U_{\text{final}}.
 \]
 Gains-from-trade are measured at $U_{\text{trade}}$ --- before debt --- so that
@@ -333,7 +336,8 @@ nothing). Side payments that go both ways between two countries in one round
 are a trade in disguise, and are settled as one: a good sent both ways nets
 out, and the rest pays tariffs, FX friction and currency costs and counts in
 $M_i$, not $S_i$ (several goods split into one trade per pair of goods, by
-world-price value).
+world-price value). Three or more paying each other around a ring pay the
+border the same way, each payment as a one-way trade.
 
 \textbf{The endogenous backlash.} If a round ends with $A_i < 30$ the
 government falls (one round is enough; \code{APPROVAL\_CRISIS\_ROUNDS}): \code{inject\_populist\_backlash} fires automatically (20\%
@@ -398,6 +402,7 @@ What each choice buys or costs:
   &\quad U \mathrel{\times}= \big(1 + \varepsilon\,(1-d)\,x\big) \text{ every round}, \quad \varepsilon = 0.2 \\
 \text{capital controls:}&\quad \text{hosted firms' output} \times (1-0.15),
   \ \text{no foreign borrowing} \\
+\text{a firm's profit:}&\quad \pi \times d_{\text{host}}, \ \text{or } \pi \text{ if it exports (paid in world prices)} \\
 \text{FX friction:}&\quad \mathrm{fx} = 0.02 \ (+0.03 \text{ just after a warning}) \\
 \text{a peg:}&\quad d \mathrel{\times}= d^{R}_{t} / d^{R}_{t-1}
 \end{align*}
@@ -407,8 +412,8 @@ currency lost since the peg last tracked it --- the anchor's printing, a warning
 or crisis, an attack between rounds. Tracking starts the round a country pegs
 (no retroactive drop) and stops when it floats; the anchor's own union does not
 follow itself.
-FX friction is zero with the reserve holder, inside a monetary union, or between
-two pegged currencies. Friction and the weak-currency cut stack on tariffs
+FX friction is zero with the reserve holder (or a union partner sharing its
+currency), inside a monetary union, or between two pegged currencies. Friction and the weak-currency cut stack on tariffs
 multiplicatively:
 $\text{received} = \text{qty}\,(1-t)(1-\mathrm{fx})\big(1-\lambda(1-d)\big)$. In the
 export gain, $x$ is the share of the country's own output (at world prices) that it
@@ -532,10 +537,12 @@ or welfare. The friction added to a trade leg, on top of the Phase-5 base and an
 Phase-6 default friction, is
 \[
 \Delta_{\text{inst}} =
-\underbrace{\big({-}0.05 \text{ if provide else } {+}0.07\big)}_{\text{hegemon public good}}
+\underbrace{\big(0 \text{ if provide else } {+}0.07\big)}_{\text{hegemon public good}}
 \;\;\underbrace{-\,0.02}_{\substack{\text{WTO dividend, if both members}\\\text{\& neither defected}\\(\times 0.5 \text{ if debt-banned})}} ,
 \]
-then the total $\mathrm{fx}$ is clamped to $[0,1]$. The hegemon pays
+then the total $\mathrm{fx}$ is clamped to $[0,1]$. Providing leaves friction at
+its normal level rather than cutting it: at the 2\% base, a cut would take every
+trade to zero and leave the WTO dividend nothing to cut. The hegemon pays
 $U \mathrel{\times}= 0.96$ when it provides. A pending \textbf{global crisis} of
 severity $\varsigma$ scales every country's welfare by
 \[
@@ -555,8 +562,9 @@ side payment can hand on an import).
 game-theoretic equilibrium. The challenge rule is a head count (or, by choice, a
 raw weight comparison), not a bargaining solution; ``defection'' is simply applying a tariff above a binding.
 The hegemony parameters are tuned (see the simulation notes) so that provision is
-collectively beneficial in both WTO-none and WTO-all settings while the hegemon is
-still individually tempted to free-ride.
+collectively beneficial in both WTO-none and WTO-all settings while a large hegemon
+is still tempted to free-ride. The cost scales with the hegemon's own welfare, so a
+small, trade-dependent hegemon may gain from providing anyway.
 
 \vspace{8pt}
 \noindent\rule{\textwidth}{0.4pt}

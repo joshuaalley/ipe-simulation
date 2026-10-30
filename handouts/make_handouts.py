@@ -467,7 +467,8 @@ Export fixed cost & --- & {fixed} \\
   \item \textbf{{Your host's MNC tax}} takes its \% of your revenue (premium
     included), so a lower-tax host keeps more of your profit --- but moving
     means producing nothing that round. From Phase 5 your profit is worth what
-    your host's currency is worth.
+    your host's currency is worth, unless you export: exports are paid in world
+    prices.
 \end{{itemize}}
 """
 

@@ -553,6 +553,186 @@ def test_reserve_challenge_through_the_inbox():
           "reserve_challenge" not in sim.load_round(typed))
 
 
+def phase5_game(sub):
+    sim, folder = game(sub)
+    quiet(sim.award_reserve_currency)
+    quiet(sim.upgrade_to_phase5)
+    return sim, folder
+
+
+def test_bad_files_are_reported_not_fatal():
+    print("\n[15] one bad file is reported and set aside; it never stops the build")
+    sim, folder = game("badfiles")
+    path = os.path.join(folder, "round02.xlsx")
+    alloc_bad = ((-5, 45, 20), (15, 5, 5))
+    cases = {
+        "a negative number": (country_file("Bosque", alloc=alloc_bad), "below 0"),
+        "workers that don't add up": (country_file("Bosque", alloc=((40, 12, 2), (15, 5, 5))),
+                                      "workers add up to 54"),
+        "capital that doesn't add up": (country_file("Bosque", alloc=((40, 12, 8), (15, 5, 1))),
+                                        "capital adds up to 21"),
+        "production that isn't a table": (country_file("Bosque") | {"production": 5}, "layout"),
+        "tariffs that aren't a table": (country_file("Bosque") | {"tariffs": [1, 2]}, "layout"),
+        "trades that aren't a list": (country_file("Bosque") | {"trades": 7}, "layout"),
+        "a negative side payment": (country_file("Bosque") | {"side_payments": [
+            {"qty": -5, "good": "cloth", "to": "Llano"}]}, "below 0"),
+    }
+    for c in KEEP[1:]:
+        drop(folder, f"{c}.json", country_file(c))
+    for label, (data, says) in cases.items():
+        drop(folder, "Bosque.json", data)
+        try:
+            _, lines, _ = quiet(classroom._plan_from_inbox, sim, path,
+                                os.path.join(folder, "inbox"))[0]
+        except Exception as e:
+            check(f"  {label}", False, f"{type(e).__name__}: {e}")
+            continue
+        row = next(l for l in lines if l.strip().startswith("Bosque"))
+        check(f"  {label}: unusable, says why, repeats last round",
+              "file unusable" in row and says in row and "repeating Round 1" in row, row)
+    drop(folder, "Bosque.json", country_file("Bosque") | {"country": ["Bosque"]})
+    _, lines, _ = quiet(classroom._plan_from_inbox, sim, path, os.path.join(folder, "inbox"))[0]
+    check("  a file whose country is a list is set aside",
+          any("Set aside Bosque.json" in l for l in lines), str(lines))
+
+    sim, folder = game("badmove")
+    all_four(folder)
+    drop(folder, "F1.json", {"ipe": 1, "kind": "firm", "firm": "F1", "phase": 3,
+                             "scale": 20, "relocate_to": "Sabine", "export": False})
+    path = os.path.join(folder, "round02.xlsx")
+    _, out = quiet(sim.play_round, path)
+    check("  a firm moving to its owner's home is reported, not left to stop the round",
+          "can't move to Sabine" in out and "THIS ROUND CAN'T PLAY" not in out, out[-500:])
+    _, out = quiet(sim.play_round, path)
+    check("  ...and the round plays with the firm where it was",
+          sim.round_num == 2 and sim.firms["F1"]["host"] != "Sabine")
+
+    sim, folder = phase5_game("badmoney")
+    sim._mon("Llano")["money_supply_growth"] = -0.10
+    drop(folder, "Bosque.json", country_file("Bosque", phase=5, money={"money_supply_growth": 3}))
+    drop(folder, "Llano.json", country_file("Llano", phase=5))
+    drop(folder, "Sabine.json", country_file("Sabine", phase=4))
+    drop(folder, "Trinity.json", country_file("Trinity", phase=5, money={"money_supply_growth": -5}))
+    _, out = quiet(sim.inbox_report, folder)
+    check("  a money growth that isn't a choice is reported",
+          "money growth 3.0% is not one of the choices" in out, out)
+    check("  a rate that repeats by default is flagged",
+          "Llano sent no new rate, so last round's -10% repeats" in out, out)
+    check("  ...not for a country that chose",
+          "Trinity sent no new rate" not in out)
+    check("  a file from the wrong phase of the same era is noted",
+          "filled in for Phase 4, this is Phase 5" in out, out)
+
+
+def test_dry_run_flags_what_wont_go_through():
+    print("\n[16] the build report says what won't go through, while it can be fixed")
+    sim, folder = game("dry")
+    for c in KEEP:
+        drop(folder, f"{c}.json", country_file(c))
+    drop(folder, "Bosque.json", country_file("Bosque") | {"side_payments": [
+        {"qty": 50, "good": "machinery", "to": "Sabine"}]})
+    path = os.path.join(folder, "round02.xlsx")
+    state = json.dumps(sim.get_state())
+    _, out = quiet(sim.play_round, path)
+    check("  a side payment that can't be covered is named before the round plays",
+          "Won't go through" in out and "Bosque cannot pay 50 machinery" in out
+          and sim.round_num == 1, out[-400:])
+    check("  the trial leaves the game untouched", json.dumps(sim.get_state()) == state)
+    check("  ...and shows no results", "elfare" not in out, out)
+    _, out = quiet(sim.inbox_report, folder)
+    check("  the report while teams are deciding says the same",
+          "Bosque cannot pay 50 machinery" in out, out)
+    drop(folder, "Bosque (1).json", country_file("Bosque"))
+    _, out = quiet(sim.play_round, path)
+    check("  fixed, it no longer shows", "Won't go through" not in out, out[-400:])
+
+    sim, folder = phase5_game("dryunion")
+    quiet(sim.form_monetary_union, "Bosque", "Llano", name="U")
+    drop(folder, "Bosque.json", country_file("Bosque", phase=5, money={"money_supply_growth": 5}))
+    drop(folder, "Llano.json", country_file("Llano", phase=5, money={"money_supply_growth": 2}))
+    drop(folder, "Sabine.json", country_file("Sabine", phase=5))
+    drop(folder, "Trinity.json", country_file("Trinity", phase=5))
+    path = os.path.join(folder, "round02.xlsx")
+    _, out = quiet(sim.play_round, path)
+    check("  union members who disagree are caught at the build, not at the play",
+          "THIS ROUND CAN'T PLAY YET" in out and "union members must be identical" in out, out[-500:])
+
+
+def test_late_file_stays_in_the_inbox():
+    print("\n[17] a file that lands while the round plays stays out of that round")
+    sim, folder = game("late")
+    all_four(folder)
+    path = os.path.join(folder, "round02.xlsx")
+    quiet(sim.play_round, path)
+    real = sim.run_round
+
+    def landing_mid_round(**kw):
+        drop(folder, "Bosque late.json", country_file("Bosque", mnc=9))
+        return real(**kw)
+
+    sim.run_round = landing_mid_round
+    _, out = quiet(sim.play_round, path)
+    del sim.run_round
+    inbox = os.path.join(folder, "inbox")
+    check("  it stays in the inbox, and the output says so",
+          sim.round_num == 2 and os.listdir(inbox) == ["Bosque late.json"]
+          and "did not count: Bosque late.json" in out, out[-300:])
+    check("  the files that were played moved as usual",
+          len(os.listdir(os.path.join(folder, "round02"))) == 4)
+
+
+def test_bindings_through_the_inbox():
+    print("\n[18] WTO bindings come in on the round form")
+    sim, folder = game("bind")
+    quiet(sim.award_reserve_currency)
+    quiet(sim.upgrade_to_phase5)
+    quiet(sim.upgrade_to_phase6)
+    quiet(sim.upgrade_to_phase7)
+    for c in KEEP:
+        extra = {}
+        if c == "Bosque":
+            extra = {"institutions": {"join_wto": True, "bound_tariffs": {"cloth": 10, "wine": 0}}}
+        drop(folder, f"{c}.json", country_file(c, phase=7, **extra))
+    path = os.path.join(folder, "round02.xlsx")
+    quiet(sim.play_round, path)
+    inst = sim.load_round(path)["institutional_decisions"]
+    check("  the loader passes them on, as shares; a 0% binding is a binding",
+          inst["Bosque"]["bound_tariffs"] == {"cloth": 0.1, "wine": 0.0}, str(inst))
+    check("  nobody else's are invented",
+          "bound_tariffs" not in inst.get("Llano", {}), str(inst.get("Llano")))
+    quiet(sim.play_round, path)
+    check("  the round applies them", sim.countries["Bosque"]["bound_tariffs"] == {"cloth": 0.1, "wine": 0.0})
+    drop(folder, "Bosque 2.json", country_file("Bosque", phase=7, tariffs={"Llano": {"cloth": 20}}))
+    for c in KEEP[1:]:
+        drop(folder, f"{c} 2.json", country_file(c, phase=7))
+    path = os.path.join(folder, "round03.xlsx")
+    quiet(sim.play_round, path)
+    fin = pd.read_excel(path, sheet_name="finance").set_index("country")
+    check("  the next workbook keeps them", abs(fin.loc["Bosque", "bind_cloth"] - 0.1) < 1e-12)
+    r = quiet(sim.play_round, path)[0]
+    check("  ...and a tariff above one is a defection",
+          sim.round_num == 3 and r["defected"] == ["Bosque"], str(r["defected"]))
+
+
+def test_board_shows_side_payments():
+    print("\n[19] the board shows side payments, made or failed")
+    sim, folder = game("board")
+    for c in KEEP:
+        drop(folder, f"{c}.json", country_file(c))
+    drop(folder, "Bosque.json", country_file("Bosque") | {"side_payments": [
+        {"qty": 2, "good": "cloth", "to": "Sabine"}, {"qty": 50, "good": "machinery", "to": "Sabine"}]})
+    path = os.path.join(folder, "round02.xlsx")
+    quiet(sim.play_round, path)
+    quiet(sim.play_round, path)
+    board = classroom.scoreboard_html(sim)
+    check("  both lines are on the board",
+          "Side payments" in board and "Bosque -&gt; Sabine" not in board
+          and "Bosque -> Sabine: 2 cloth" in board and "Bosque cannot pay 50 machinery" in board,
+          board[-600:])
+    check("  a round without any shows no heading",
+          "Side payments" not in classroom.scoreboard_html(sim, round_num=1))
+
+
 def main():
     for t in [test_newest_wins_and_junk_is_set_aside, test_stale_files_wait,
               test_trades_need_both_sides, test_build_and_play,
@@ -561,7 +741,11 @@ def main():
               test_money_debt_institutions_fields, test_report_writes_nothing,
               test_real_round8_through_the_inbox, test_page_data,
               test_pass_through_listed_first, test_file_times_survive_excel,
-              test_reserve_challenge_through_the_inbox]:
+              test_reserve_challenge_through_the_inbox,
+              test_bad_files_are_reported_not_fatal,
+              test_dry_run_flags_what_wont_go_through,
+              test_late_file_stays_in_the_inbox, test_bindings_through_the_inbox,
+              test_board_shows_side_payments]:
         try:
             t()
         except Exception:

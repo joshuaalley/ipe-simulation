@@ -402,6 +402,72 @@ def test_swap_is_a_trade():
 # ────────────────────────────────────────────────────────────────────
 # 7. Insane tariffs (100% destruction)
 # ────────────────────────────────────────────────────────────────────
+def test_side_payment_ring():
+    print("\n[6e] side payments around a ring are trades too; a chain is not")
+    dec = {
+        "Brazos":  {"production": {"cloth": 75, "wine": 75}},
+        "Bosque":  {"production": {"cloth": 60, "wine": 0}},
+        "Llano":   {"production": {"cloth": 0,  "wine": 100}, "tariffs": {"Bosque": {"cloth": 0.25}}},
+        "Trinity": {"production": {"cloth": 60, "wine": 60}},
+        "Pecos":   {"production": {"cloth": 0,  "wine": 50}},
+        "Sabine":  {"production": {"cloth": 100, "wine": 0}},
+    }
+    ring = [("Bosque", "Llano", "cloth", 20), ("Llano", "Sabine", "wine", 20),
+            ("Sabine", "Bosque", "cloth", 20)]
+    r = fresh_phase1().run_round(dec, [], side_payments=ring)
+    llano = r["results"]["Llano"]
+    check("  each payment in a ring settles as a one-way trade",
+          len(r["trades_executed"]) == 3, str(r["trades_executed"]))
+    check("  ...pays the tariff (Llano gets 15 of the 20 cloth)",
+          abs(llano["consumption"]["cloth"] - 15) < 1e-6, str(llano["consumption"]))
+    check("  ...counts as imports for approval, not as compensation",
+          llano["approval"]["exposure"] > 0 and llano["approval"]["net_side_payments"] == 0.0)
+    check("  ...and the log says why, each line a one-way shipment",
+          any("in a ring" in l for l in r["side_payment_log"])
+          and any(l.strip().startswith("Bosque -> Llano: 20 cloth") and " for " not in l
+                  for l in r["trade_log"]), f"{r['side_payment_log']} {r['trade_log']}")
+    chain = [("Bosque", "Llano", "cloth", 20), ("Llano", "Sabine", "wine", 20)]
+    r = fresh_phase1().run_round(dec, [], side_payments=chain)
+    check("  a chain that doesn't come back stays side payments, border-free",
+          not r["trades_executed"] and r["results"]["Llano"]["consumption"]["cloth"] == 20,
+          str(r["trades_executed"]))
+
+
+def test_bad_amounts_refused():
+    print("\n[6f] negative amounts and unknown names are refused before anything moves")
+    good = {n: {"production": {
+        "labor":   {g: PHASE2_COUNTRIES[n]["labor"] / 3 for g in PHASE2_GOODS},
+        "capital": {g: PHASE2_COUNTRIES[n]["capital"] / 3 for g in PHASE2_GOODS},
+    }} for n in PHASE2_COUNTRIES}
+
+    def refused(dec=good, trades=(), side_payments=None):
+        sim = fresh_phase2()
+        try:
+            sim.run_round(dec, list(trades), side_payments=side_payments)
+        except ValueError as e:
+            return str(e) if sim.round_num == 0 and not sim.history else None
+        return None
+
+    dec = {n: dict(d) for n, d in good.items()}
+    dec["Trinity"] = {"production": {"labor": {"cloth": -100, "wine": 100, "machinery": 120},
+                                     "capital": good["Trinity"]["production"]["capital"]}}
+    check("  negative workers in Phase 2 (the total still adds up)",
+          "negative labor" in (refused(dec) or ""))
+    dec["Trinity"] = {"production": {"labor": good["Trinity"]["production"]["labor"],
+                                     "capital": {"cloth": -100, "wine": 100, "machinery": 200}}}
+    check("  negative capital", "negative capital" in (refused(dec) or ""))
+    check("  a trade with negative amounts, which would make goods from nothing",
+          "0 or more" in (refused(trades=[("Bosque", "Trinity", "cloth", -30, "machinery", -5)]) or ""))
+    check("  a side payment with a negative amount",
+          "0 or more" in (refused(side_payments=[("Bosque", "Trinity", "cloth", -30)]) or ""))
+    check("  a trade with an unknown country",
+          "Atlantis" in (refused(trades=[("Atlantis", "Bosque", "cloth", 1, "wine", 1)]) or ""))
+    check("  a trade with an unknown good",
+          "oil" in (refused(trades=[("Trinity", "Bosque", "oil", 1, "wine", 1)]) or ""))
+    check("  a trade that isn't six fields",
+          "needs" in (refused(trades=[("Trinity", "Bosque", "wine")]) or ""))
+
+
 def test_full_tariff():
     print("\n[7] 100% tariff destroys all imports")
     sim = fresh_phase1()
@@ -801,6 +867,8 @@ def main():
         test_pass_through_any_order,
         test_pass_on_side_payment,
         test_swap_is_a_trade,
+        test_side_payment_ring,
+        test_bad_amounts_refused,
         test_full_tariff,
         test_trade_exceeds_inventory,
         test_phase2_stranded_labor,

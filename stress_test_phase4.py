@@ -430,6 +430,11 @@ def test_export_premium():
           all(gain[f] < 0 for f in sim.firms if tier(sim, f) == "LOW"))
     check("  break-even is 32 units for every firm (f_x / price = 8)",
           all(abs(sim.export_breakeven(f) - 32.0) < 1e-9 for f in sim.firms))
+    taxed = copy.deepcopy(sim)
+    for c in taxed.countries:
+        taxed.countries[c]["mnc_tax_choice"] = 0.20
+    check("  the premium is taxed too: at a 20% MNC tax it takes 40 units",
+          all(abs(taxed.export_breakeven(f) - 40.0) < 1e-9 for f in taxed.firms))
 
     # no free lunch: at no scale does a LOW firm gain by exporting
     worst = max(export_gain(sim, scale=k)[0][f]
@@ -537,6 +542,13 @@ def test_reserve_currency_rules():
         z.award_reserve_currency("half_size")
     check("  a round with zero no-trade welfare counts as 0, not NaN",
           z.reserve_currency_holder == big)
+    z = copy.deepcopy(sim)
+    z.history[0]["results"][big]["gains_from_trade_pct"] = float("inf")
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        z.award_reserve_currency("gains")
+    check("  plain average: making none of a good can't win the race outright",
+          z.reserve_currency_holder == small and "inf" not in out.getvalue(),
+          out.getvalue()[-300:])
 
     try:
         copy.deepcopy(sim).award_reserve_currency("biggest")

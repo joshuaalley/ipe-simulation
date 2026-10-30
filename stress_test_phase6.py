@@ -376,6 +376,40 @@ def test_debt_measured_against_the_reserve():
           all(rows[c]["original sin (weak currency)"] == 0.0 for c in rows), str(rows)[:200])
 
 
+def test_dashboard_rate_and_empty_bailout():
+    print("\n[17] the dashboard's rate is the real one; a bailout needs a debt")
+    import contextlib, io
+    from engine import DEBT_BASE_RATE, DEBT_RISK_PREMIUM
+    s = fresh_phase6()
+    for _ in range(3):
+        r = run6(s, debt={"Bosque": {"borrow": 1000}})          # the cap, three times
+    stock = r["results"]["Bosque"]["debt"]["debt_stock"]
+    want = DEBT_BASE_RATE + DEBT_RISK_PREMIUM * stock / capacity(r, "Bosque")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        s.print_debt_dashboard()
+    row = next(l for l in out.getvalue().splitlines() if l.strip().startswith("Bosque"))
+    check("  a heavy debtor's rate shows, not the base rate",
+          want > 0.08 and f"{want:.0%}" in row, f"{want:.3f} in {row!r}")
+    r2 = run6(s, debt={"Bosque": {"borrow": 0}})
+    check("  ...and it is what the next round charges",
+          abs(r2["results"]["Bosque"]["debt"]["rate"] - want) < 1e-9,
+          str(r2["results"]["Bosque"]["debt"]["rate"]))
+    strong = next(c for c in s.countries if c != s.reserve_currency_holder)
+    s._mon(strong)["depreciation_factor"] = s._mon(s.reserve_currency_holder)["depreciation_factor"] * 1.19
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        s.print_debt_dashboard()
+    row = next(l for l in out.getvalue().splitlines() if l.strip().startswith(strong))
+    check("  the dashboard shows a currency's value against the reserve",
+          "VsReserve" in out.getvalue() and "1.19" in row, row)
+    s = fresh_phase6()
+    with contextlib.redirect_stdout(io.StringIO()):
+        s.request_imf_bailout("Llano")
+    check("  no debt: no bailout, and no austerity for nothing",
+          s.countries["Llano"].get("imf_austerity_until", 0) == 0 and "imf_austerity" not in s.countries["Llano"])
+
+
 def main():
     for t in [test_upgrade, test_borrow_grows_welfare_and_stock, test_interest_and_rate,
               test_service_lowers_welfare_and_stock, test_original_sin, test_default,
@@ -383,7 +417,8 @@ def main():
               test_imf_bailout, test_save_restore, test_display,
               test_validation_ordering, test_default_costs_face_value,
               test_controls_block_borrowing, test_final_round_settlement,
-              test_debt_measured_against_the_reserve]:
+              test_debt_measured_against_the_reserve,
+              test_dashboard_rate_and_empty_bailout]:
         try:
             t()
         except Exception:

@@ -21,6 +21,7 @@ dynamics real. Designed to run in a Jupyter notebook.
 
 import datetime
 import math
+import numbers
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -567,7 +568,7 @@ PEG_PEG_FRICTION = 0.0         # friction multiplier when both sides peg (was 0.
 
 # Graduated stress consequences:
 WARNING_DEVALUATION = 0.90     # stress=1: currency drops 10%
-WARNING_FRICTION_BUMP = 0.03   # warned country: +3% FX friction the following round
+WARNING_FRICTION_BUMP = 0.03   # warned country: +3% FX friction in the warning's round
 CRISIS_DEVALUATION = 0.70      # stress=2: currency drops 30%
 CRISIS_WELFARE_HIT = 0.10      # stress=2: 10% welfare hit that round
 
@@ -610,11 +611,13 @@ IMF_AUSTERITY_ROUNDS = 2       # ...for this many rounds
 
 WTO_DIVIDEND = 0.02            # friction cut between non-defecting WTO members
 HEGEMON_PROVISION_COST = 0.04  # hegemon pays 4% of its welfare to lead
-HEGEMON_PROVISION_BENEFIT = 0.05  # providing cuts global friction 5%
 HEGEMON_WITHHOLD_PENALTY = 0.07   # withholding adds 7% global friction
-# Tuned so provision is clearly collectively beneficial (system better off when
-# the hegemon provides, in both WTO-none and WTO-all settings) while the
-# hegemon is still individually tempted to free-ride (it bears the cost).
+# Providing leaves friction where it is. It must not cut below normal: at the
+# 2% baseline that takes every trade to zero, and the WTO dividend then has
+# nothing left to cut. Tuned so provision is clearly collectively beneficial
+# (system better off when the hegemon provides, in both WTO-none and WTO-all
+# settings) while a large hegemon is still tempted to free-ride (it bears the
+# cost). A small, trade-dependent one may gain from providing anyway.
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -623,7 +626,7 @@ HEGEMON_WITHHOLD_PENALTY = 0.07   # withholding adds 7% global friction
 
 class IPESimulation:
     """
-    Turn-based international political economy simulation.
+    Round-based international political economy simulation.
 
     Usage:
         sim = IPESimulation(PHASE1_COUNTRIES, PHASE1_GOODS, phase=1)
@@ -672,6 +675,34 @@ class IPESimulation:
         # debt falls due in that round, so borrowing at the end isn't free.
         self.final_round = None
         self._no_clear_target = False     # set by each exposure ranking
+        # Shocks fired since the last round; the next round records them.
+        self._shocks_before = []
+        self._settling = False            # True while a round settles itself
+
+    def once(self, key: str) -> bool:
+        """
+        True the first time this is asked, per kernel and per round, so a
+        shock can sit in the round's own cell, above its play line:
+
+            if sim.round_num == 17 and sim.once("attack"):
+                sim.trigger_speculative_attack(show=False)
+            sim.play_round("rounds/round18.xlsx", scale=1.4)
+
+        Re-running the cell doesn't fire it twice. A kernel restart loses a
+        shock that hasn't been played yet, and this asks again, so the shock
+        fires again on the fresh game: exactly once either way.
+        """
+        fired = self.__dict__.setdefault("_once_fired", set())
+        tag = (self.round_num, key)
+        if tag in fired:
+            return False
+        fired.add(tag)
+        return True
+
+    def _log_shock(self, description):
+        """Note a shock fired between rounds, for the next round's record."""
+        if not self._settling:
+            self._shocks_before.append(description)
 
     # ── Core round logic ──────────────────────────────────────────
 
@@ -789,6 +820,12 @@ class IPESimulation:
                 raise ValueError(
                     "Debt decision validation failed:\n" + "\n".join(dbt_errors)
                 )
+        flow_errors = self._validate_flows(trades, side_payments)
+        if flow_errors:
+            self.round_num -= 1
+            raise ValueError(
+                "Trade validation failed:\n" + "\n".join(flow_errors)
+            )
         reserve_challenge = {c: b for c, b in (reserve_challenge or {}).items() if b}
         if reserve_challenge:
             if self.phase < 5:
@@ -1082,11 +1119,17 @@ class IPESimulation:
                     production_varieties[name]
                 )
 
+        # What was actually applied this round, before any floor changes below.
+        # Read by next round's export premium (export_premium).
+        tariff_wall = self._applied_tariffs(decisions)
+
         # A populist government whose term is up steps down; then governments
         # that ended the round below the approval floor fall, so the
         # protectionist turn bites from the NEXT round.
+        self._settling = True
         populist_ended = self._end_populist_terms(results)
         governments_fallen = self._resolve_governments(results)
+        self._settling = False
 
         round_result = {
             "round": self.round_num,
@@ -1096,8 +1139,7 @@ class IPESimulation:
             "trades_executed": trade_records,
             "governments_fallen": governments_fallen,
             "populist_ended": populist_ended,
-            # Read by next round's export premium (export_premium).
-            "tariff_wall": self._applied_tariffs(decisions),
+            "tariff_wall": tariff_wall,
             # When it was played: decision files that reach the class inbox
             # before this are stale for the next round.
             "played_at": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -1123,6 +1165,9 @@ class IPESimulation:
             round_result["global_crisis_factor"] = crisis_factor
             # Crisis is one-shot: consume it
             self._pending_global_crisis = None
+        if self._shocks_before:
+            round_result["shocks_before"] = self._shocks_before
+            self._shocks_before = []
         self.history.append(round_result)
         # A challenge for the reserve currency is settled now; a winner
         # holds it from the next round.
@@ -1259,9 +1304,10 @@ class IPESimulation:
             profit_nominal = revenue - op_cost - fixed_cost - mnc_tax
             # Phase 5+: profits accrue in the HOST currency. Convert to real
             # (numeraire) terms via the host's depreciation factor — a firm in
-            # a depreciating/crisis-hit host keeps less real value.
+            # a depreciating/crisis-hit host keeps less real value. An exporter
+            # is paid in world prices, so its profit doesn't move with the host.
             dep = 1.0
-            if self.phase >= 5:
+            if self.phase >= 5 and not exporting:
                 dep = self._mon(host).get("depreciation_factor", 1.0)
             profit_real = profit_nominal * dep
             self.firms[fid]["cumulative_profit"] += profit_real
@@ -1386,13 +1432,22 @@ class IPESimulation:
 
     def export_breakeven(self, fid, host=None):
         """
-        Units a firm must ship before exporting pays: the fixed cost over the
-        premium it would earn per unit. None when the premium is zero.
+        Units a firm must ship before exporting pays: the fixed cost over what
+        exporting adds per unit, which is the premium after the host's MNC tax
+        and, from Phase 5, what the firm keeps by being paid in world prices
+        instead of converting at the host's FX index. None when that is nothing.
         """
         cfg = self.firm_config[fid]
         host = self.firms[fid]["host"] if host is None else host
-        per_unit = self.world_prices[cfg["industry"]] * self.export_premium(
-            host, cfg["industry"])
+        price = self.world_prices[cfg["industry"]]
+        premium = self.export_premium(host, cfg["industry"])
+        keep = price * (1.0 - self.mnc_tax_in_force(host))
+        dep, per_scale = 1.0, cfg["productivity"]
+        if self.phase >= 5:
+            dep = self._mon(host).get("depreciation_factor", 1.0)
+            if self._mon(host).get("capital_controls"):
+                per_scale *= (1 - CONTROLS_FIRM_CUT)
+        per_unit = keep * (1.0 + premium - dep) - (cfg["unit_cost"] / per_scale) * (1.0 - dep)
         if per_unit <= 1e-12:
             return None
         return cfg["fixed_export_cost"] / per_unit
@@ -1424,9 +1479,11 @@ class IPESimulation:
         if EXPORT_TARIFF_GATE:
             print(f"  Premium = {EXPORT_MARKET_GAIN:.0%} x (1 - the average "
                   f"tariff other countries put on that good from your host "
-                  f"last round).\n")
-        else:
-            print()
+                  f"last round).")
+        if self.phase >= 5:
+            print("  An exporter is paid in world prices: its profit doesn't move "
+                  "with the host's FX index,\n  which the units above allow for.")
+        print()
 
     # ── Monetary & FX (Phase 5+) ──────────────────────────────────
 
@@ -1641,17 +1698,21 @@ class IPESimulation:
             events[c].setdefault("anchor_follow", 1.0)
         return events
 
+    def _uses_reserve(self, country):
+        """True for the reserve holder and anyone sharing its currency in a union."""
+        rc = self.reserve_currency_holder
+        return rc in self.countries and self._mon(country) is self._mon(rc)
+
     def _compute_fx_friction(self, exporter, importer):
         """
         Fraction of a cross-border shipment lost to currency friction
-        (stacks on top of tariffs). Zero if the reserve currency holder is a
-        party, or if both sides share a monetary union. Otherwise a baseline,
-        plus a bump if either side is in a post-warning state.
+        (stacks on top of tariffs). Zero if either side uses the reserve
+        currency, or if both sides share a monetary union. Otherwise a
+        baseline, plus a bump if either side is in a post-warning state.
         """
         if self.phase < 5:
             return 0.0
-        rc = self.reserve_currency_holder
-        if exporter == rc or importer == rc:
+        if self._uses_reserve(exporter) or self._uses_reserve(importer):
             return 0.0
         ex_uid = self.countries[exporter].get("union_id")
         im_uid = self.countries[importer].get("union_id")
@@ -1805,6 +1866,9 @@ class IPESimulation:
             raise ValueError("IMF bailouts require the debt layer (Phase 6+).")
         cfg = self.countries[country]
         before = cfg.get("debt_stock", 0.0)
+        if before <= 1e-9:
+            print(f"  {country} owes nothing: no bailout, and no austerity.")
+            return
         cfg["debt_stock"] = before * (1 - IMF_DEBT_RELIEF)
         cfg["imf_austerity_until"] = self.round_num + IMF_AUSTERITY_ROUNDS
         cfg["imf_austerity"] = IMF_AUSTERITY
@@ -1814,6 +1878,7 @@ class IPESimulation:
                 f"{cfg['debt_stock']:.1f}, {IMF_AUSTERITY:.0%} austerity for "
                 f"{IMF_AUSTERITY_ROUNDS} rounds"
             )
+        self._log_shock(f"IMF bailout: {description}")
         print(f"\n{'':=<55}")
         print(f"  IMF BAILOUT: {description}")
         print(f"{'':=<55}\n")
@@ -1953,10 +2018,13 @@ class IPESimulation:
                         ((importer, wfx_importer), (exporter, wfx_exporter))
                         if w > 0.0005]
                 weak_str = f" [weak currency: {', '.join(weak)}]" if weak else ""
+                # A payment in a ring (_swaps_to_trades) has nothing coming back.
+                deal = f"{qty_out:.0f} {good_out}"
+                if qty_in > 0:
+                    deal += f" for {qty_in:.0f} {good_in}{tot_str}"
                 trade_log.append(
                     f"  {exporter} -> {importer}: "
-                    f"{qty_out:.0f} {good_out} for {qty_in:.0f} {good_in}"
-                    f"{tot_str}{tariff_str}{fx_str}{weak_str}"
+                    f"{deal}{tariff_str}{fx_str}{weak_str}"
                 )
                 trade_records.append({
                     "exporter": exporter,
@@ -2241,6 +2309,11 @@ class IPESimulation:
                         f"{name}: capital allocation ({total_K}) "
                         f"!= endowment ({config['capital']})"
                     )
+                for g in self.goods:
+                    if dec["production"]["labor"].get(g, 0) < 0:
+                        errors.append(f"{name}: negative labor in {g}")
+                    if dec["production"]["capital"].get(g, 0) < 0:
+                        errors.append(f"{name}: negative capital in {g}")
 
             # Validate compensation (a share of consumption capacity)
             comp = dec.get("compensation", 0.0)
@@ -2280,6 +2353,39 @@ class IPESimulation:
                             f"{name}: tariff on {good} from {partner} "
                             f"= {rate} (must be 0-1)"
                         )
+        return errors
+
+    def _validate_flows(self, trades, side_payments):
+        """
+        Trades must name real countries and goods; trades and side payments
+        must move 0 or more. A negative amount would run the deal backwards and
+        make goods from nothing, and an unknown name would stop the round
+        half-played, so both are refused before anything changes. (A side
+        payment naming an unknown country is logged as FAILED instead, and a
+        self-trade too: neither one touches the books.)
+        """
+        errors = []
+        for t in trades or []:
+            try:
+                exporter, importer, good_out, qty_out, good_in, qty_in = t
+            except (TypeError, ValueError):
+                errors.append(f"Trade {t!r}: needs (exporter, importer, good_out, "
+                              f"qty_out, good_in, qty_in)")
+                continue
+            errors += [f"Trade {t!r}: unknown country {c!r}"
+                       for c in (exporter, importer) if c not in self.countries]
+            errors += [f"Trade {t!r}: unknown good {g!r}"
+                       for g in (good_out, good_in) if g not in self.goods]
+            if not all(isinstance(q, numbers.Real) and q >= 0 for q in (qty_out, qty_in)):
+                errors.append(f"Trade {t!r}: amounts must be 0 or more")
+        for sp in side_payments or []:
+            try:
+                donor, recipient, good, qty = sp
+            except (TypeError, ValueError):
+                errors.append(f"Side payment {sp!r}: needs (donor, recipient, good, qty)")
+                continue
+            if not (isinstance(qty, numbers.Real) and qty >= 0):
+                errors.append(f"Side payment {sp!r}: the amount must be 0 or more")
         return errors
 
     def _validate_firm_decisions(self, firm_decisions):
@@ -2523,7 +2629,7 @@ class IPESimulation:
         print(f"  WTO dividend: {WTO_DIVIDEND:.0%} friction cut between "
               f"non-defecting members")
         print(f"  Hegemon provides -> cost {HEGEMON_PROVISION_COST:.0%} welfare, "
-              f"global friction -{HEGEMON_PROVISION_BENEFIT:.0%}")
+              f"friction stays normal")
         print(f"  Hegemon withholds -> global friction +"
               f"{HEGEMON_WITHHOLD_PENALTY:.0%}")
         print(f"  Hegemony transfers if {self._challenge_rule_text()}.")
@@ -2595,6 +2701,10 @@ class IPESimulation:
             for n in here:
                 cum_welfare[n] += res[n]["welfare"]
                 gain = res[n].get(gain_key, 0.0)
+                # Making none of a good reads as an infinite gain over what you
+                # made: that round counts as 0, and can't win the race alone.
+                if gain == float("inf"):
+                    gain = 0.0
                 if rule in ("best_mix", "half_size"):
                     size = (sizes[n] / mean_size) if mean_size > 0 else 1.0
                     gain = gain * math.sqrt(size) if size > 0 else 0.0
@@ -2723,6 +2833,7 @@ class IPESimulation:
                 "Trinity": {"capital": 150}  # Phase 2
             })
         """
+        self._log_shock(description)
         print(f"\n{'':=<55}")
         print(f"  SHOCK: {description}")
         print(f"{'':=<55}")
@@ -2818,8 +2929,9 @@ class IPESimulation:
         Force a country's (or its union's) money-supply growth rate. Used for
         the Round-18 'one country prints' event. Value must be one of
         PHASE5_MONEY_GROWTH_CHOICES. Takes effect the next time run_round
-        applies monetary decisions (or immediately if you don't pass that
-        country in the next monetary_decisions).
+        applies monetary decisions, unless that country's next decision names
+        a rate of its own: a decision file or workbook that picks a money
+        growth overrides this.
         """
         if money_supply_growth not in PHASE5_MONEY_GROWTH_CHOICES:
             raise ValueError(
@@ -2835,6 +2947,7 @@ class IPESimulation:
                 f"Monetary shock: {country} money growth "
                 f"{old:.0%} -> {money_supply_growth:.0%}"
             )
+        self._log_shock(description)
         print(f"\n{'':=<55}")
         print(f"  SHOCK: {description}")
         print(f"{'':=<55}\n")
@@ -2855,6 +2968,7 @@ class IPESimulation:
                 f"Speculative attack on {country}: currency devalues "
                 f"{1 - CRISIS_DEVALUATION:.0%}"
             )
+        self._log_shock(description)
         print(f"\n{'':=<55}")
         print(f"  SHOCK: {description}")
         print(f"{'':=<55}\n")
@@ -2876,6 +2990,7 @@ class IPESimulation:
                 f"Capital flight from {country}: currency loses "
                 f"{1 - severity:.0%} of its value"
             )
+        self._log_shock(description)
         print(f"\n{'':=<55}")
         print(f"  SHOCK: {description}")
         print(f"{'':=<55}\n")
@@ -3105,6 +3220,7 @@ class IPESimulation:
         for c in members:
             self.countries[c]["union_id"] = name
             self.countries[c].pop("anchor_ref", None)
+        self._log_shock(f"Monetary union formed: {name} ({', '.join(members)})")
         print(f"\n{'':=<55}")
         print(f"  MONETARY UNION FORMED: {name}")
         print(f"{'':=<55}")
@@ -3114,17 +3230,23 @@ class IPESimulation:
 
     def dissolve_monetary_union(self, name: str):
         """Dissolve a union; members revert to their own currency state,
-        inheriting the union's final depreciation factor."""
+        inheriting the union's final depreciation factor and policy -- not
+        whatever they ran before they joined."""
         if name not in self.monetary_unions:
             raise ValueError(f"No such union: {name}")
         union = self.monetary_unions.pop(name)
-        final_dep = union["state"]["depreciation_factor"]
+        final = union["state"]
+        final_dep = final["depreciation_factor"]
         for c in union["members"]:
             self.countries[c]["union_id"] = None
             self.countries[c]["depreciation_factor"] = final_dep
+            for key in ("fx_regime", "capital_controls", "independent_monetary",
+                        "money_supply_growth"):
+                self.countries[c][key] = final[key]
             self.countries[c]["stress"] = 0
             self.countries[c]["warning_active"] = False
             self.countries[c].pop("anchor_ref", None)
+        self._log_shock(f"Monetary union dissolved: {name}")
         print(f"\n{'':=<55}")
         print(f"  MONETARY UNION DISSOLVED: {name}")
         print(f"{'':=<55}")
@@ -3170,8 +3292,9 @@ class IPESimulation:
             raise ValueError("Hegemonic provision is a Phase 7 mechanic.")
         self.hegemon_provides = bool(provides)
         verb = "PROVIDES" if provides else "WITHHOLDS"
-        print(f"  Hegemon ({self.hegemon}) {verb} the public good "
-              f"({'global friction -' + format(HEGEMON_PROVISION_BENEFIT, '.0%') if provides else 'global friction +' + format(HEGEMON_WITHHOLD_PENALTY, '.0%')}).")
+        effect = ("friction stays normal" if provides else
+                  f"global friction +{HEGEMON_WITHHOLD_PENALTY:.0%}")
+        print(f"  Hegemon ({self.hegemon}) {verb} the public good ({effect}).")
 
     def _cumulative_welfare(self):
         """Total welfare per country across all completed rounds."""
@@ -3317,6 +3440,7 @@ class IPESimulation:
         self._pending_global_crisis = severity
         if description is None:
             description = f"Global crisis scheduled (base severity {severity:.0%})"
+        self._log_shock(description)
         print(f"\n{'':=<55}")
         print(f"  SHOCK: {description}")
         print(f"  Pain next round depends on hegemon provision + WTO breadth.")
@@ -3339,14 +3463,12 @@ class IPESimulation:
     def _institutional_friction_delta(self, exporter, importer, defected):
         """
         Phase 7 friction adjustment (added to FX friction, clamped >= 0):
-          - hegemon provision lowers / withholding raises global friction
+          - a hegemon that withholds raises global friction
           - non-defecting WTO member-to-member trade gets the dividend
           - a debt defaulter in its ban window gets only half the dividend
         """
         delta = 0.0
-        if self.hegemon_provides:
-            delta -= HEGEMON_PROVISION_BENEFIT
-        else:
+        if not self.hegemon_provides:
             delta += HEGEMON_WITHHOLD_PENALTY
         ex_member = self.countries[exporter].get("wto_member")
         im_member = self.countries[importer].get("wto_member")
@@ -3410,8 +3532,7 @@ class IPESimulation:
                 consumption[recipient][good] = (
                     consumption[recipient].get(good, 0.0) + qty
                 )
-                # Keep variety bundles consistent: pull from donor's mix, add to
-                # recipient under a generic side-payment variety key.
+                # Keep variety bundles consistent: the donor's mix moves with it.
                 if varieties is not None:
                     self._transfer_varieties(
                         varieties, donor, recipient, good, qty, 0.0
@@ -3432,7 +3553,8 @@ class IPESimulation:
         is a trade, paying tariffs, FX friction and currency costs and
         counting as imports for approval. A pair sending several goods
         becomes one trade per pair of goods, each side's goods split by
-        world-price value so the totals still add up.
+        world-price value so the totals still add up. A ring of three or more
+        pays the border the same way, each payment as a one-way trade.
         Returns (one_way_payments, trades, log).
         """
         def valid(sp):
@@ -3469,6 +3591,30 @@ class IPESimulation:
                 one_way += [(donor, recipient, g, q) for g, q in box.items()]
                 log.append(f"  {a} and {b} paid each other in the same goods: "
                            f"only the difference moves")
+
+        # Three or more countries paying each other around a ring are the same
+        # thing, so each of those payments pays the border like a trade.
+        links = {}
+        for donor, recipient, _, _ in filter(valid, one_way):
+            links.setdefault(donor, set()).add(recipient)
+
+        def leads_to(start, target):
+            seen, stack = set(), [start]
+            while stack:
+                here = stack.pop()
+                if here == target:
+                    return True
+                if here not in seen:
+                    seen.add(here)
+                    stack.extend(links.get(here, ()))
+            return False
+
+        ring = [sp for sp in filter(valid, one_way) if leads_to(sp[1], sp[0])]
+        if ring:
+            one_way = [sp for sp in one_way if sp not in ring]
+            trades += [(d, r, g, q, g, 0.0) for d, r, g, q in ring]
+            log.append(f"  {', '.join(sorted({sp[0] for sp in ring}))} paid each "
+                       f"other in a ring, so each payment counts as a trade")
         return one_way, trades, log
 
     # ── Political approval (separate ledger; never enters welfare) ─
@@ -3840,7 +3986,8 @@ class IPESimulation:
             for n in names
         )
         if any_tariffs:
-            print(f"\n  TARIFF LOSSES (goods destroyed)")
+            print("\n  TARIFF LOSSES (goods destroyed)" if phase < 5 else
+                  "\n  GOODS LOST AT THE BORDER (tariffs and currency costs)")
             header = f"  {'':16s}" + "".join(f"{g:>12s}" for g in goods)
             print(header)
             for name in names:
@@ -4028,25 +4175,32 @@ class IPESimulation:
         print(f"{'':=<66}")
         print(f"  Debt denominated in {self.countries[self.reserve_currency_holder]['currency']} "
               f"(reserve currency).\n")
-        print(f"  {'Country':12s}{'DebtStock':>11s}{'Rate':>7s}"
+        print(f"  {'Country':12s}{'DebtStock':>11s}{'Rate':>7s}{'VsReserve':>11s}"
               f"{'Defaults':>10s}{'Status':>12s}")
-        print(f"  {'-'*52}")
+        print(f"  {'-'*63}")
         for c in self.countries:
             cfg = self.countries[c]
             stock = cfg.get("debt_stock", 0.0)
-            # Approximate rate using last round's consumption capacity if known
+            # Next round's rate, on last round's consumption capacity
             rate = DEBT_BASE_RATE
+            res = self.history[-1]["results"].get(c) if self.history else None
+            if res and stock > 0:
+                capacity = max(sum(res["consumption"].get(g, 0.0) * self.world_prices[g]
+                                   for g in self.goods), 1e-9)
+                rate += DEBT_RISK_PREMIUM * (stock / capacity)
             status = ""
             if self._is_debt_banned(c):
                 status = "banned"
             elif self.round_num <= cfg.get("imf_austerity_until", 0):
                 status = "austerity"
             print(
-                f"  {c:12s}{stock:11.1f}{rate:7.0%}"
+                f"  {c:12s}{stock:11.1f}{rate:7.0%}{self._fx_vs_reserve(c):11.2f}"
                 f"{cfg.get('defaults', 0):>10d}{status:>12s}"
             )
-        print(f"\n  (Rate rises with debt/capacity each round. Default wipes "
-              f"the stock but\n   bans borrowing {DEBT_DEFAULT_BAN_ROUNDS} rounds; "
+        print(f"\n  (Rate rises with debt/capacity each round. VsReserve is your "
+              f"FX index over the\n   reserve's: payments are divided by it, so "
+              f"above 1.00 your debt weighs less. Default\n   wipes the stock but "
+              f"bans borrowing {DEBT_DEFAULT_BAN_ROUNDS} rounds; "
               f"IMF refinances {IMF_DEBT_RELIEF:.0%} for austerity.)\n")
 
     def print_institutions_dashboard(self):
@@ -4293,9 +4447,10 @@ class IPESimulation:
             draw_arrow(t["exporter"], t["importer"],
                        good_colors.get(t["good_out"], "gray"),
                        t["qty_out_received"], rad=0.18)
-            draw_arrow(t["importer"], t["exporter"],
-                       good_colors.get(t["good_in"], "gray"),
-                       t["qty_in_received"], rad=0.18)
+            if t["qty_in_sent"] > 0:    # a ring payment has nothing coming back
+                draw_arrow(t["importer"], t["exporter"],
+                           good_colors.get(t["good_in"], "gray"),
+                           t["qty_in_received"], rad=0.18)
 
         # Legend
         from matplotlib.lines import Line2D

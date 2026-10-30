@@ -108,6 +108,31 @@ def test_valid_trade_parses():
           str(kw["trades"]))
 
 
+def test_typed_amounts():
+    print("\n[2b] typed workbooks: 1 means 1%, and negative amounts are refused")
+
+    def comp_at(v):
+        def mutate(b):
+            b["production"]["compensation_pct"] = 0
+            b["production"].loc[0, "compensation_pct"] = v
+        return mutate
+
+    sim = p1_sim()
+    kw = sim.load_round(prepared(sim, comp_at(1), name="pct1.xlsx"))
+    check("  compensation typed as 1 is 1%, not 100%",
+          abs(kw["decisions"][KEEP[0]].get("compensation", 0) - 0.01) < 1e-12,
+          str(kw["decisions"][KEEP[0]]))
+    err = load_error(sim, prepared(sim, lambda b: b.__setitem__("trades", pd.DataFrame([
+        {"exporter": "Bosque", "importer": "Trinity", "good_out": "cloth",
+         "qty_out": -20, "good_in": "wine", "qty_in": 15}])), name="neg1.xlsx"))
+    check("  a typed trade with a negative amount is reported",
+          err is not None and "0 or more" in err, str(err))
+    err = load_error(sim, prepared(sim, lambda b: b.__setitem__("side_payments", pd.DataFrame([
+        {"donor": "Bosque", "recipient": "Trinity", "good": "cloth", "qty": -5}])), name="neg2.xlsx"))
+    check("  a typed side payment with a negative amount is reported",
+          err is not None and "0 or more" in err, str(err))
+
+
 # ────────────────────────────────────────────────────────────────────
 # 2. things that should be tolerated, not rejected
 # ────────────────────────────────────────────────────────────────────
@@ -722,7 +747,7 @@ def test_notebook_is_safe_to_run_all():
 
 
 def main():
-    for t in [test_round_trip, test_valid_trade_parses,
+    for t in [test_round_trip, test_valid_trade_parses, test_typed_amounts,
               test_empty_and_blank_trades_tolerated,
               test_renamed_trade_headers_rejected,
               test_wrong_phase_headers_rejected,

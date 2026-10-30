@@ -235,12 +235,24 @@ def test_reserve_challenge_choice():
           and 'rules.challenge === "welfare"' in html)
 
 
+def test_round_form_safeguards():
+    print("\n[10] the round form: one-round acts clear, bindings are there")
+    html, _, _ = page(export(p2_sim(), "form"))
+    check("  a default or a challenge clears on the next class day",
+          "delete f.dflt" in html and "delete f.rc" in html and ".sent = new Date().toDateString()" in html)
+    check("  the money row says what Keep does", "Keep repeats last round" in html)
+    check("  Phase 7 has binding fields and sends them",
+          '"Binding on "' in html and "out.institutions.bound_tariffs" in html)
+    check("  a firm's form says what a weak host does to its profit, and what exporting changes",
+          "paid in world prices" in html)
+
+
 def main():
     for t in [test_one_button_per_country, test_numbers_match_live_sim,
               test_reexport_follows_shocks, test_check_values_are_engine_output,
               test_phase1_export, test_data_cannot_break_the_page,
               test_guards_and_defaults, test_best_mix_not_given_away,
-              test_reserve_challenge_choice]:
+              test_reserve_challenge_choice, test_round_form_safeguards]:
         try:
             t()
         except Exception:

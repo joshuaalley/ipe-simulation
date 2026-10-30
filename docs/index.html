@@ -1202,7 +1202,7 @@
   "challenge": "majority"
  },
  "inbox_url": "https://www.dropbox.com/request/1r08vksl83w15kf8ilba",
- "updated": "October 29, 2026"
+ "updated": "October 30, 2026"
 }</script>
 <script>
 (function () {
@@ -1290,7 +1290,7 @@
   var PHASES = [[1, "Ricardo"], [2, "Factors"], [3, "Firms"], [4, "Export"],
                 [5, "Money"], [6, "Debt"], [7, "Rules"]];
   var rules = data.rules || { tariff_max: 100, compensation_max: 25, mnc_tax_min: 0,
-                              mnc_tax_max: 50, money_growth: [-2, 0, 2, 5, 10] };
+                              mnc_tax_max: 50, money_growth: [-10, -5, -2, 0, 2, 5, 10] };
   var firms = data.firms || [];
   var firmById = {};
   firms.forEach(function (f) { firmById[f.id] = f; });
@@ -1569,6 +1569,14 @@
     f.tariffs = f.tariffs || {};
     f.trades = f.trades || [];
     f.gifts = f.gifts || [];
+    f.bind = f.bind || {};
+    // Defaulting and challenging are this round's acts, not standing orders:
+    // they clear on the next class day, whatever else the form remembers.
+    if (f.sent && f.sent !== new Date().toDateString()) {
+      delete f.dflt;
+      delete f.rc;
+      delete f.sent;
+    }
     return f;
   }
 
@@ -1636,8 +1644,9 @@
 
     // side payments, tucked away
     var det = el("details", {}, [el("summary", { text: "Side payments (goods you give away)" }),
-      el("div", { cls: "hint", text: "Pay a country that also pays you this round and the two " +
-        "payments settle as one trade, tariffs and all." })]);
+      el("div", { cls: "hint", text: "If two countries send each other side payments in the same " +
+        "round, they settle as one trade, tariffs and all. A payment to a country you only trade " +
+        "with stays a gift." })]);
     if (f.gifts.length) det.open = true;
     f.gifts.forEach(function (sp, k) {
       var set = function (key) { return function (v) { sp[key] = v; save(); }; };
@@ -1665,7 +1674,7 @@
       box.appendChild(el("p", { cls: "hint", text: "Capital account" }));
       box.appendChild(choices("cc", [keep, ["open", "Open"], ["controls", "Controls"]], f.controls,
                               function (v) { f.controls = v; save(); }));
-      box.appendChild(el("p", { cls: "hint", text: "Money growth" }));
+      box.appendChild(el("p", { cls: "hint", text: "Money growth (Keep repeats last round’s rate)" }));
       box.appendChild(choices("mg", [keep].concat(rules.money_growth.map(function (g) {
         return [String(g), (g < 0 ? "\u2212" + fmt(-g) : fmt(g)) + "%"]; })), f.growth,
         function (v) { f.growth = v; save(); }));
@@ -1699,6 +1708,12 @@
       box.appendChild(el("p", { cls: "hint", text: "Only if you are the hegemon: provide public goods?" }));
       box.appendChild(choices("heg", [keep, ["yes", "Yes"], ["no", "No"]], f.heg,
                               function (v) { f.heg = v; save(); }));
+      box.appendChild(el("p", { cls: "hint", text: "WTO bindings: the most you promise to charge " +
+        "on a good, from anyone (%). Blank leaves a binding as it is." }));
+      era.goods.forEach(function (g) {
+        box.appendChild(el("div", { cls: "field" }, [el("span", { text: cap(g) + " at most" }),
+          numInput(f.bind[g], "Binding on " + g, function (v) { f.bind[g] = v; save(); })]));
+      });
     }
   }
 
@@ -1726,6 +1741,10 @@
       box.appendChild(el("label", { cls: "field" }, [ecb, "Export (pays the fixed cost)"]));
     }
     box.appendChild(el("p", { cls: "hint", text: "Moving means producing nothing this round." }));
+    if (st.phase >= 5) {
+      box.appendChild(el("p", { cls: "hint", text: "Your profit is worth what your host’s currency " +
+        "is worth, unless you export: exports are paid in world prices." }));
+    }
   }
 
   // ---- checking and building the file -----------------------------------------
@@ -1786,6 +1805,11 @@
       out.institutions = {};
       if (f.wto) out.institutions.join_wto = f.wto === "join";
       if (f.heg) out.institutions.hegemon_provides = f.heg === "yes";
+      var bound = {};
+      era.goods.forEach(function (g) {
+        if (!blank(f.bind[g])) bound[g] = pct(f.bind[g], "Binding on " + g, 0, rules.tariff_max, errs);
+      });
+      if (Object.keys(bound).length) out.institutions.bound_tariffs = bound;
     }
     var summary = me + " · Phase " + phase + " — workers " +
       era.goods.map(function (g) { return fmt(p.L[g] || 0); }).join(" / ") +
@@ -1826,6 +1850,10 @@
     if (res.errors.length) {
       res.errors.forEach(function (e) { errors.appendChild(el("div", { text: e })); });
       return;
+    }
+    if (st.mode !== "firm") {
+      formFor(st.country).sent = new Date().toDateString();
+      save();
     }
     var blob = new Blob([JSON.stringify(res.data, null, 1)], { type: "application/json" });
     var a = el("a", { href: URL.createObjectURL(blob), download: res.file });

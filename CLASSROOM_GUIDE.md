@@ -278,8 +278,11 @@ door.
 
 - A **country**: tap the phase and the country, enter production (the
   calculator), then tariffs, trades, compensation and the MNC tax, and money
-  (with any reserve-currency challenge), debt and WTO choices once those phases
-  arrive. Then Submit and drop the file into Dropbox. The page refuses to save until the allocations add up and every
+  (with any reserve-currency challenge), debt and WTO choices (membership and
+  tariff bindings) once those phases arrive. Then Submit and drop the file into
+  Dropbox. The form remembers a team's entries between classes, except a default
+  or a reserve-currency challenge: those are one round's acts, and clear on the
+  next class day. The page refuses to save until the allocations add up and every
   number is in range.
 - A **firm owner**: tap "A firm I own", pick the firm, then set scale, move
   and export. Owners submit only when something changes; a firm with no file
@@ -293,8 +296,14 @@ door.
 - Run the round cell as usual. **The first run** builds `roundNN.xlsx` from the
   inbox and prints the report. **The second run** plays it. If more files arrive
   in between, it rebuilds and reports again instead of playing.
+- The report plays the round on a throwaway copy first and lists anything that
+  **won't go through as things stand**: a trade short of goods, a side payment
+  the donor can't cover, or a reason the round can't play at all. It shows
+  failures only, never results. It also says when a country sent no new money
+  growth, so last round's rate repeats.
 - Afterwards the files move to `rounds/roundNN/`, one file per team per round.
-  That's your raw data.
+  That's your raw data. A file that lands while the round is playing stays in
+  the inbox, and the output says so.
 
 **The rules the merge follows.**
 
@@ -303,8 +312,10 @@ door.
   disagree, so you can read them out before playing.
 - A **country with no file** repeats last round's production, tariffs and
   compensation, with no trades. Its policies stand anyway.
-- A **file that can't be used** (wrong phase picked, a number out of range) is
-  reported and treated as missing, never half-applied.
+- A **file that can't be used** (wrong era picked, a number out of range,
+  workers or capital that don't add up, a firm moving to its owner's home) is
+  reported and treated as missing, never half-applied, and it can't stop the
+  class. A file from the wrong phase of the same era is used, with a note.
 - Files that reached the inbox **before the last round was played** are set
   aside as stale.
 
@@ -340,19 +351,23 @@ WTO bargaining, side-payment offers, coalition-building for a hegemonic
 challenge. They write commitments on their forms. **Nobody reveals to you
 yet** — this is the simultaneous-move part. They can lie to each other.
 
-### 4. Collect forms & enter decisions (~10 min)
-Type the paper forms into the round's decision dicts in the notebook cell:
-`roundN_decisions`, `roundN_firm_decisions`, `roundN_monetary`,
-`roundN_debt`, `institutional_decisions`, `side_payments`. The templates are
-pre-built — you're just filling in numbers. This is the reveal moment:
-defections, surprise tariffs, and broken promises all surface here.
+### 4. Collect decisions (~10 min)
+Teams submit from the round page, and the first run of the round cell builds
+`roundNN.xlsx` from their files and prints a report (see *Collecting decisions
+from laptops*). **Read the report out and give teams a minute to fix what it
+names.** It lists trades the two sides wrote differently and anything that
+won't go through, such as a side payment the donor can't cover. When a trade
+mismatches, ask one side to change, not both: two fixes at once can cross. With
+paper forms, type them into the blank workbook instead.
 
 ### 5. Run the round & project results (~5 min)
-Run the `sim.run_round(...)` cell, then `sim.print_results()`. The consolidated
-table appears — production, trade log (annotated with terms-of-trade, tariffs,
-FX friction), consumption & welfare, factor prices, and the firm / monetary /
-debt / institution sections as relevant. The **trade log** is where students
-see whose deals went through and whose say `FAILED`.
+Run the round cell again (`sim.play_round("rounds/roundNN.xlsx", scale=1.4)`).
+This is the reveal moment: defections, surprise tariffs, and broken promises
+all surface here. The board shows welfare and the phase's columns, then the
+**trades and side payments**, where students see whose deals went through and
+whose say `FAILED`. Above it, one line says what fired before the round, so a
+shock that didn't make it in shows at once. `sim.print_results()` is the full
+record.
 
 ### 6. Project the plots & debrief (~15–20 min)
 Run the plot cell. The most discussion-generating ones:
@@ -402,6 +417,21 @@ Each prints a banner — project it as the cliffhanger. A productivity surge (or
 an `inject_shock` that changes technology or endowments) also changes what
 allocations produce: re-run `sim.export_calculator()` and push `docs/` so the
 students' calculator shows the new numbers.
+
+**Put a shock in its round's own cell.** A shock lives only in the kernel's
+memory until the round is played, so a restart loses it. Fired from a cell of
+its own, it is easy to skip after a restart, and the round then plays without
+it. Above the play line it can't be skipped, and `sim.once` stops a re-run from
+firing it twice:
+
+```python
+if sim.round_num == 17 and sim.once("attack"):
+    sim.trigger_speculative_attack(show=False)
+sim.play_round("rounds/round18.xlsx", scale=1.4)
+```
+
+Run that cell at the start of class for the banner. Before any files are in, it
+writes a blank workbook, which the files replace when they arrive.
 
 ### Let the crisis pick its own victim
 
@@ -467,8 +497,10 @@ three answers: protect, grow, or compensate. All three are now playable.
   donor can't cover fails and counts for nothing. Two countries that pay each
   other in the same round are trading, so the engine settles it as a trade:
   tariffs, FX friction and currency costs apply, and it counts as imports, not
-  compensation (a good sent both ways nets out first). Token gifts back turn
-  real compensation into a trade, so side payments should be one-way.
+  compensation (a good sent both ways nets out first). Three or more paying
+  each other around a ring pay the border too, each payment as a one-way trade.
+  Token gifts back turn real compensation into a trade, so side payments should
+  be one-way.
 
 Debrief question when someone uses it: *who paid, and who did the paying buy
 off?* When nobody uses it — the usual case — that reluctance is the lesson.
@@ -535,6 +567,12 @@ the method without making the decision for them.
 The premium is profit only: the host's welfare counts the firm's local sales
 whether or not it exports.
 
+From Phase 5 a firm's profit is worth what its host's currency is worth, unless
+it exports: an exporter is paid in world prices, so the host's FX index doesn't
+touch its profit, up or down. A weak currency therefore pulls firms into
+exporting, and `sim.print_export_premiums()` allows for it in the units it
+shows. LOW firms still can't ship enough at full scale.
+
 ### How big firms are
 
 A firm's revenue counts every unit it makes, but only its **local sales**, a
@@ -569,7 +607,10 @@ exports outside its monetary union); tightening (−2, −5 or −10%) is the mi
 the currency strengthens by that much for good, even past par, for the same share
 of welfare that round, and builds no trilemma stress. The bigger steps are the way
 back up after a crisis: from 0.70, three rounds at −10% reach 0.93, where −2%
-would only reach 0.74. When the reserve holder tightens, everyone else's
+would only reach 0.74. Below par, every step shrinks the import loss and the
+drag. Above par there is no import loss left to shrink, so a stronger currency
+buys nothing until Phase 6, when it makes debt owed in the reserve currency
+lighter (the debt dashboard's VsReserve column). When the reserve holder tightens, everyone else's
 reserve-currency debt gets heavier (the Volcker shock). Debt is owed in the reserve
 currency, so its weight follows a currency's value against the reserve's: the
 reserve holder owes in its own money, a peg that falls with the reserve owes no

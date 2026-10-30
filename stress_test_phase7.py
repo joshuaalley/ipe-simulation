@@ -17,8 +17,8 @@ matplotlib.use("Agg")
 from engine import (
     IPESimulation,
     PHASE2_COUNTRIES, PHASE2_GOODS, PHASE3_FIRMS,
-    WTO_DIVIDEND, HEGEMON_PROVISION_COST,
-    HEGEMON_PROVISION_BENEFIT, HEGEMON_WITHHOLD_PENALTY,
+    WTO_DIVIDEND, HEGEMON_PROVISION_COST, HEGEMON_WITHHOLD_PENALTY,
+    BASE_FX_FRICTION,
 )
 
 PASS, FAIL = [], []
@@ -101,21 +101,55 @@ def test_wto_dividend():
     rc = sim.hegemon
     non_rc = [c for c in sim.countries if c != rc]
     a, b = non_rc[0], non_rc[1]
-    # Baseline (not members), hegemon provides: friction = base + (-benefit)
+    # Baseline (not members), hegemon provides: friction stays normal
     sim.hegemon_provides = True
     d_nonmember = sim._institutional_friction_delta(a, b, set())
-    check("  non-members get only hegemon benefit",
-          abs(d_nonmember - (-HEGEMON_PROVISION_BENEFIT)) < 1e-9, f"got {d_nonmember}")
+    check("  non-members: a hegemon that provides leaves friction alone",
+          abs(d_nonmember) < 1e-9, f"got {d_nonmember}")
     # Both members, no defection
     sim.join_wto(a, b)
     d_member = sim._institutional_friction_delta(a, b, set())
-    check("  members get hegemon benefit + WTO dividend",
-          abs(d_member - (-HEGEMON_PROVISION_BENEFIT - WTO_DIVIDEND)) < 1e-9,
-          f"got {d_member}")
+    check("  members get the WTO dividend",
+          abs(d_member + WTO_DIVIDEND) < 1e-9, f"got {d_member}")
     # If one defected, no dividend
     d_def = sim._institutional_friction_delta(a, b, {a})
-    check("  defector loses dividend",
-          abs(d_def - (-HEGEMON_PROVISION_BENEFIT)) < 1e-9, f"got {d_def}")
+    check("  defector loses dividend", abs(d_def) < 1e-9, f"got {d_def}")
+
+
+# ───────────────────────────────────────────────────────────────
+def test_wto_pays_in_real_trades():
+    print("\n[2b] the WTO dividend pays in real trades, whatever the hegemon does")
+    base = fresh_phase7()
+    rc = base.hegemon
+    a, b = [c for c in base.countries if c != rc][:2]
+    swap = [(a, b, "cloth", 3, "wine", 3)]
+
+    def played(provides, member, trades=swap):
+        s = copy.deepcopy(base)
+        s.hegemon_provides = provides
+        with contextlib.redirect_stdout(io.StringIO()):
+            if member:
+                s.join_wto(a, b, rc)
+            return run6(s, trades=trades)
+
+    for provides, off, on in ((True, BASE_FX_FRICTION, 0.0),
+                              (False, BASE_FX_FRICTION + HEGEMON_WITHHOLD_PENALTY,
+                               BASE_FX_FRICTION + HEGEMON_WITHHOLD_PENALTY - WTO_DIVIDEND)):
+        out, inn = played(provides, False), played(provides, True)
+        label = "provides" if provides else "withholds"
+        check(f"  hegemon {label}: members pay {on:.0%}, non-members {off:.0%}",
+              abs(out["trades_executed"][0]["fx_friction"] - off) < 1e-9
+              and abs(inn["trades_executed"][0]["fx_friction"] - on) < 1e-9,
+              f'{out["trades_executed"][0]["fx_friction"]} {inn["trades_executed"][0]["fx_friction"]}')
+        check(f"  ...and joining raises their welfare",
+              inn["results"][a]["welfare"] > out["results"][a]["welfare"]
+              and inn["results"][b]["welfare"] > out["results"][b]["welfare"])
+    withheld = played(False, False, swap + [(b, rc, "cloth", 3, "wine", 3)])
+    given = played(True, False, swap + [(b, rc, "cloth", 3, "wine", 3)])
+    check("  withholding costs the countries that trade",
+          all(given["results"][c]["welfare"] > withheld["results"][c]["welfare"] for c in (a, b)))
+    check("  a trade with the reserve holder stays free while the hegemon provides",
+          given["trades_executed"][1]["fx_friction"] == 0.0)
 
 
 # ───────────────────────────────────────────────────────────────
@@ -317,7 +351,8 @@ def test_display():
 
 
 def main():
-    for t in [test_upgrade_guard, test_wto_dividend, test_defection_flagged,
+    for t in [test_upgrade_guard, test_wto_dividend, test_wto_pays_in_real_trades,
+              test_defection_flagged,
               test_hegemon_provision, test_side_payments,
               test_hegemonic_challenge, test_global_crisis,
               test_save_restore, test_display]:

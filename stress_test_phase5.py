@@ -6,7 +6,8 @@ Stress test Phase 5 monetary mechanics:
   warning at stress=1, crisis at stress=2
 - money-supply decay
 - FX friction (reserve = 0, union = 0, peg-peg = 0, baseline, warning bump)
-- host-currency firm profits (real = nominal * host depreciation)
+- host-currency firm profits (real = nominal * host depreciation), except
+  an exporter's, which is paid in world prices
 - manual speculative attack, monetary shock, capital flight
 - monetary unions: shared state, formation, dissolution
 - save/restore; dashboard + plot render
@@ -850,6 +851,14 @@ def test_bigger_tightening():
     check("  after a 30% crisis, three rounds at -10% climb back to 0.93 (at -2%, 0.74)",
           abs(climbed[-0.10] - 0.70 * 1.10 ** 3) < 1e-9 and abs(climbed[-0.02] - 0.70 * 1.02 ** 3) < 1e-9,
           str(climbed))
+    s = copy.deepcopy(base)
+    other = next(c for c in s.countries if c != a)
+    loss = []
+    for d in (0.62, 0.62 * 1.10, 1.0, 1.04):
+        s._mon(a)["depreciation_factor"] = d
+        loss.append(s._weak_fx_cost(a, other))
+    check("  tightening shrinks the import loss, down to none at par and above",
+          loss[0] > loss[1] > 0 and loss[2] == 0.0 and loss[3] == 0.0, str(loss))
 
 
 def test_export_gain():
@@ -901,6 +910,137 @@ def test_export_gain():
           abs(rate(x) - WEAK_FX_EXPORT_GAIN * 0.2 * 5 * base.world_prices["cloth"] / made) < 1e-12)
 
 
+def test_refused_before_state_moves():
+    print("\n[29] a bad trade stops the round before any state has moved")
+    sim = fresh_phase5()
+    a = next(c for c in sim.countries if c != sim.reserve_currency_holder)
+    fid = next(iter(sim.firms))
+    host = sim.firms[fid]["host"]
+    dest = next(c for c in sim.countries if c != host)
+    md = base_md()
+    md[a]["money_supply_growth"] = 0.10
+    firms = fd(sim)
+    firms[fid]["relocate_to"] = dest
+    before = (sim.round_num, sim._mon(a)["money_supply_growth"], sim._mon(a)["depreciation_factor"])
+    try:
+        quiet(sim.run_round, BAL_DEC, [("Atlantis", a, "cloth", 1, "wine", 1)],
+              firm_decisions=firms, monetary_decisions=md)
+        check("  refused", False, "no error")
+    except ValueError as e:
+        check("  refused, naming the problem", "Atlantis" in str(e), str(e))
+    check("  the clock, the money and the firms are untouched",
+          (sim.round_num, sim._mon(a)["money_supply_growth"], sim._mon(a)["depreciation_factor"]) == before
+          and sim.firms[fid]["host"] == host)
+
+
+def test_reserve_union_partner():
+    print("\n[30] a union partner of the reserve holder uses the reserve currency")
+    sim = fresh_phase5()
+    rc = sim.reserve_currency_holder
+    a, b, c = [x for x in sim.countries if x != rc][:3]
+    quiet(sim.form_monetary_union, rc, a, name="U")
+    check("  the partner trades friction-free with outsiders, like the holder",
+          sim._compute_fx_friction(a, b) == 0.0 and sim._compute_fx_friction(rc, b) == 0.0)
+    check("  countries outside the union still pay",
+          sim._compute_fx_friction(b, c) == BASE_FX_FRICTION)
+
+
+def test_dissolve_keeps_last_policy():
+    print("\n[31] leaving a union, members keep its last policy, not their old one")
+    sim = fresh_phase5()
+    a, b = [x for x in sim.countries if x != sim.reserve_currency_holder][:2]
+    sim._mon(a).update(fx_regime="peg", capital_controls=False, money_supply_growth=0.10)
+    quiet(sim.form_monetary_union, a, b, name="U")
+    sim._mon(a).update(fx_regime="float", capital_controls=True, money_supply_growth=0.0)
+    quiet(sim.dissolve_monetary_union, "U")
+    check("  both members hold the union's last policy",
+          all((sim.countries[c]["fx_regime"], sim.countries[c]["capital_controls"],
+               sim.countries[c]["money_supply_growth"]) == ("float", True, 0.0) for c in (a, b)),
+          str({k: sim.countries[a].get(k) for k in ("fx_regime", "capital_controls", "money_supply_growth")}))
+
+
+def test_once_and_shock_record():
+    print("\n[32] a shock fires once per round, and the round records it")
+    sim = fresh_phase5()
+    a = next(c for c in sim.countries if c != sim.reserve_currency_holder)
+    check("  once() says yes the first time only, per key",
+          sim.once("attack") and not sim.once("attack") and sim.once("flight"))
+    r = quiet(sim.run_round, BAL_DEC, [], firm_decisions=fd(sim), monetary_decisions=base_md())
+    check("  a round with no shock records none", "shocks_before" not in r)
+    check("  ...and once() is fresh for the next round", sim.once("attack"))
+    for _ in range(2):                                       # the cell, run twice
+        if sim.round_num == r["round"] and sim.once("hit"):
+            quiet(sim.inject_speculative_attack, a)
+    check("  re-running the cell doesn't devalue twice",
+          abs(sim._mon(a)["depreciation_factor"] - CRISIS_DEVALUATION) < 1e-12,
+          str(sim._mon(a)["depreciation_factor"]))
+    sim.countries[a]["approval"] = 0.0                       # falls in the next round
+    r = quiet(sim.run_round, BAL_DEC, [], firm_decisions=fd(sim), monetary_decisions=base_md())
+    check("  the next round records the shock that hit it",
+          any("Speculative attack" in s for s in r.get("shocks_before", [])), str(r.get("shocks_before")))
+    check("  ...in the saved state too",
+          "shocks_before" in json.loads(json.dumps(sim.get_state()))["history"][-1])
+    r2 = quiet(sim.run_round, BAL_DEC, [], firm_decisions=fd(sim), monetary_decisions=base_md())
+    check("  a government falling inside a round isn't logged as a shock before the next",
+          a in r["governments_fallen"] and "shocks_before" not in r2, str(r2.get("shocks_before")))
+
+
+def test_exporters_paid_in_world_prices():
+    print("\n[33] an exporter's profit doesn't move with the host's currency")
+    base = fresh_phase5()
+    f = "F1"
+    host = base.firms[f]["host"]
+
+    def firm(dep, export, tax=None, units=None, controls=False):
+        s = copy.deepcopy(base)
+        s._mon(host)["depreciation_factor"] = dep
+        if tax is not None:
+            s.countries[host]["mnc_tax_choice"] = tax
+        firms = fd(s, scale=40)
+        firms[f]["export"] = export
+        md = base_md()
+        md[host]["capital_controls"] = controls
+        s._mon(host)["capital_controls"] = controls
+        be = s.export_breakeven(f)
+        if units is not None:
+            per = s.firm_config[f]["productivity"] * (0.85 if controls else 1.0)
+            firms[f]["scale"] = units / per
+        r = quiet(s.run_round, BAL_DEC, [], firm_decisions=firms, monetary_decisions=md)
+        return r["firms"][f], be
+
+    par, _ = firm(1.0, True)
+    weak, _ = firm(0.6, True)
+    check("  exporting: the same profit at FX 0.6 as at par",
+          abs(weak["profit"] - par["profit"]) < 1e-9 and abs(weak["profit"] - weak["profit_nominal"]) < 1e-9,
+          f'{weak["profit"]} vs {par["profit"]}')
+    stay, _ = firm(0.6, False)
+    check("  not exporting: the profit still falls with the currency",
+          abs(stay["profit"] - stay["profit_nominal"] * 0.6) < 1e-9, str(stay["profit"]))
+    up, _ = firm(1.2, True)
+    up_stay, _ = firm(1.2, False)
+    check("  a strong host lifts a firm that sells at home, not an exporter",
+          abs(up["profit"] - par["profit"]) < 1e-9
+          and abs(up_stay["profit"] - up_stay["profit_nominal"] * 1.2) < 1e-9)
+
+    for label, kw in (("a weak host and a 10% MNC tax", dict(dep=0.7, tax=0.10)),
+                      ("capital controls too", dict(dep=0.7, tax=0.10, controls=True))):
+        _, be = firm(export=False, **kw)
+        gain = lambda u: firm(export=True, units=u, **kw)[0]["profit"] - firm(export=False, units=u, **kw)[0]["profit"]
+        check(f"  the break-even units are exact under {label} ({be:.1f})",
+              be < 52 and abs(gain(be)) < 1e-9 and gain(be * 0.9) < 0 < gain(be * 1.1),
+              f"{be} {gain(be)}")
+    _, at_par = firm(1.0, False)
+    _, at_weak = firm(0.6, False)
+    check("  a weak host lowers the units it takes for exporting to pay",
+          at_weak < at_par, f"{at_weak} vs {at_par}")
+    s = copy.deepcopy(base)
+    s._mon(host)["depreciation_factor"] = 0.6
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        s.print_export_premiums()
+    check("  the projected table says so", "paid in world prices" in out.getvalue(), out.getvalue()[-300:])
+
+
 def main():
     for t in [test_upgrade, test_validation, test_trilemma_graduated,
               test_money_decay, test_fx_friction, test_host_currency_profits,
@@ -912,7 +1052,9 @@ def main():
               test_open_peg_exposure, test_no_clear_target,
               test_capital_flight_in_phase5, test_pegs_follow_the_anchor,
               test_tightening, test_reserve_challenge, test_bigger_tightening,
-              test_export_gain]:
+              test_export_gain, test_refused_before_state_moves,
+              test_reserve_union_partner, test_dissolve_keeps_last_policy,
+              test_once_and_shock_record, test_exporters_paid_in_world_prices]:
         try:
             t()
         except Exception:

@@ -16,11 +16,15 @@ Kept out of engine.py so the engine stays focused on mechanics, and so the
 engine keeps working if pandas/openpyxl are ever missing.
 """
 
+import contextlib
+import copy
 import datetime
+import io
 import json
 import os
 import re
 import shutil
+import tempfile
 
 import pandas as pd
 
@@ -270,6 +274,15 @@ def scoreboard_html(sim, round_num=None, scale=1.0, sort=None, trades=True,
                 f'<span style="color:{MUTED};">&nbsp;-- none this round</span>'
             )
         parts.append("</div>")
+        paid = rd.get("side_payment_log") or []
+        if paid:
+            parts.append(
+                f'<div style="margin-top:{0.4*f:.0f}px;font-size:{0.8*f:.0f}px;">'
+                f'<span style="font-weight:600;">Side payments</span>'
+                '<ul style="margin:0.2em 0 0 1.1em;padding:0;">'
+                + "".join(f"<li>{line.strip()}</li>" for line in paid)
+                + "</ul></div>"
+            )
 
     parts.append("</div>")
     return "".join(parts)
@@ -491,6 +504,12 @@ def _template_sheets(sim, rnd):
             fin["hegemon_provides"] = [
                 ("yes" if sim.hegemon_provides else "no")
                 if n == sim.hegemon else "" for n in names]
+            # a WTO binding: the most this country promises to charge on a
+            # good, from any partner. Blank is no binding.
+            for g in goods:
+                fin[f"bind_{g}"] = [
+                    (sim.countries[n].get("bound_tariffs") or {}).get(g, "")
+                    for n in names]
         sheets["finance"] = fin
 
     # -- reference sheet (not read back) ---------------------------
@@ -750,10 +769,18 @@ def play_round(sim, path, scale=1.0, autosave=True, **show_kwargs):
 
     result = sim.run_round(**load_round(sim, path))
     played.add(key)
+    shocks = result.get("shocks_before") or []
+    if shocks or sim.phase >= 5:
+        print("  Fired before this round: "
+              + ("; ".join(shocks) if shocks else "nothing"))
     if generated:
         dest, moved = _archive_inbox(path, inbox)
         if moved:
             print(f"  moved {moved} decision file(s) to {_rel(dest)}")
+        late = [n for n, _ in _inbox_listing(inbox)]
+        if late:
+            print(f"  {len(late)} file(s) arrived after this round was built and "
+                  f"did not count: {', '.join(late)}")
     if autosave:
         # A failed save must never cost the round: the workbook is still the
         # record and the result is already in sim.history.
@@ -863,7 +890,7 @@ def load_round(sim, path):
                             for g in goods},
             }}
         comp = _as_num(row.get("compensation_pct"), 0.0, where)
-        if comp > 1:                       # typed as a percent: 10 -> 0.10
+        if comp >= 1:                      # typed as a percent: 10 -> 0.10
             comp = comp / 100
         if comp:
             decisions[country]["compensation"] = comp
@@ -871,7 +898,7 @@ def load_round(sim, path):
         # before the column existed, keeps the rate already in force.
         if phase >= 3 and not _blank(row.get("mnc_tax_pct")):
             tax = _as_num(row.get("mnc_tax_pct"), 0.0, where)
-            if abs(tax) > 1:                   # typed as a percent: 10 -> 0.10
+            if abs(tax) >= 1:                  # typed as a percent: 10 -> 0.10
                 tax = tax / 100
             decisions[country]["mnc_tax"] = tax
     for missing in set(names) - seen:
@@ -934,10 +961,12 @@ def load_round(sim, path):
                     f"{where}: goods must be one of {goods}; "
                     f"got {g_out!r} and {g_in!r}")
                 continue
-            trades.append((ex, im, g_out,
-                           _as_num(row.get("qty_out"), 0.0, where),
-                           g_in,
-                           _as_num(row.get("qty_in"), 0.0, where)))
+            q_out = _as_num(row.get("qty_out"), 0.0, where)
+            q_in = _as_num(row.get("qty_in"), 0.0, where)
+            if q_out < 0 or q_in < 0:
+                problems.append(f"{where}: amounts must be 0 or more")
+                continue
+            trades.append((ex, im, g_out, q_out, g_in, q_in))
 
     # -- side payments (goods one country sends another) -----------
     side_payments = []
@@ -964,8 +993,11 @@ def load_round(sim, path):
                 problems.append(
                     f"{where}: good must be one of {goods}; got {good!r}")
                 continue
-            side_payments.append(
-                (donor, recipient, good, _as_num(row.get("qty"), 0.0, where)))
+            qty = _as_num(row.get("qty"), 0.0, where)
+            if qty < 0:
+                problems.append(f"{where}: the amount must be 0 or more")
+                continue
+            side_payments.append((donor, recipient, good, qty))
 
     kwargs = {"decisions": decisions, "trades": trades}
     if side_payments:
@@ -1061,6 +1093,19 @@ def load_round(sim, path):
                     if not _blank(row.get("join_wto")):
                         entry["join_wto"] = _as_bool(
                             row.get("join_wto"), False, where)
+                    bound = {}
+                    for g in goods:
+                        if _blank(row.get(f"bind_{g}")):
+                            continue
+                        ceiling = _as_num(row.get(f"bind_{g}"), 0.0, where)
+                        if ceiling > 1:            # typed as a percent: 10 -> 0.10
+                            ceiling = ceiling / 100
+                        if 0 <= ceiling <= 1:
+                            bound[g] = ceiling
+                        else:
+                            problems.append(f"{where}: bind_{g} must be 0-100%")
+                    if bound:
+                        entry["bound_tariffs"] = bound
                     if entry:
                         inst[country] = entry
                     if country == sim.hegemon and \
@@ -1162,9 +1207,9 @@ def read_inbox(sim, inbox, since=None):
         who = d.get(kind) if kind in ("country", "firm") else None
         if kind not in ("country", "firm"):
             out["rejected"].append((name, "not a decision file"))
-        elif kind == "country" and who not in sim.countries:
+        elif kind == "country" and (not isinstance(who, str) or who not in sim.countries):
             out["rejected"].append((name, f"{who!r} is not a country in this game"))
-        elif kind == "firm" and who not in sim.firms:
+        elif kind == "firm" and (not isinstance(who, str) or who not in sim.firms):
             out["rejected"].append((name, f"{who!r} is not a firm in this game"))
         else:
             found.setdefault((kind, who), []).append(
@@ -1189,8 +1234,12 @@ def _number(v, what, problems, lo=None, hi=None, blank=0.0):
     if x != x or x in (float("inf"), float("-inf")):
         problems.append(f"{what} is not a number")
         return blank
-    if (lo is not None and x < lo) or (hi is not None and x > hi):
-        problems.append(f"{what} is {x:g}, outside {lo:g}-{hi:g}")
+    if lo is not None and x < lo:
+        problems.append(f"{what} is {x:g}, below {lo:g}" if hi is None
+                        else f"{what} is {x:g}, outside {lo:g}-{hi:g}")
+    elif hi is not None and x > hi:
+        problems.append(f"{what} is {x:g}, above {hi:g}" if lo is None
+                        else f"{what} is {x:g}, outside {lo:g}-{hi:g}")
     return x
 
 
@@ -1299,7 +1348,7 @@ def _standing_orders(prev, country, sim):
             rate = _as_num(t.get("tariff"), 0.0)
             tariffs.append((_as_text(t.get("partner")), _as_text(t.get("good")),
                             rate / 100 if rate > 1 else rate))
-    return {"production": values, "compensation": comp / 100 if comp > 1 else comp,
+    return {"production": values, "compensation": comp / 100 if comp >= 1 else comp,
             "tariffs": tariffs}
 
 
@@ -1318,6 +1367,123 @@ def _standing_firm(sim, fid):
     return scale, export
 
 
+def _read_country_file(sim, n, d, has_mnc, has_fin):
+    """
+    One country's decision file, as the sheets need it: (row, fin_row, tariffs,
+    trade legs, side payments, problems). Anything that would stop the round
+    when it plays is a problem here, so the file is reported and treated as
+    missing while there is still time to resubmit.
+    """
+    import engine                            # local: engine imports us too
+    names, goods, phase = list(sim.countries), list(sim.goods), sim.phase
+    era = 1 if phase == 1 else 2
+    comp_max = engine.COMPENSATION_MAX_SHARE * 100
+    tax_lo, tax_hi = engine.MNC_TAX_MIN * 100, engine.MNC_TAX_MAX * 100
+    problems, row, fin_row, tar_n, legs_n, sp_n = [], {}, {}, [], [], []
+    fphase = d.get("phase")
+    fera = ((1 if fphase == 1 else 2)
+            if isinstance(fphase, int) and fphase >= 1 else None)
+    if fera != era:
+        problems.append(f"filled in for Phase {fphase}, but this is Phase {phase}")
+        return row, fin_row, tar_n, legs_n, sp_n, problems
+    p = d.get("production") or {}
+    workers_total = capital_total = 0.0
+    for g in goods:
+        workers = _number((p.get("labor") or {}).get(g),
+                          f"workers in {g}", problems, lo=0)
+        workers_total += workers
+        if era == 1:
+            row[g] = workers
+        else:
+            row[f"labor_{g}"] = workers
+            row[f"capital_{g}"] = _number((p.get("capital") or {}).get(g),
+                                          f"capital in {g}", problems, lo=0)
+            capital_total += row[f"capital_{g}"]
+    cfg = sim.countries[n]
+    if abs(workers_total - cfg["labor"]) > 0.5:
+        problems.append(f"workers add up to {workers_total:g}, but {n} has {cfg['labor']:g}")
+    if era != 1 and abs(capital_total - cfg["capital"]) > 0.5:
+        problems.append(f"capital adds up to {capital_total:g}, but {n} has {cfg['capital']:g}")
+    row["compensation_pct"] = _number(d.get("compensation_pct"), "compensation",
+                                      problems, lo=0, hi=comp_max) / 100
+    if has_mnc and d.get("mnc_tax_pct") not in (None, ""):
+        row["mnc_tax_pct"] = _number(d.get("mnc_tax_pct"), "MNC tax",
+                                     problems, lo=tax_lo, hi=tax_hi) / 100
+    for partner, rates in (d.get("tariffs") or {}).items():
+        for g, r in (rates or {}).items():
+            rate = _number(r, f"tariff on {g} from {partner}", problems,
+                           lo=0, hi=100)
+            if partner in names and partner != n and g in goods and rate > 0:
+                tar_n.append((n, partner, g, rate / 100))
+    legs_n = _trade_legs(n, d.get("trades"), goods, names, problems)
+    for i, sp in enumerate(d.get("side_payments") or [], start=1):
+        sp = sp if isinstance(sp, dict) else {}
+        qty = _number(sp.get("qty"), f"side payment {i}", problems, lo=0)
+        if sp.get("to") in names and sp.get("to") != n and sp.get("good") in goods and qty > 0:
+            sp_n.append((n, sp["to"], sp["good"], qty))
+    if not has_fin:
+        return row, fin_row, tar_n, legs_n, sp_n, problems
+    money = d.get("money") or {}
+    if money.get("fx_regime") in ("peg", "float"):
+        fin_row["fx_regime"] = money["fx_regime"]
+    if isinstance(money.get("capital_controls"), bool):
+        fin_row["capital_controls"] = "yes" if money["capital_controls"] else "no"
+    if money.get("money_supply_growth") not in (None, ""):
+        growth = _number(money["money_supply_growth"], "money growth", problems,
+                         lo=-100, hi=100) / 100
+        match = [c for c in engine.PHASE5_MONEY_GROWTH_CHOICES if abs(c - growth) < 1e-9]
+        if not match:
+            problems.append(f"money growth {growth:.1%} is not one of the choices")
+        fin_row["money_supply_growth"] = match[0] if match else growth
+    pick = d.get("reserve_challenge")
+    if pick in names:
+        fin_row["reserve_challenge"] = pick
+    elif pick not in (None, ""):
+        problems.append(f"reserve challenge: {pick!r} is not a country")
+    if phase >= 6:
+        debt = d.get("debt") or {}
+        fin_row["borrow"] = _number(debt.get("borrow"), "borrowing", problems, lo=0)
+        fin_row["repay"] = _number(debt.get("repay"), "repayment", problems, lo=0)
+        fin_row["default"] = "yes" if debt.get("default") is True else "no"
+    if phase >= 7:
+        inst = d.get("institutions") or {}
+        if isinstance(inst.get("join_wto"), bool):
+            fin_row["join_wto"] = "yes" if inst["join_wto"] else "no"
+        if n == sim.hegemon and isinstance(inst.get("hegemon_provides"), bool):
+            fin_row["hegemon_provides"] = "yes" if inst["hegemon_provides"] else "no"
+        for g, r in (inst.get("bound_tariffs") or {}).items():
+            if g in goods and r not in (None, ""):
+                fin_row[f"bind_{g}"] = _number(r, f"binding on {g}", problems,
+                                               lo=0, hi=100) / 100
+    return row, fin_row, tar_n, legs_n, sp_n, problems
+
+
+def _dry_run(sim, sheets):
+    """
+    Play the built round on a throwaway copy and say what would not go through
+    -- a trade short of goods, a side payment that can't be covered -- or why
+    it can't play at all, while there is still time to fix it. Report lines;
+    only failures, never results.
+    """
+    folder = tempfile.mkdtemp(prefix="ipe-dry-run-")
+    try:
+        path = os.path.join(folder, "dry.xlsx")
+        _write_book(path, sheets)
+        trial = copy.deepcopy(sim)
+        with contextlib.redirect_stdout(io.StringIO()):
+            rd = trial.run_round(**load_round(trial, path))
+    except Exception as e:
+        return [f"  THIS ROUND CAN'T PLAY YET: {e}"]
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    failed = [line.strip() for line in
+              rd["trade_log"] + (rd.get("side_payment_log") or [])
+              if "FAILED" in line]
+    if not failed:
+        return []
+    return ["  Won't go through as things stand:"] + [f"         {f}" for f in failed]
+
+
 def _plan_from_inbox(sim, workbook, inbox):
     """
     Turn the inbox into this round's sheets. Returns (sheets, report lines,
@@ -1330,11 +1496,7 @@ def _plan_from_inbox(sim, workbook, inbox):
                         f"round{rnd - 1:02d}.xlsx")
     prev = prev if os.path.exists(prev) else None
     sheets = _template_sheets(sim, rnd)
-    names, goods, phase = list(sim.countries), list(sim.goods), sim.phase
-    import engine                            # local: engine imports us too
-    comp_max = engine.COMPENSATION_MAX_SHARE * 100
-    tax_lo, tax_hi = engine.MNC_TAX_MIN * 100, engine.MNC_TAX_MAX * 100
-    era = 1 if phase == 1 else 2
+    names, phase = list(sim.countries), sim.phase
     stamp = lambda t: datetime.datetime.fromtimestamp(t).strftime("%H:%M")
 
     lines = []
@@ -1348,74 +1510,18 @@ def _plan_from_inbox(sim, workbook, inbox):
             prod.loc[n, "mnc_tax_pct"] = float(
                 sim.countries[n].get("mnc_tax_choice", 0.0) or 0.0)
     status = {}
+    chose_growth = set()
 
     for n in names:
         entry = box["teams"].get(("country", n))
         d = entry["data"] if entry else None
         problems, row, fin_row, tar_n, legs_n, sp_n = [], {}, {}, [], [], []
         if d is not None:
-            fphase = d.get("phase")
-            fera = ((1 if fphase == 1 else 2)
-                    if isinstance(fphase, int) and fphase >= 1 else None)
-            if fera != era:
-                problems.append(f"filled in for Phase {fphase}, but this is Phase {phase}")
-            else:
-                p = d.get("production") or {}
-                for g in goods:
-                    workers = _number((p.get("labor") or {}).get(g),
-                                      f"workers in {g}", problems, lo=0)
-                    if era == 1:
-                        row[g] = workers
-                    else:
-                        row[f"labor_{g}"] = workers
-                        row[f"capital_{g}"] = _number((p.get("capital") or {}).get(g),
-                                                      f"capital in {g}", problems, lo=0)
-                row["compensation_pct"] = _number(d.get("compensation_pct"), "compensation",
-                                                  problems, lo=0, hi=comp_max) / 100
-                if "mnc_tax_pct" in prod.columns and d.get("mnc_tax_pct") not in (None, ""):
-                    row["mnc_tax_pct"] = _number(d.get("mnc_tax_pct"), "MNC tax",
-                                                 problems, lo=tax_lo, hi=tax_hi) / 100
-                for partner, rates in (d.get("tariffs") or {}).items():
-                    for g, r in (rates or {}).items():
-                        rate = _number(r, f"tariff on {g} from {partner}", problems,
-                                       lo=0, hi=100)
-                        if partner in names and partner != n and g in goods and rate > 0:
-                            tar_n.append((n, partner, g, rate / 100))
-                legs_n = _trade_legs(n, d.get("trades"), goods, names, problems)
-                for i, sp in enumerate(d.get("side_payments") or [], start=1):
-                    sp = sp if isinstance(sp, dict) else {}
-                    qty = _number(sp.get("qty"), f"side payment {i}", problems, lo=0)
-                    if sp.get("to") in names and sp.get("to") != n                             and sp.get("good") in goods and qty > 0:
-                        sp_n.append((n, sp["to"], sp["good"], qty))
-                if fin is not None:
-                    money = d.get("money") or {}
-                    if money.get("fx_regime") in ("peg", "float"):
-                        fin_row["fx_regime"] = money["fx_regime"]
-                    if isinstance(money.get("capital_controls"), bool):
-                        fin_row["capital_controls"] = "yes" if money["capital_controls"] else "no"
-                    if money.get("money_supply_growth") not in (None, ""):
-                        fin_row["money_supply_growth"] = _number(
-                            money["money_supply_growth"], "money growth", problems,
-                            lo=-100, hi=100) / 100
-                    pick = d.get("reserve_challenge")
-                    if pick in names:
-                        fin_row["reserve_challenge"] = pick
-                    elif pick not in (None, ""):
-                        problems.append(f"reserve challenge: {pick!r} is not a country")
-                    if phase >= 6:
-                        debt = d.get("debt") or {}
-                        fin_row["borrow"] = _number(debt.get("borrow"), "borrowing",
-                                                    problems, lo=0)
-                        fin_row["repay"] = _number(debt.get("repay"), "repayment",
-                                                   problems, lo=0)
-                        fin_row["default"] = "yes" if debt.get("default") is True else "no"
-                    if phase >= 7:
-                        inst = d.get("institutions") or {}
-                        if isinstance(inst.get("join_wto"), bool):
-                            fin_row["join_wto"] = "yes" if inst["join_wto"] else "no"
-                        if n == sim.hegemon and isinstance(inst.get("hegemon_provides"), bool):
-                            fin_row["hegemon_provides"] = ("yes" if inst["hegemon_provides"]
-                                                           else "no")
+            try:
+                row, fin_row, tar_n, legs_n, sp_n, problems = _read_country_file(
+                    sim, n, d, "mnc_tax_pct" in prod.columns, fin is not None)
+            except (AttributeError, TypeError, ValueError):
+                problems = ["its layout can't be read"]
         if d is not None and not problems:
             for col, v in row.items():
                 prod.loc[n, col] = v
@@ -1428,6 +1534,10 @@ def _plan_from_inbox(sim, workbook, inbox):
             older = box["replaced"].get(("country", n))
             if older:
                 note += f"  (replaces {', '.join(stamp(e['time']) for e in older)})"
+            if d.get("phase") != phase:
+                note += f"  (filled in for Phase {d.get('phase')}, this is Phase {phase})"
+            if "money_supply_growth" in fin_row:
+                chose_growth.add(n)
             status[n] = note
             continue
         # no usable file: repeat last round
@@ -1459,6 +1569,8 @@ def _plan_from_inbox(sim, workbook, inbox):
                 dest = d.get("relocate_to") or ""
                 if dest and dest not in names:
                     problems.append(f"{fid}: {dest!r} is not a country")
+                elif dest and dest in sim.firms[fid].get("owners", []):
+                    problems.append(f"{fid} can't move to {dest}, its owner's home")
                 if not problems:
                     firms.loc[fid, "scale"] = scale
                     firms.loc[fid, "relocate_to"] = dest
@@ -1533,10 +1645,17 @@ def _plan_from_inbox(sim, workbook, inbox):
                 what = ("already holds it" if b == c
                         else f"backs {c}, which is not challenging")
                 lines.append(f"  Reserve currency: {b} {what} -- no effect")
+    if fin is not None:
+        for n in names:
+            growth = float(fin.loc[n, "money_supply_growth"] or 0.0)
+            if growth and n not in chose_growth:
+                lines.append(f"  Money  {n} sent no new rate, so last round's "
+                             f"{growth:+.0%} repeats")
     for name in box["stale"]:
         lines.append(f"  Set aside {name}: reached the inbox before Round {rnd - 1} was played")
     for name, why in box["rejected"]:
         lines.append(f"  Set aside {name}: {why}")
+    lines += _dry_run(sim, sheets)
     return sheets, lines, box["listing"]
 
 
@@ -1587,10 +1706,17 @@ def _inbox_changed(path, inbox):
 
 
 def _archive_inbox(path, inbox):
-    """Move the files a played round used into rounds/roundNN/."""
+    """
+    Move the files a played round used into rounds/roundNN/: the ones its
+    build listed. One that arrived after the build stays in the inbox, where
+    the next round reports it, rather than vanishing into this round's folder.
+    """
     dest = os.path.splitext(os.path.abspath(path))[0]
+    built_from = set(pd.read_excel(path, sheet_name=INBOX_SHEET)["file"].astype(str))
     moved = 0
     for name, _ in _inbox_listing(inbox):
+        if name not in built_from:
+            continue
         os.makedirs(dest, exist_ok=True)
         target = os.path.join(dest, name)
         stem, ext = os.path.splitext(name)

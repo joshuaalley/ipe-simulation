@@ -355,6 +355,32 @@ def test_phase_change_rebases_prosperity():
               for n in names))   # same decisions both rounds -> no change
 
 
+def test_tariff_wall_is_what_was_applied():
+    print("\n[13] the tariff wall records the round's own tariffs")
+    dec = {c: {"production": PROD[c], "tariffs": {}} for c in C}
+
+    def game():
+        return IPESimulation({c: PHASE1_COUNTRIES[c] for c in C}, PHASE1_GOODS, phase=1)
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim = game()
+        sim.countries["Llano"]["approval"] = 0.0
+        fell = sim.run_round(dec, [])
+        after = sim.run_round(dec, [])
+    check("  a government that falls doesn't back-date its tariff floor",
+          fell["governments_fallen"] == ["Llano"] and "Llano" not in fell["tariff_wall"],
+          str(fell["tariff_wall"]))
+    check("  ...the floor shows from the round it applies",
+          after["tariff_wall"]["Llano"]["Bosque"]["cloth"] == 0.2, str(after["tariff_wall"]))
+    with contextlib.redirect_stdout(io.StringIO()):
+        sim = game()
+        sim.inject_populist_backlash("Llano", rounds=1)
+        last = sim.run_round(dec, [])
+    check("  a government stepping down still counts for its last round",
+          last["populist_ended"] == ["Llano"] and last["tariff_wall"]["Llano"]["Bosque"]["cloth"] == 0.2,
+          str(last["tariff_wall"]))
+
+
 def main():
     for t in [test_seeded_and_separate, test_protection_buys_approval,
               test_paying_your_own_losers, test_compensation_cap_is_enforced,
@@ -362,7 +388,7 @@ def main():
               test_openness_topples_a_government, test_backlash_is_endogenous,
               test_compensation_helps, test_survives_upgrade_and_restore,
               test_bounds, test_phase_change_rebases_prosperity,
-              test_populist_term]:
+              test_populist_term, test_tariff_wall_is_what_was_applied]:
         try:
             t()
         except Exception:
