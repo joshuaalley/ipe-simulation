@@ -307,6 +307,8 @@ def test_money_debt_institutions_fields():
         elif c == "Sabine":
             extra = {"money": {"fx_regime": "float", "capital_controls": False,
                                "money_supply_growth": -2}}
+        elif c == "Trinity":
+            extra = {"money": {"money_supply_growth": -10}}
         drop(folder, f"{c}.json", country_file(c, phase=7, **extra))
     path = os.path.join(folder, "round02.xlsx")
     quiet(sim.play_round, path)
@@ -317,6 +319,9 @@ def test_money_debt_institutions_fields():
                           "money_supply_growth": 0.05}, str(m["Bosque"]))
     check("  tightening from the page (-2) arrives as -2%",
           m["Sabine"]["money_supply_growth"] == -0.02, str(m["Sabine"]))
+    check("  the big tightening step (-10) arrives as -10%, a choice the engine takes",
+          m["Trinity"]["money_supply_growth"] == -0.10
+          and not sim._validate_monetary_decisions({"Trinity": m["Trinity"]}), str(m["Trinity"]))
     check("  a country that chose 'keep' keeps its current policy",
           m["Llano"]["fx_regime"] == sim._regime(sim._mon("Llano").get("fx_regime", "float"))
           and m["Llano"]["money_supply_growth"] == sim._mon("Llano").get("money_supply_growth", 0.0))

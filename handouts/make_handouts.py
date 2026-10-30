@@ -497,12 +497,14 @@ def finance_form_page(name):
                           for g in MONEY_CHOICES)
     fric, cut = _pct(engine.BASE_FX_FRICTION), _pct(engine.CONTROLS_FIRM_CUT)
     stim = f"{engine.STIMULUS_PER_POINT:g}"
-    tight = _pct(-min(MONEY_CHOICES))                       # the tightening step, e.g. 2
-    tight_cost = f"{engine.STIMULUS_PER_POINT * -min(MONEY_CHOICES) * 100:g}"
+    steps = [f"$-${_pct(-g)}" for g in sorted(MONEY_CHOICES, reverse=True) if g < 0]
+    tight = ", ".join(steps[:-1]) + " or " + steps[-1] if len(steps) > 1 else steps[0]
     half = {0.5: "half", 1.0: "all"}.get(engine.WEAK_FX_IMPORT_COST,
                                           f"{engine.WEAK_FX_IMPORT_COST:g} times")
     eg = _pct(engine.WEAK_FX_IMPORT_COST * 0.10)
     drag = f"{engine.WEAK_FX_WELFARE_DRAG * 10:g}"          # % per 10 points
+    xg = f"{engine.WEAK_FX_EXPORT_GAIN * 10:g}"            # % per 10 points, all output exported
+    xeg = f"{engine.WEAK_FX_EXPORT_GAIN * 0.10 * 0.5 * 100:g}"   # FX 0.90, half exported
     dcost = f"{engine.DEBT_DEFAULT_COST:g}"
     cap, base = _pct(engine.BORROW_CAP_SHARE), _pct(engine.DEBT_BASE_RATE)
     prem, ban = _pct(engine.DEBT_RISK_PREMIUM), engine.DEBT_DEFAULT_BAN_ROUNDS
@@ -516,7 +518,7 @@ def finance_form_page(name):
 \begin{{itemize}}[nosep,leftmargin=1.4em]
   \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
   \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
-  \item Money growth: \quad {pct} \quad \textit{{(0\% = follow the anchor)}}
+  \item Money growth: \quad {pct}\newline \textit{{(0\% = follow the anchor)}}
 \end{{itemize}}
 {{\small
 \begin{{description}}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
@@ -531,8 +533,11 @@ def finance_form_page(name):
     index. Your FX index falls by the same \% for good. A weak currency shrinks every
     import you receive by {half} the drop, and costs {drag}\% of welfare every round
     for each 10 points below 1.00 (FX 0.90 $\to$ imports $-${eg}\%, welfare $-${drag}\%).
-  \item[Tightening] $-${tight}\%: your FX index rises {tight}\% for good (it can pass
-    1.00), and welfare falls {tight_cost}\% this round.
+    But it makes your exports cheap abroad: welfare rises {xg}\% a round for each
+    10 points below 1.00, times the share of your own output you export outside
+    your union (FX 0.90, half exported $\to$ +{xeg}\%).
+  \item[Tightening] {tight}\%: your FX index rises by that \% for good (it can
+    pass 1.00), and welfare falls {stim}\% this round for each point.
 \end{{description}}}}
 
 \vspace{{4pt}}

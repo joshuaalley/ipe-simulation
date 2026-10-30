@@ -13,6 +13,8 @@ Stress test Phase 5 monetary mechanics:
 - what each choice buys: printing's stimulus, a weak currency's import cost,
   controls' cost to foreign firms; 'managed' = float; the open-peg exposure;
   no attack without a clear target; capital flight works in Phase 5
+- tightening by 5% and 10% to climb back after a crisis; a weak currency
+  pays exporters in proportion to what they export
 - reserve-currency challenges: a majority of the countries, not size, decides
   by default ("welfare" lets size decide); settled after the round; the
   hegemony follows from Phase 7
@@ -28,7 +30,7 @@ from engine import (
     WARNING_DEVALUATION, CRISIS_DEVALUATION, CRISIS_WELFARE_HIT,
     BASE_FX_FRICTION, WARNING_FRICTION_BUMP,
     STIMULUS_PER_POINT, WEAK_FX_IMPORT_COST, WEAK_FX_WELFARE_DRAG,
-    CONTROLS_FIRM_CUT,
+    WEAK_FX_EXPORT_GAIN, CONTROLS_FIRM_CUT,
 )
 
 PASS, FAIL = [], []
@@ -817,6 +819,88 @@ def test_reserve_challenge():
           IPESimulation.from_state(state).challenge_rule == "majority")
 
 
+def test_bigger_tightening():
+    print("\n[27] tightening 5% and 10%: the way back up after a crisis")
+    base = fresh_phase5()
+    anchor = base.reserve_currency_holder
+    a = next(c for c in base.countries if c != anchor)
+    check("  -5% and -10% are on the menu", {-0.05, -0.10} <= set(PHASE5_MONEY_GROWTH_CHOICES))
+    calm = copy.deepcopy(base)
+    r0 = quiet(calm.run_round, BAL_DEC, [], firm_decisions=fd(calm), monetary_decisions=base_md())
+    for g in (-0.05, -0.10):
+        s = copy.deepcopy(base)
+        md = base_md()
+        md[a].update(fx_regime="peg", money_supply_growth=g)       # peg + open + tighten
+        r = quiet(s.run_round, BAL_DEC, [], firm_decisions=fd(s), monetary_decisions=md)
+        m = r["results"][a]["monetary"]
+        check(f"  {g:.0%}: the currency gains {-g:.0%}, welfare falls {-g:.0%}, no stress",
+              abs(m["depreciation_factor"] - (1 - g)) < 1e-12
+              and abs(r["results"][a]["welfare"] / r0["results"][a]["welfare"] - (1 + g)) < 1e-12
+              and m["stress"] == 0 and not m["warning"],
+              f'{m["depreciation_factor"]:.4f} {r["results"][a]["welfare"] / r0["results"][a]["welfare"]:.4f}')
+    climbed = {}
+    for g in (-0.02, -0.10):
+        s = copy.deepcopy(base)
+        quiet(s.inject_speculative_attack, a)                         # 30% down
+        md = base_md()
+        md[a]["money_supply_growth"] = g
+        for _ in range(3):
+            r = quiet(s.run_round, BAL_DEC, [], firm_decisions=fd(s), monetary_decisions=md)
+        climbed[g] = r["results"][a]["monetary"]["depreciation_factor"]
+    check("  after a 30% crisis, three rounds at -10% climb back to 0.93 (at -2%, 0.74)",
+          abs(climbed[-0.10] - 0.70 * 1.10 ** 3) < 1e-9 and abs(climbed[-0.02] - 0.70 * 1.02 ** 3) < 1e-9,
+          str(climbed))
+
+
+def test_export_gain():
+    print("\n[28] a weak currency pays exporters, in proportion to what they export")
+    import engine
+    base = fresh_phase5()
+    anchor = base.reserve_currency_holder
+    a, b, c = [x for x in base.countries if x != anchor][:3]
+    own = base._compute_production(BAL_DEC)[a]
+    made = sum(q * base.world_prices[g] for g, q in own.items())
+
+    def play(trades=(), sidep=None, dep=0.8, union=False, gain=None):
+        s = copy.deepcopy(base)
+        if union:
+            quiet(s.form_monetary_union, a, b, name="AB")
+        s._mon(a)["depreciation_factor"] = dep
+        old = engine.WEAK_FX_EXPORT_GAIN
+        engine.WEAK_FX_EXPORT_GAIN = old if gain is None else gain
+        try:
+            r = quiet(s.run_round, BAL_DEC, list(trades), firm_decisions=fd(s),
+                      monetary_decisions=base_md(), side_payments=sidep)
+        finally:
+            engine.WEAK_FX_EXPORT_GAIN = old
+        failed = [l for l in r["trade_log"] + r.get("side_payment_log", []) if "FAILED" in l]
+        assert not failed and len(r["trades_executed"]) == len(trades), failed
+        return r["results"][a]
+
+    def rate(x):
+        g = x["monetary"]["export_gain"]
+        return g / (x["welfare"] - g)
+
+    x = play([(a, c, "cloth", 10, "wine", 10)])
+    share = 10 * base.world_prices["cloth"] / made
+    check("  welfare rises by the gain x (1 - FX) x the share of its output it exports",
+          x["monetary"]["export_gain"] > 0
+          and abs(rate(x) - WEAK_FX_EXPORT_GAIN * 0.2 * share) < 1e-12,
+          f"{rate(x):.6f} vs {WEAK_FX_EXPORT_GAIN * 0.2 * share:.6f}")
+    y = play([(a, c, "cloth", 10, "wine", 10)], gain=0.0)
+    check("  ...after the gains-from-trade measure, which it leaves alone",
+          y["gains_from_trade_pct"] == x["gains_from_trade_pct"]
+          and abs(x["welfare"] - y["welfare"] - x["monetary"]["export_gain"]) < 1e-9)
+    check("  a weak currency with no exports gains nothing", play()["monetary"]["export_gain"] == 0.0)
+    check("  a currency at par gains nothing from exporting",
+          play([(a, c, "cloth", 10, "wine", 10)], dep=1.0)["monetary"]["export_gain"] == 0.0)
+    check("  side payments are gifts, not exports",
+          play(sidep=[(a, c, "cloth", 10)])["monetary"]["export_gain"] == 0.0)
+    x = play([(a, b, "cloth", 5, "wine", 5), (a, c, "cloth", 5, "wine", 5)], union=True)
+    check("  exports to a monetary-union partner don't count",
+          abs(rate(x) - WEAK_FX_EXPORT_GAIN * 0.2 * 5 * base.world_prices["cloth"] / made) < 1e-12)
+
+
 def main():
     for t in [test_upgrade, test_validation, test_trilemma_graduated,
               test_money_decay, test_fx_friction, test_host_currency_profits,
@@ -827,7 +911,8 @@ def main():
               test_controls_cost_foreign_firms, test_peg_to_peg_friction,
               test_open_peg_exposure, test_no_clear_target,
               test_capital_flight_in_phase5, test_pegs_follow_the_anchor,
-              test_tightening, test_reserve_challenge]:
+              test_tightening, test_reserve_challenge, test_bigger_tightening,
+              test_export_gain]:
         try:
             t()
         except Exception:

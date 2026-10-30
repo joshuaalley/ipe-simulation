@@ -522,9 +522,11 @@ def _rounds(n):
 #   exchange rate  peg | float     peg: no currency friction with other peggers
 #   capital        open | controls controls: foreign firms here produce less,
 #                                  and (Phase 6) no borrowing abroad
-#   money growth   0 | 2 | 5 | 10% printing: a stimulus now, a weaker currency
+#   money growth   -10 | -5 | -2 | 0 | 2 | 5 | 10%
+#                                  printing: a stimulus now, a weaker currency
 #                                  for good (smaller imports, a welfare drag,
-#                                  heavier debt)
+#                                  heavier debt, but cheaper exports);
+#                                  tightening: the mirror
 # Printing money IS running your own monetary policy; 0% follows the anchor.
 # A peg is fixed to the reserve currency, so it imports the anchor's policy:
 # whatever the reserve currency loses (its printing, a warning, a crisis, an
@@ -532,11 +534,12 @@ def _rounds(n):
 # Peg + open capital + printing is the overreach that builds stress.
 
 # Discrete money-supply growth choices. Anything above 0 is "printing".
-# -2% tightens: the currency strengthens 2% for good (it can rise above par),
-# and welfare falls 2% that round -- the mirror of printing. Like printing it is
-# independent monetary policy, but it builds no trilemma stress: tight money
-# doesn't invite a run on the currency.
-PHASE5_MONEY_GROWTH_CHOICES = [-0.02, 0.0, 0.02, 0.05, 0.10]
+# Below 0 tightens: the currency strengthens by that much for good (it can rise
+# above par), and welfare falls by that much that round -- the mirror of
+# printing. -5% and -10% are the way back up after a crisis. Like printing it
+# is independent monetary policy, but it builds no trilemma stress: tight
+# money doesn't invite a run on the currency.
+PHASE5_MONEY_GROWTH_CHOICES = [-0.10, -0.05, -0.02, 0.0, 0.02, 0.05, 0.10]
 PHASE5_REGIMES = ("peg", "float")
 # Older saves and workbooks may say "managed"; it behaves exactly like "float".
 REGIME_ALIASES = {"managed": "float"}
@@ -554,6 +557,11 @@ WEAK_FX_WELFARE_DRAG = 0.10    # ...and welfare falls by 0.10 x (1 - FX) every
                                # round (savers' money buys less): -1% for each
                                # 10 points below par. Keeps printing costly
                                # even for a country that barely trades.
+WEAK_FX_EXPORT_GAIN = 0.2      # ...but exports get cheaper abroad: welfare
+                               # rises by 0.2 x (1 - FX) x the share of its own
+                               # output the country exports (outside its union).
+                               # Above 0.3, printing 10% every round starts to
+                               # pay for big exporters.
 CONTROLS_FIRM_CUT = 0.15       # foreign firms under capital controls: -15% output
 PEG_PEG_FRICTION = 0.0         # friction multiplier when both sides peg (was 0.5)
 
@@ -945,7 +953,7 @@ class IPESimulation:
             # currency stimulates, a debased one barely does. Applied after
             # the gains metric (it is not a gain from trade); its bill is the
             # weaker currency, which shrinks imports from now on.
-            stimulus = fx_drag = 0.0
+            stimulus = fx_drag = export_gain = 0.0
             if self.phase >= 5:
                 mon = self._mon(name)
                 growth = mon.get("money_supply_growth", 0.0)
@@ -958,10 +966,15 @@ class IPESimulation:
                     stimulus = welfare * STIMULUS_PER_POINT * growth
                     welfare += stimulus
                 # A currency below par erodes savings whether or not you
-                # trade -- so printing is never free.
+                # trade -- so printing is never free -- and makes your exports
+                # cheap abroad, which pays only if you export.
                 if dep < 1.0:
                     fx_drag = welfare * WEAK_FX_WELFARE_DRAG * (1.0 - dep)
                     welfare -= fx_drag
+                    export_gain = (welfare * WEAK_FX_EXPORT_GAIN * (1.0 - dep)
+                                   * self._export_share(name, trade_records,
+                                                        country_production[name]))
+                    welfare += export_gain
 
             # Phase 3+: the MNC tax collected here is the host's to spend.
             # After the gains metric: a transfer from foreign owners, not a
@@ -1041,6 +1054,7 @@ class IPESimulation:
                     "crisis_welfare_loss": crisis_welfare_loss,
                     "stimulus": stimulus,
                     "fx_drag": fx_drag,
+                    "export_gain": export_gain,
                     # how far this round's peg followed the reserve currency
                     "anchor_follow": ev.get("anchor_follow", 1.0),
                     "union_id": self.countries[name].get("union_id"),
@@ -1993,6 +2007,26 @@ class IPESimulation:
             return (f"  FAILED: {importer} cannot export {qty_in:.1f} {good_in} "
                     f"(has {consumption[importer].get(good_in, 0):.1f})")
         return None
+
+    def _export_share(self, name, trade_records, output):
+        """
+        The share of a country's own output (at world prices) that it shipped
+        this round in trades with countries outside its monetary union: the
+        exports a weak currency makes cheap abroad. Side payments are gifts,
+        not exports.
+        """
+        made = sum(q * self.world_prices[g] for g, q in output.items())
+        if made <= 0:
+            return 0.0
+        uid = self.countries[name].get("union_id")
+        sent = 0.0
+        for t in trade_records:
+            for me, other, good, qty in (
+                    (t["exporter"], t["importer"], t["good_out"], t["qty_out_sent"]),
+                    (t["importer"], t["exporter"], t["good_in"], t["qty_in_sent"])):
+                if me == name and not (uid and uid == self.countries[other].get("union_id")):
+                    sent += qty * self.world_prices[good]
+        return min(1.0, sent / made)
 
     def _weak_fx_cost(self, receiver, sender):
         """

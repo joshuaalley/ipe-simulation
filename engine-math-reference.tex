@@ -390,11 +390,12 @@ What each choice buys or costs:
 \begin{align*}
 \text{printing } g>0:&\quad d \mathrel{\times}= (1-g), \qquad
   U \mathrel{\times}= (1 + \sigma\, g\, d), \quad \sigma = 1 \\
-\text{tightening } g=-0.02:&\quad d \mathrel{\times}= (1-g) = 1.02 \ \text{(it can pass par)},
-  \qquad U \mathrel{\times}= (1 + \sigma\, g) = 0.98 \\
+\text{tightening } g\in\{-0.02,-0.05,-0.10\}:&\quad d \mathrel{\times}= (1-g) \ \text{(it can pass par)},
+  \qquad U \mathrel{\times}= (1 + \sigma\, g) \\
 \text{weak currency:}&\quad \text{each import received} \times
   \big(1 - \lambda\,(1-d_{\text{receiver}})\big), \quad \lambda = 0.5 \\
   &\quad U \mathrel{\times}= \big(1 - \mu\,(1-d)\big) \text{ every round}, \quad \mu = 0.10 \\
+  &\quad U \mathrel{\times}= \big(1 + \varepsilon\,(1-d)\,x\big) \text{ every round}, \quad \varepsilon = 0.2 \\
 \text{capital controls:}&\quad \text{hosted firms' output} \times (1-0.15),
   \ \text{no foreign borrowing} \\
 \text{FX friction:}&\quad \mathrm{fx} = 0.02 \ (+0.03 \text{ just after a warning}) \\
@@ -409,9 +410,14 @@ follow itself.
 FX friction is zero with the reserve holder, inside a monetary union, or between
 two pegged currencies. Friction and the weak-currency cut stack on tariffs
 multiplicatively:
-$\text{received} = \text{qty}\,(1-t)(1-\mathrm{fx})\big(1-\lambda(1-d)\big)$. The
-stimulus and the drag are applied after the gains-from-trade measure (neither is a
-gain from trade); the drag hits any currency below par, printer or crisis victim.
+$\text{received} = \text{qty}\,(1-t)(1-\mathrm{fx})\big(1-\lambda(1-d)\big)$. In the
+export gain, $x$ is the share of the country's own output (at world prices) that it
+shipped this round in trades with countries outside its monetary union
+(\code{\_export\_share}); side payments are gifts, not exports. A weak currency
+makes exports cheap abroad, so it now pays a country that exports while it costs
+one that imports. The stimulus, the drag and the export gain are applied after the
+gains-from-trade measure (none is a gain from trade); the drag hits any currency
+below par, printer or crisis victim.
 Crisis targeting (\code{fx\_vulnerability}) scores overreach, stress, a
 recent warning, an open peg, loose money, open capital and a weak currency; a dead
 heat at the top, or no exposure at all, fires nothing. \code{"managed"} is accepted
@@ -440,16 +446,22 @@ buys something. The stimulus is scaled by $d$ because a flat stimulus made print
 the import cost falls on the printer itself, because a cost borne only by foreign
 firm owners would not deter it; and the welfare drag exists because, in a world
 with little or no trade, the import cost barely bites and printing forever won
-again. \code{stress\_test\_money\_balance.py} plays six quite different worlds
-(class-like, heavy, light and no trade, specialized, six countries) and fails if
-printing forever or peg $+$ controls $+$ 0\% is ever a country's best choice, if
-one choice is best for everybody in a world, or if controls fall more than 12\%
-behind. The constants sit in the middle of the passing range (it holds with
-$\sigma$ and $\mu$ both scaled by $\pm 25\%$ and with $\lambda$ from 0.35 to 0.65),
-so a real class's trade pattern should not need a re-tune. In that test, printing
-every round pays only for economies that barely trade; in trading worlds the best
-fixed stance is a peg or a float at 0\%, depending on partners --- the
-small-open-economy lesson --- and printing is a one-off tool.
+again. The export gain exists because a weak currency was otherwise all cost, and
+the larger tightening steps because climbing back from a crisis at 2\% a round took
+most of a term. \code{stress\_test\_money\_balance.py} plays six quite different
+worlds (class-like, heavy, light and no trade, specialized, six countries) and
+fails if printing forever or peg $+$ controls $+$ 0\% is ever a country's best
+choice, if one choice is best for everybody in a world, or if controls fall more
+than 12\% behind. The constants sit in the middle of the passing range (it holds
+with $\sigma$ and $\mu$ both scaled by $\pm 25\%$ and with $\lambda$ from 0.35 to
+0.65). The export gain passes from 0 to 0.3. At 0.35 printing 10\% every round
+starts to pay for a big exporter, and 0.25 fails once $\lambda$ falls to 0.35, so
+$\varepsilon = 0.2$ holds under all of those changes. A real class's trade pattern
+should not need a re-tune. In that test, printing every round pays only for
+economies that barely trade, or by a hair (under 1\%) for a small economy that
+exports much of its output; in trading worlds the best fixed stance is otherwise a
+peg or a float at 0\%, depending on partners --- the small-open-economy lesson ---
+and printing is a one-off tool.
 
 \textbf{Divergence.} $d$ is a \emph{reduced-form currency-strength index} driven by
 policy choices and shocks --- there is no money supply/demand, no interest parity,

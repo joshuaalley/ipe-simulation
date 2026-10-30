@@ -468,8 +468,8 @@ def _template_sheets(sim, rnd):
     if phase >= 5:
         fin = pd.DataFrame({"country": names})
         mon = [sim._mon(n) for n in names]
-        # peg | float ; yes | no ; 0, 2, 5 or 10 (percent -- 0 follows the
-        # anchor, anything above is printing money)
+        # peg | float ; yes | no ; -10, -5, -2, 0, 2, 5 or 10 (percent -- 0
+        # follows the anchor, above is printing money, below is tightening)
         fin["fx_regime"] = [sim._regime(m.get("fx_regime", "float")) for m in mon]
         fin["capital_controls"] = [
             "yes" if m.get("capital_controls") else "no" for m in mon]

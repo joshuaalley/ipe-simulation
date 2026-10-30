@@ -563,9 +563,13 @@ the reserve holder prints or crashes, every peg falls with it: imported
 inflation, the end-of-Bretton-Woods story); capital controls keep speculators out but cost
 foreign firms 15% of their output and close off borrowing; printing money buys
 a stimulus now and a weaker currency for good (smaller imports, 1% of welfare
-a round per 10 points below par, heavier debt); tightening (−2%) is the mirror:
-the currency strengthens 2% for good, even past par, for 2% of welfare that round,
-and builds no trilemma stress. When the reserve holder tightens, everyone else's
+a round per 10 points below par, heavier debt, but cheaper exports: 2% of welfare
+a round per 10 points below par, times the share of its own output a country
+exports outside its monetary union); tightening (−2, −5 or −10%) is the mirror:
+the currency strengthens by that much for good, even past par, for the same share
+of welfare that round, and builds no trilemma stress. The bigger steps are the way
+back up after a crisis: from 0.70, three rounds at −10% reach 0.93, where −2%
+would only reach 0.74. When the reserve holder tightens, everyone else's
 reserve-currency debt gets heavier (the Volcker shock). Debt is owed in the reserve
 currency, so its weight follows a currency's value against the reserve's: the
 reserve holder owes in its own money, a peg that falls with the reserve owes no
@@ -578,8 +582,12 @@ left off the form and off everything projected on purpose: students find it by
 playing.
 
 Expect trading countries to settle on a peg or a float at 0%: printing every
-round pays only for an economy that barely trades, and otherwise works as a
-one-off boost. That is the small-open-economy lesson, not a flaw.
+round pays only for an economy that barely trades, or by a hair for a small
+economy that exports much of its output (in the test, Bosque printing 5% a round
+beats pegging by under 1%), and otherwise works as a one-off boost. That is the
+small-open-economy lesson, not a flaw. A crisis-hit exporter has a real choice:
+the weak currency keeps paying on its exports while it costs on imports and
+savings, and tightening buys the currency back at a welfare cost.
 
 `stress_test_money_balance.py` plays six quite different trading worlds
 (class-like, heavy, light and no trade, specialized, six countries) against

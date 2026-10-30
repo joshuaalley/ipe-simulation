@@ -32,7 +32,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 from engine import (IPESimulation, PHASE2_COUNTRIES, PHASE2_GOODS,
-                    build_firm_roster)
+                    PHASE5_MONEY_GROWTH_CHOICES, build_firm_roster)
 
 PASS, FAIL = [], []
 G = PHASE2_GOODS
@@ -94,7 +94,7 @@ WORLDS = {
 TRADING = [w for w in WORLDS if w != "no trade"]
 
 STRATS = list(itertools.product(("peg", "float"), (False, True),
-                                (-0.02, 0.0, 0.02, 0.05, 0.10)))
+                                PHASE5_MONEY_GROWTH_CHOICES))
 OLD_WINNER = ("peg", True, 0.0)
 PRINT_FOREVER = ("float", False, 0.10)
 BASELINES = (("peg", False, 0.0), ("float", False, 0.0))
