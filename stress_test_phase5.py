@@ -9,7 +9,8 @@ Stress test Phase 5 monetary mechanics:
 - host-currency firm profits (real = nominal * host depreciation), except
   an exporter's, which is paid in world prices
 - manual speculative attack, monetary shock, capital flight
-- monetary unions: shared state, formation, dissolution
+- monetary unions: shared state, formation (FX index weighted by size),
+  dissolution
 - save/restore; dashboard + plot render
 - what each choice buys: printing's stimulus, a weak currency's import cost,
   controls' cost to foreign firms; 'managed' = float; the open-peg exposure;
@@ -25,13 +26,13 @@ import matplotlib
 matplotlib.use("Agg")
 
 from engine import (
-    IPESimulation,
+    IPESimulation, best_autarky,
     PHASE2_COUNTRIES, PHASE2_GOODS, PHASE3_FIRMS,
     PHASE5_MONEY_GROWTH_CHOICES,
     WARNING_DEVALUATION, CRISIS_DEVALUATION, CRISIS_WELFARE_HIT,
     BASE_FX_FRICTION, WARNING_FRICTION_BUMP,
     STIMULUS_PER_POINT, WEAK_FX_IMPORT_COST, WEAK_FX_WELFARE_DRAG,
-    WEAK_FX_EXPORT_GAIN, CONTROLS_FIRM_CUT,
+    WEAK_FX_EXPORT_GAIN, CONTROLS_FIRM_CUT, UNION_EXIT_APPROVAL_COST,
 )
 
 PASS, FAIL = [], []
@@ -1041,6 +1042,76 @@ def test_exporters_paid_in_world_prices():
     check("  the projected table says so", "paid in world prices" in out.getvalue(), out.getvalue()[-300:])
 
 
+def test_union_exit_cost_and_names():
+    print("\n[34] breaking up a union costs its members approval; names follow the union")
+    base = fresh_phase5()
+    rc = base.reserve_currency_holder
+    a, b = [c for c in base.countries if c != rc][:2]
+    quiet(base.form_monetary_union, a, b, name="U")
+    quiet(base.run_round, BAL_DEC, [], firm_decisions=fd(base), monetary_decisions=base_md())
+    for c in base.countries:
+        base.countries[c]["approval"] = 60.0                # well clear of the floor
+    free, paid = copy.deepcopy(base), copy.deepcopy(base)
+    quiet(free.dissolve_monetary_union, "U", cost=0)
+    quiet(paid.dissolve_monetary_union, "U")
+    r0 = quiet(free.run_round, BAL_DEC, [], firm_decisions=fd(free), monetary_decisions=base_md())
+    r1 = quiet(paid.run_round, BAL_DEC, [], firm_decisions=fd(paid), monetary_decisions=base_md())
+    gap = {c: r0["results"][c]["approval"]["approval"] - r1["results"][c]["approval"]["approval"]
+           for c in base.countries}
+    check(f"  each member's approval is {UNION_EXIT_APPROVAL_COST:g} points lower the next round",
+          all(abs(gap[c] - UNION_EXIT_APPROVAL_COST) < 1e-9 for c in (a, b)), str(gap))
+    check("  ...shown as union_exit in that round's record, and nobody else pays",
+          all(r1["results"][c]["approval"]["union_exit"] == -UNION_EXIT_APPROVAL_COST for c in (a, b))
+          and all(abs(gap[c]) < 1e-9 and r1["results"][c]["approval"]["union_exit"] == 0.0
+                  for c in base.countries if c not in (a, b)), str(gap))
+    r2 = quiet(paid.run_round, BAL_DEC, [], firm_decisions=fd(paid), monetary_decisions=base_md())
+    check("  the cost is paid once",
+          all(r2["results"][c]["approval"]["union_exit"] == 0.0 for c in (a, b)))
+
+    s = fresh_phase5()
+    quiet(s.form_monetary_union, rc, a, name="Joint")
+    r = quiet(s.run_round, BAL_DEC, [], firm_decisions=fd(s), monetary_decisions=base_md())
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        s.print_monetary_dashboard()
+    check("  with the reserve holder in a union, the reserve currency is the union's",
+          "Reserve currency: Joint (" in out.getvalue()
+          and r["results"][rc]["monetary"]["currency"] == "Joint"
+          and r["results"][a]["monetary"]["currency"] == "Joint", out.getvalue()[:300])
+
+
+def test_union_starts_weighted_by_size():
+    print("\n[35] a new union's FX index starts at its members' average weighted by size")
+    s = fresh_phase5()
+    size = {c: best_autarky(s.countries[c], s.goods, s.phase)["welfare"] for c in s.countries}
+    small, big = min(size, key=size.get), max(size, key=size.get)
+    s.countries[small]["depreciation_factor"] = 0.80
+    s.countries[big]["depreciation_factor"] = 1.00
+    plain = copy.deepcopy(s)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        s.form_monetary_union(small, big, name="U")
+    want = (0.80 * size[small] + 1.00 * size[big]) / (size[small] + size[big])
+    got = s.monetary_unions["U"]["state"]["depreciation_factor"]
+    check("  the index is the members' indices weighted by best welfare alone",
+          abs(got - want) < 1e-12, f"{got} vs {want}")
+    check("  ...so the big member moves it more than the plain average would",
+          got > 0.90 + 1e-6, f"{got:.3f}")
+    check("  the output says where it starts and why",
+          f"starts at {want:.2f}" in out.getvalue() and "weighted by size" in out.getvalue(),
+          out.getvalue())
+    quiet(plain.form_monetary_union, small, big, name="U", by_size=False)
+    check("  by_size=False keeps the plain average, for replaying an older union",
+          abs(plain.monetary_unions["U"]["state"]["depreciation_factor"] - 0.90) < 1e-12)
+    t = fresh_phase5()
+    try:
+        quiet(t.form_monetary_union, small, small, name="Twice")
+        check("  a country listed twice is refused", False, "no error")
+    except ValueError:
+        check("  a country listed twice is refused, nothing changes",
+              "Twice" not in t.monetary_unions and not t.countries[small].get("union_id"))
+
+
 def main():
     for t in [test_upgrade, test_validation, test_trilemma_graduated,
               test_money_decay, test_fx_friction, test_host_currency_profits,
@@ -1054,7 +1125,8 @@ def main():
               test_tightening, test_reserve_challenge, test_bigger_tightening,
               test_export_gain, test_refused_before_state_moves,
               test_reserve_union_partner, test_dissolve_keeps_last_policy,
-              test_once_and_shock_record, test_exporters_paid_in_world_prices]:
+              test_once_and_shock_record, test_exporters_paid_in_world_prices,
+              test_union_exit_cost_and_names, test_union_starts_weighted_by_size]:
         try:
             t()
         except Exception:

@@ -700,6 +700,54 @@ trade. Set the rule right after creating the game (`sim.challenge_rule =
 It is saved with the game; a game saved before this setting existed resumes on
 `"majority"`.
 
+### Monetary unions (Phase 5 on)
+
+Two or more countries can share a currency. Once they have agreed, run
+`sim.form_monetary_union("Bosque", "Sabine", name="...")` between rounds, in
+the round's own cell above its play line.
+
+- **The FX index** of the union starts at its members' indices averaged by size,
+  each weighted by its best welfare on its own (the measure the reserve race
+  uses). A member three times its partner's size counts three times as much. On
+  the day it forms, the stronger currency falls and the weaker one rises, and the
+  smaller member's moves further. The output prints the starting index and the
+  weights. Its policy starts at float, open capital and 0% money growth, with
+  stress cleared. Unions formed before November 2026 started at the plain
+  average; `by_size=False` reproduces that if you ever replay one.
+- **Deciding together.** Members make identical money choices every round: on the
+  round form each team picks the same three, or "Keep" on all three. If they
+  don't match, the build report says the round can't play yet, while there is
+  still time to fix it.
+- **Trading.** No currency friction between members, and no weak-currency cut on
+  what they buy from each other. A crisis hits the whole union.
+- **Joining the reserve currency.** A union with the reserve holder shares the
+  reserve currency: every member trades friction-free with everyone and, from
+  Phase 6, owes its debt in its own money. The union's FX index is the anchor
+  that pegs follow and that everyone else's debt is weighed against.
+- **Breaking up.** `sim.dissolve_monetary_union(name)`. Each member keeps the
+  union's FX index and its last policy, and its government takes a political
+  cost: 5 points of approval in the next round, shown as `union_exit` in that
+  round's approval record (`UNION_EXIT_APPROVAL_COST`; pass `cost=` to change it
+  for one break-up).
+
+### What leading costs the hegemon (Phase 7)
+
+Each round the hegemon provides the global public good or withholds it.
+Withholding adds 7% currency friction to every trade in the world. Providing
+keeps friction normal and costs the hegemon 4% of the **average** country's
+welfare that round (`HEGEMON_PROVISION_COST`). The results say what it paid.
+
+The bill is the same whoever leads, so it weighs lightly on a large economy and
+heavily on a small one. With four countries of very different sizes it can be
+2% of the largest economy's welfare and nearly a fifth of the smallest's. That
+is hegemonic stability's claim: a big economy gains enough from an open system
+to pay for it, while a small one gains less than it pays and is tempted to
+withhold. The world as a whole comes out ahead when the hegemon provides,
+whoever it is, which is what makes a challenge worth organizing.
+
+Until November 2026 the bill was 4% of the hegemon's own welfare, which made
+leading cheapest for the smallest economy.
+
 ## Phase transitions
 
 At the start of a new phase, run `sim.upgrade_to_phaseN(...)`, then

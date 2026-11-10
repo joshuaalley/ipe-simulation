@@ -575,6 +575,10 @@ CRISIS_WELFARE_HIT = 0.10      # stress=2: 10% welfare hit that round
 # Cross-currency trade friction (stacks on top of tariffs):
 BASE_FX_FRICTION = 0.02        # 2% baseline on cross-currency, non-union, non-reserve trade
 
+# Breaking up a monetary union is a political failure: each member's approval
+# takes this hit in the next round (dissolve_monetary_union).
+UNION_EXIT_APPROVAL_COST = 5.0
+
 
 # ═══════════════════════════════════════════════════════════════════
 #  PHASE 6 SOVEREIGN DEBT PARAMETERS
@@ -610,14 +614,18 @@ IMF_AUSTERITY_ROUNDS = 2       # ...for this many rounds
 # WTO membership, bound tariffs, hegemonic provision of public goods.
 
 WTO_DIVIDEND = 0.02            # friction cut between non-defecting WTO members
-HEGEMON_PROVISION_COST = 0.04  # hegemon pays 4% of its welfare to lead
+HEGEMON_PROVISION_COST = 0.04  # leading costs 4% of the AVERAGE country's welfare
 HEGEMON_WITHHOLD_PENALTY = 0.07   # withholding adds 7% global friction
 # Providing leaves friction where it is. It must not cut below normal: at the
 # 2% baseline that takes every trade to zero, and the WTO dividend then has
 # nothing left to cut. Tuned so provision is clearly collectively beneficial
 # (system better off when the hegemon provides, in both WTO-none and WTO-all
-# settings) while a large hegemon is still tempted to free-ride (it bears the
-# cost). A small, trade-dependent one may gain from providing anyway.
+# settings). The bill is a share of the average country's welfare, the same
+# whoever leads -- the world's public good costs what it costs. A large
+# hegemon captures enough of the gain to pay it; a small one gains less than
+# it pays and is tempted to withhold. That is hegemonic stability's claim:
+# leadership needs size. (Until November 2026 the bill was 4% of the
+# hegemon's own welfare, which made leading cheapest for the smallest.)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -945,26 +953,41 @@ class IPESimulation:
         # raises a country's gains, and losing one lowers them.
         own_varieties = (self._build_variety_bundles(country_production, {})
                          if self.phase >= 3 else None)
-        results = {}
+        # Every country's welfare first, before the Phase 7 adjustments: the
+        # hegemon's bill depends on the average country's.
+        base_welfare, no_trade, crisis_loss = {}, {}, {}
         for name in self.countries:
             if self.phase >= 3:
                 welfare = self._utility(varieties[name])
-                no_trade_welfare = self._utility(own_varieties[name])
+                no_trade[name] = self._utility(own_varieties[name])
             else:
                 welfare = self._utility(consumption[name])
-                no_trade_welfare = self._utility(production[name])
+                no_trade[name] = self._utility(production[name])
             # Phase 5+: a full currency crisis this round knocks welfare down.
-            crisis_welfare_loss = 0.0
+            crisis_loss[name] = 0.0
             if self.phase >= 5 and monetary_events.get(name, {}).get("crisis"):
-                crisis_welfare_loss = welfare * CRISIS_WELFARE_HIT
-                welfare -= crisis_welfare_loss
+                crisis_loss[name] = welfare * CRISIS_WELFARE_HIT
+            base_welfare[name] = welfare - crisis_loss[name]
+        # Phase 7+: leading costs the hegemon a share of the AVERAGE country's
+        # welfare -- the same bill whoever leads, so a large economy can carry
+        # it and a small one can't. Never more than the hegemon has.
+        hegemon_bill = 0.0
+        if (self.phase >= 7 and self.hegemon_provides
+                and self.hegemon in base_welfare):
+            hegemon_bill = (HEGEMON_PROVISION_COST * sum(base_welfare.values())
+                            / len(base_welfare))
+        results = {}
+        for name in self.countries:
+            welfare = base_welfare[name]
+            no_trade_welfare = no_trade[name]
+            crisis_welfare_loss = crisis_loss[name]
 
             # Phase 7+: hegemon pays the cost of leadership; global crisis
             # scales everyone's welfare.
             hegemon_cost = 0.0
             if self.phase >= 7:
-                if name == self.hegemon and self.hegemon_provides:
-                    hegemon_cost = welfare * HEGEMON_PROVISION_COST
+                if name == self.hegemon and hegemon_bill:
+                    hegemon_cost = min(hegemon_bill, max(welfare, 0.0))
                     welfare -= hegemon_cost
                 welfare *= crisis_factor
 
@@ -1079,7 +1102,7 @@ class IPESimulation:
             if self.phase >= 5:
                 ev = monetary_events.get(name, {})
                 results[name]["monetary"] = {
-                    "currency": self.countries[name].get("currency"),
+                    "currency": self._currency_of(name),
                     "fx_regime": self._mon(name).get("fx_regime"),
                     "capital_controls": self._mon(name).get("capital_controls"),
                     "independent_monetary": self._mon(name).get("independent_monetary"),
@@ -1697,6 +1720,10 @@ class IPESimulation:
             events[c]["warning_active"] = s.get("warning_active", False)
             events[c].setdefault("anchor_follow", 1.0)
         return events
+
+    def _currency_of(self, country):
+        """The currency a country uses: its own, or its union's."""
+        return self._mon(country).get("currency", self.countries[country].get("currency"))
 
     def _uses_reserve(self, country):
         """True for the reserve holder and anyone sharing its currency in a union."""
@@ -2541,7 +2568,7 @@ class IPESimulation:
         print(f"{'':=<55}")
         print(f"  Upgraded to Phase 5: Money & FX (the Trilemma)")
         print(f"{'':=<55}")
-        print(f"  Reserve currency: {self.countries[self.reserve_currency_holder]['currency']} "
+        print(f"  Reserve currency: {self._currency_of(self.reserve_currency_holder)} "
               f"({self.reserve_currency_holder})")
         # Projected as the phase opens: what the choices are, not what breaks
         # them -- students find the trilemma's limits by playing.
@@ -2580,7 +2607,7 @@ class IPESimulation:
         print(f"  Upgraded to Phase 6: Sovereign Debt")
         print(f"{'':=<55}")
         print(f"  Debt is denominated in the reserve currency "
-              f"({self.countries[self.reserve_currency_holder]['currency']}).")
+              f"({self._currency_of(self.reserve_currency_holder)}).")
         print(f"  Rate = {DEBT_BASE_RATE:.0%} + {DEBT_RISK_PREMIUM:.0%} x "
               f"(debt / consumption capacity).")
         print(f"  Borrow to consume now; service + repay later. A currency that")
@@ -2628,8 +2655,8 @@ class IPESimulation:
         print(f"  Hegemon: {self.hegemon} (also the reserve currency holder)")
         print(f"  WTO dividend: {WTO_DIVIDEND:.0%} friction cut between "
               f"non-defecting members")
-        print(f"  Hegemon provides -> cost {HEGEMON_PROVISION_COST:.0%} welfare, "
-              f"friction stays normal")
+        print(f"  Hegemon provides -> pays {HEGEMON_PROVISION_COST:.0%} of the "
+              f"average country's welfare, friction stays normal")
         print(f"  Hegemon withholds -> global friction +"
               f"{HEGEMON_WITHHOLD_PENALTY:.0%}")
         print(f"  Hegemony transfers if {self._challenge_rule_text()}.")
@@ -2794,7 +2821,7 @@ class IPESimulation:
         print(f"  MONETARY DASHBOARD")
         print(f"{'':=<72}")
         rc = self.reserve_currency_holder
-        print(f"  Reserve currency: {self.countries[rc]['currency']} ({rc})\n")
+        print(f"  Reserve currency: {self._currency_of(rc)} ({rc})\n")
         print(
             f"  {'Country':12s}{'Currency':16s}{'Regime':>8s}"
             f"{'Capital':>9s}{'Money':>7s}{'Stress':>8s}{'FXindex':>9s}"
@@ -2806,7 +2833,7 @@ class IPESimulation:
             mon = f"{m.get('money_supply_growth', 0):.0%}"
             union = self.countries[c].get("union_id")
             cur = m.get("currency", self.countries[c].get("currency", "?"))
-            tag = f" [{union}]" if union else ""
+            tag = f" [{union}]" if union and union != cur else ""
             print(
                 f"  {c:12s}{(cur + tag):16s}{m.get('fx_regime','?'):>8s}"
                 f"{cap:>9s}{mon:>7s}{m.get('stress', 0):8d}"
@@ -3186,12 +3213,17 @@ class IPESimulation:
         self.inject_capital_flight(target, severity, description)
         return target
 
-    def form_monetary_union(self, *countries, name: str):
+    def form_monetary_union(self, *countries, name: str, by_size: bool = True):
         """
         Merge two or more countries into a monetary union with shared currency,
-        monetary policy, stress counter, and depreciation factor. The union's
-        initial state is seeded from the average depreciation factor of members
-        and a float / open-capital / 0%-growth default.
+        monetary policy, stress counter, and depreciation factor. The union
+        starts on a float / open-capital / 0%-growth default, and its FX index
+        starts at the members' indices averaged by size -- each member's best
+        welfare on its own (best_autarky) -- so a small economy moves the
+        shared currency less than a large one does.
+
+        by_size=False takes the plain average instead, as unions formed before
+        this rule (November 2026) did; use it only to replay one of those.
         """
         members = list(countries)
         if len(members) < 2:
@@ -3201,9 +3233,16 @@ class IPESimulation:
                 raise ValueError(f"Unknown country: {c}")
             if self.countries[c].get("union_id"):
                 raise ValueError(f"{c} is already in a union.")
-        avg_dep = sum(
-            self.countries[c].get("depreciation_factor", 1.0) for c in members
-        ) / len(members)
+        if len(set(members)) < len(members):
+            raise ValueError("A country can't join the same union twice.")
+        deps = {c: self.countries[c].get("depreciation_factor", 1.0)
+                for c in members}
+        size = {c: (best_autarky(self.countries[c], self.goods, self.phase)["welfare"]
+                    if by_size else 1.0) for c in members}
+        total = sum(size.values())
+        if total <= 0:          # no sizes to go on: count members equally
+            size, total = {c: 1.0 for c in members}, float(len(members))
+        avg_dep = sum(deps[c] * size[c] for c in members) / total
         self.monetary_unions[name] = {
             "members": members,
             "state": {
@@ -3226,12 +3265,19 @@ class IPESimulation:
         print(f"{'':=<55}")
         print(f"  Members: {', '.join(members)}")
         print(f"  Shared currency, monetary policy, and crisis exposure.")
-        print(f"  Members trade with each other at 0% FX friction.\n")
+        print(f"  Members trade with each other at 0% FX friction.")
+        weights = ", ".join(f"{c} {size[c] / total:.0%}" for c in members)
+        how = "weighted by size" if by_size else "weighted equally"
+        print(f"  FX index starts at {avg_dep:.2f}: the members' indices "
+              f"{how} ({weights}).\n")
 
-    def dissolve_monetary_union(self, name: str):
+    def dissolve_monetary_union(self, name: str,
+                                cost: float = UNION_EXIT_APPROVAL_COST):
         """Dissolve a union; members revert to their own currency state,
         inheriting the union's final depreciation factor and policy -- not
-        whatever they ran before they joined."""
+        whatever they ran before they joined. Breaking up is a political
+        failure: each member's approval falls by `cost` points in the next
+        round, shown as "union_exit" in that round's approval record."""
         if name not in self.monetary_unions:
             raise ValueError(f"No such union: {name}")
         union = self.monetary_unions.pop(name)
@@ -3246,12 +3292,19 @@ class IPESimulation:
             self.countries[c]["stress"] = 0
             self.countries[c]["warning_active"] = False
             self.countries[c].pop("anchor_ref", None)
+            if cost:
+                self.countries[c]["approval_hit"] = (
+                    self.countries[c].get("approval_hit", 0.0) + cost)
         self._log_shock(f"Monetary union dissolved: {name}")
         print(f"\n{'':=<55}")
         print(f"  MONETARY UNION DISSOLVED: {name}")
         print(f"{'':=<55}")
         print(f"  {', '.join(union['members'])} revert to own currencies "
-              f"(dep factor {final_dep:.2f}).\n")
+              f"(dep factor {final_dep:.2f}).")
+        if cost:
+            print(f"  The break-up costs each member's government {cost:g} "
+                  f"points of approval next round.")
+        print()
 
     # ── Institutions & power (Phase 7+) ───────────────────────────
 
@@ -3657,6 +3710,7 @@ class IPESimulation:
                       country sends you (net, so two countries cannot swap
                       the same goods back and forth for free approval)
         drift         gentle mean reversion, so scores stay live
+        union_exit    a monetary union broken up since last round
         """
         cfg = self.countries[name]
         approval = cfg.get("approval", APPROVAL_START)
@@ -3705,8 +3759,9 @@ class IPESimulation:
         compensation = APPROVAL_COMPENSATION * (
             net_received / capacity + max(0.0, comp_share))
         drift = APPROVAL_DRIFT * (APPROVAL_START - approval)
+        union_exit = cfg.pop("approval_hit", 0.0)     # a union broken since last round
 
-        delta = protection - openness + prosperity + compensation + drift
+        delta = protection - openness + prosperity + compensation + drift - union_exit
         new = max(APPROVAL_FLOOR, min(APPROVAL_CEILING, approval + delta))
         cfg["approval"] = new
 
@@ -3725,6 +3780,7 @@ class IPESimulation:
             "compensation_share": max(0.0, comp_share),
             "net_side_payments": net_received,
             "drift": drift,
+            "union_exit": -union_exit,
             "mean_tariff": mean_tariff,
             "exposure": exposure,
             "low_rounds": cfg["low_approval_rounds"],
@@ -4147,9 +4203,12 @@ class IPESimulation:
         if phase >= 7:
             heg = rd.get("hegemon")
             provides = rd.get("hegemon_provides", True)
+            paid = (res.get(heg, {}).get("institutions", {})
+                    .get("hegemon_cost", 0.0) if heg else 0.0)
             print(f"\n  INSTITUTIONS")
             print(f"  Hegemon: {heg} -- "
-                  f"{'PROVIDES' if provides else 'WITHHOLDS'} the public good")
+                  f"{'PROVIDES' if provides else 'WITHHOLDS'} the public good"
+                  + (f" (cost it {paid:.1f} welfare)" if provides and paid else ""))
             members = [n for n in names
                        if res[n].get("institutions", {}).get("wto_member")]
             print(f"  WTO members: {members if members else '(none yet)'}")
@@ -4173,7 +4232,7 @@ class IPESimulation:
         print(f"\n{'':=<66}")
         print(f"  SOVEREIGN DEBT DASHBOARD")
         print(f"{'':=<66}")
-        print(f"  Debt denominated in {self.countries[self.reserve_currency_holder]['currency']} "
+        print(f"  Debt denominated in {self._currency_of(self.reserve_currency_holder)} "
               f"(reserve currency).\n")
         print(f"  {'Country':12s}{'DebtStock':>11s}{'Rate':>7s}{'VsReserve':>11s}"
               f"{'Defaults':>10s}{'Status':>12s}")

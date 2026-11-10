@@ -3,7 +3,9 @@ Stress test Phase 7 institutions & power:
 - upgrade requires Phase 5 monetary state
 - WTO membership + bound tariffs + rules dividend (friction cut)
 - defection (tariff above binding) -> loses dividend, no welfare penalty
-- hegemon provision: cost to hegemon, global friction cut; withhold: global friction up
+- hegemon provision: cost to hegemon, friction stays normal; withhold: global friction up
+- the hegemon's bill is a share of the average country's welfare, the same
+  whoever leads, so it weighs most on a small hegemon (never below zero)
 - goods-based side payments
 - hegemonic challenge under the game's challenge_rule (a majority of the
   countries by default, or cumulative welfare); reserve currency moves
@@ -14,8 +16,9 @@ import contextlib, copy, io, sys, json, traceback
 import matplotlib
 matplotlib.use("Agg")
 
+import engine
 from engine import (
-    IPESimulation,
+    IPESimulation, best_autarky,
     PHASE2_COUNTRIES, PHASE2_GOODS, PHASE3_FIRMS,
     WTO_DIVIDEND, HEGEMON_PROVISION_COST, HEGEMON_WITHHOLD_PENALTY,
     BASE_FX_FRICTION,
@@ -197,6 +200,64 @@ def test_hegemon_provision():
           r2["results"][heg]["institutions"]["hegemon_cost"] == 0.0)
 
 
+def quiet(fn, *a, **k):
+    with contextlib.redirect_stdout(io.StringIO()):
+        return fn(*a, **k)
+
+
+def test_hegemon_bill_by_size():
+    print("\n[4b] the bill is a share of the AVERAGE country's welfare, whoever leads")
+    base = quiet(fresh_phase7)
+    size = {c: best_autarky(base.countries[c], base.goods, base.phase)["welfare"]
+            for c in base.countries}
+    small, big = min(size, key=size.get), max(size, key=size.get)
+    runs = {}
+    for heg in (small, big):
+        for provides in (True, False):
+            s = copy.deepcopy(base)
+            s.hegemon, s.hegemon_provides = heg, provides
+            runs[heg, provides] = quiet(run6, s)
+    # run6 has no trades, so providing changes no one's welfare but the
+    # hegemon's: the withheld round shows each country's welfare before the bill.
+    w = {c: runs[small, False]["results"][c]["welfare"] for c in base.countries}
+    check("  (no trades: the others' welfare is the same either way)",
+          all(abs(runs[small, True]["results"][c]["welfare"] - w[c]) < 1e-9
+              for c in base.countries if c != small))
+    bill = HEGEMON_PROVISION_COST * sum(w.values()) / len(w)
+    cost = {h: runs[h, True]["results"][h]["institutions"]["hegemon_cost"]
+            for h in (small, big)}
+    check(f"  the bill is {HEGEMON_PROVISION_COST:.0%} of the average country's welfare",
+          abs(cost[small] - bill) < 1e-9, f"{cost[small]} vs {bill}")
+    check("  ...the same bill whichever country leads",
+          abs(cost[small] - cost[big]) < 1e-9, str(cost))
+    check("  ...so it takes a bigger share of a small hegemon's welfare",
+          cost[small] / w[small] > 2 * cost[big] / w[big],
+          f"{cost[small] / w[small]:.1%} vs {cost[big] / w[big]:.1%}")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        s = copy.deepcopy(base)
+        s.hegemon = small
+        run6(s)
+        s.print_results()
+    check("  the results say what leading cost",
+          f"(cost it {bill:.1f} welfare)" in out.getvalue(), out.getvalue()[-400:])
+
+    # A bill bigger than the hegemon's whole welfare stops at zero.
+    saved = engine.HEGEMON_PROVISION_COST
+    try:
+        engine.HEGEMON_PROVISION_COST = 10.0
+        s = copy.deepcopy(base)
+        s.hegemon = small
+        r = quiet(run6, s)
+        res = r["results"][small]
+        check("  the bill never takes the hegemon below zero",
+              res["welfare"] >= 0.0
+              and abs(res["institutions"]["hegemon_cost"] - w[small]) < 1e-9,
+              f"welfare {res['welfare']}, cost {res['institutions']['hegemon_cost']}")
+    finally:
+        engine.HEGEMON_PROVISION_COST = saved
+
+
 # ───────────────────────────────────────────────────────────────
 def test_side_payments():
     print("\n[5] goods-based side payments")
@@ -353,7 +414,7 @@ def test_display():
 def main():
     for t in [test_upgrade_guard, test_wto_dividend, test_wto_pays_in_real_trades,
               test_defection_flagged,
-              test_hegemon_provision, test_side_payments,
+              test_hegemon_provision, test_hegemon_bill_by_size, test_side_payments,
               test_hegemonic_challenge, test_global_crisis,
               test_save_restore, test_display]:
         try:
