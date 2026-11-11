@@ -514,7 +514,10 @@ devaluation ($1/d$ well above 1.25, a fall of roughly 20\% or more) it escapes t
 magnification --- which is when walking away pays. In \code{final\_round} there is no new borrowing and the
 whole stock is repaid (or defaulted on). \textbf{IMF bailout}:
 $D \mathrel{\times}= 0.5$ now, in exchange for $U \mathrel{\times}= 0.92$ for 2
-rounds (austerity).
+rounds (austerity). A \textbf{banking bust} (\code{inject\_bank\_bailout}, for a
+class that never borrowed) sets $D_i \mathrel{+}= s\,C_i$ (default $s = 0.15$, $C_i$
+last round's consumption) for every country with an open capital account; with
+controls its banks could not borrow abroad, so it owes nothing new.
 
 \textbf{Why this form.} Borrowing used to be capped at $C$ (enough to double a
 round's welfare) and default cost only the ban and the friction: in a six-round

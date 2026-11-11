@@ -477,6 +477,31 @@ market comes for — which is precisely the trilemma, made personal.
 You can also project the table on its own, without firing anything, as a
 mid-phase warning shot.
 
+### When nobody borrowed (Phase 6)
+
+A debt crisis needs debt, and a prudent class may take none: borrowing only
+pulls consumption forward at interest. Then the debt shock above has nothing to
+work on. Instead, run a banking bust at the start of the crisis round, before
+anyone decides:
+
+```python
+# in the round's own cell, above its play line (NN = the crisis round)
+if sim.round_num == NN - 1 and sim.once("bailout"):
+    sim.inject_bank_bailout(0.15)
+    sim.print_debt_dashboard()
+```
+
+Each country with an open capital account takes on its banks' foreign debts,
+15% of its consumption, owed in the reserve currency. A country with capital
+controls owes nothing new, because its banks couldn't borrow abroad. Nobody is
+singled out: every open economy carries the same share, and the currency each
+owes in does the rest. A reserve-currency country pays at par, while a weak
+currency makes every payment dearer. Then the teams choose: repay, carry it,
+default, or (if you allow it, as the engine does from Phase 6) take the IMF.
+The real-world hook is Ireland and Spain, which went into 2008 with less public
+debt than Germany and still had debt crises once their banks' debts became the
+state's.
+
 ### Compensating the losers (every phase)
 
 Trade costs a country approval through the openness term, and Block 7 offers

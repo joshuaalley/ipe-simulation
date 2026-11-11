@@ -1910,6 +1910,65 @@ class IPESimulation:
         print(f"  IMF BAILOUT: {description}")
         print(f"{'':=<55}\n")
 
+    def inject_bank_bailout(self, share: float = 0.15, description: str = None):
+        """
+        Phase 6+ debt shock for a world whose governments never borrowed: a
+        banking bust. Each country with an open capital account takes on its
+        banks' foreign borrowing -- `share` of its consumption (at world
+        prices, last round) -- owed in the reserve currency like any other
+        sovereign debt. Capital controls kept a country's banks from
+        borrowing abroad, so it owes nothing new. (Ireland and Spain entered
+        2008 with less public debt than Germany; this is how their debt
+        crises came anyway.)
+
+        Fire it at the start of class, before anyone decides, and project
+        print_debt_dashboard() so each team sees what it now owes. Prints
+        the new debts and each country's FX index against the reserve
+        currency the debt is owed in. Returns {country: debt added}.
+        """
+        if self.phase < 6:
+            raise ValueError("A bank bailout needs the debt layer (Phase 6+).")
+        if not (0 < share <= 1):
+            raise ValueError("share must be in (0, 1]: a share of consumption.")
+        if not self.history:
+            raise ValueError("Play a round first: the debts are sized on its "
+                             "consumption.")
+        last = self.history[-1]["results"]
+        added, closed = {}, []
+        for c in self.countries:
+            if self._mon(c).get("capital_controls"):
+                closed.append(c)
+                continue
+            res = last.get(c)
+            cons = (sum(res["consumption"].get(g, 0.0) * self.world_prices[g]
+                        for g in self.goods) if res else 0.0)
+            if cons <= 0:
+                continue
+            added[c] = share * cons
+            self.countries[c]["debt_stock"] = (
+                self.countries[c].get("debt_stock", 0.0) + added[c])
+        reserve = self._currency_of(self.reserve_currency_holder)
+        if description is None:
+            description = (f"Banking bust: governments take on their banks' "
+                           f"foreign debts ({share:.0%} of consumption, owed in "
+                           f"{reserve})")
+        self._log_shock(description)
+        print(f"\n{'':=<55}")
+        print(f"  SHOCK: {description}")
+        print(f"{'':=<55}")
+        print(f"  {'Country':12s}{'New debt':>10s}{'Owed now':>10s}{'VsReserve':>11s}")
+        for c in self.countries:
+            if c in added:
+                print(f"  {c:12s}{added[c]:10.1f}"
+                      f"{self.countries[c]['debt_stock']:10.1f}"
+                      f"{self._fx_vs_reserve(c):11.2f}")
+        for c in closed:
+            print(f"  {c:12s}{'none':>10s}  (capital controls kept its banks "
+                  f"out of foreign borrowing)")
+        print(f"\n  Owed in {reserve}: below 1.00 against it, every payment "
+              f"costs more.\n")
+        return added
+
     # ── Trade execution ───────────────────────────────────────────
 
     def _execute_trades(self, consumption, decisions, trades, varieties=None,

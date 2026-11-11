@@ -8,6 +8,8 @@ Stress test Phase 6 sovereign debt:
 - ban blocks borrowing + adds FX friction; WTO dividend halved during ban
 - borrow cap (<= consumption capacity)
 - IMF bailout halves the stock + applies austerity
+- a banking bust (inject_bank_bailout) hands each open economy its banks'
+  foreign debts; capital controls spare a country
 - save/restore; dashboard renders
 """
 import sys, json, traceback
@@ -410,6 +412,53 @@ def test_dashboard_rate_and_empty_bailout():
           s.countries["Llano"].get("imf_austerity_until", 0) == 0 and "imf_austerity" not in s.countries["Llano"])
 
 
+def test_bank_bailout():
+    print("\n[18] a banking bust hands open economies their banks' foreign debts")
+    import contextlib, io
+    s = fresh_phase6()
+    shut = next(c for c in s.countries if c != s.reserve_currency_holder)
+    mon = md()
+    mon[shut]["capital_controls"] = True
+    r = run6(s, mon=mon)
+    s.countries["Trinity"]["debt_stock"] = 5.0                  # already owed something
+    before = {c: s.countries[c]["debt_stock"] for c in s.countries}
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        added = s.inject_bank_bailout(0.15)
+    open_ = [c for c in s.countries if c != shut]
+    check("  each open economy owes 15% of its consumption more",
+          all(abs(added[c] - 0.15 * capacity(r, c)) < 1e-9
+              and abs(s.countries[c]["debt_stock"] - before[c] - added[c]) < 1e-9
+              for c in open_), str(added))
+    check("  capital controls kept one country's banks out: it owes nothing new",
+          shut not in added and s.countries[shut]["debt_stock"] == before[shut]
+          and "capital controls" in out.getvalue(), out.getvalue()[-300:])
+    rows = {n: p for n, _s, p in s.debt_vulnerability()}
+    check("  the debt exposure table now sees the leverage",
+          all(abs(rows[c]["leverage (debt/consumption)"]
+                  - 4.0 * s.countries[c]["debt_stock"] / capacity(r, c)) < 1e-9 for c in open_)
+          and rows[shut]["leverage (debt/consumption)"] == 0.0)
+    r2 = run6(s, mon=mon)
+    check("  the next round records the shock and charges interest on the debt",
+          any("Banking bust" in x for x in r2["shocks_before"])
+          and all(r2["results"][c]["debt"]["interest"] > 0 for c in open_))
+    for bad in (0, -0.1, 1.5):
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                s.inject_bank_bailout(bad)
+            check(f"  share {bad} is refused", False, "no error")
+        except ValueError:
+            pass
+    early = copy.deepcopy(s)
+    early.phase = 5
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            early.inject_bank_bailout()
+        check("  shares outside (0, 1] and Phase 5 are refused", False, "no error")
+    except ValueError:
+        check("  shares outside (0, 1] and Phase 5 are refused", True)
+
+
 def main():
     for t in [test_upgrade, test_borrow_grows_welfare_and_stock, test_interest_and_rate,
               test_service_lowers_welfare_and_stock, test_original_sin, test_default,
@@ -418,7 +467,7 @@ def main():
               test_validation_ordering, test_default_costs_face_value,
               test_controls_block_borrowing, test_final_round_settlement,
               test_debt_measured_against_the_reserve,
-              test_dashboard_rate_and_empty_bailout]:
+              test_dashboard_rate_and_empty_bailout, test_bank_bailout]:
         try:
             t()
         except Exception:
