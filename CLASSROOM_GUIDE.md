@@ -213,7 +213,7 @@ Sheets map onto the engine's decisions:
 | `tariffs` | `importer, partner, good, tariff` | only non-zero rows; `0.25` and `25` both mean 25% |
 | `side_payments` | `donor, recipient, good, qty` | goods one country hands another; blank in most rounds |
 | `firms` | scale, relocate_to, export | Phase 3+; blank `relocate_to` = stay |
-| `finance` | FX regime, capital controls, money growth, borrow/repay/default, WTO | Phase 5+; pre-filled with current settings |
+| `finance` | FX regime, capital controls, money growth, borrow/invest/repay/default, WTO | Phase 5+; pre-filled with current settings |
 
 `load_round` validates before anything runs and reports **every** problem at once
 ("unknown country 'Atlantis'", "no row for Pecos"), so you fix a sheet in one pass
@@ -479,9 +479,8 @@ mid-phase warning shot.
 
 ### When nobody borrowed (Phase 6)
 
-A debt crisis needs debt, and a prudent class may take none: borrowing only
-pulls consumption forward at interest. Then the debt shock above has nothing to
-work on. Instead, run a banking bust at the start of the crisis round, before
+A debt crisis needs debt, and a prudent class may take none. Then the debt shock
+above has nothing to work on. Instead, run a banking bust at the start of the crisis round, before
 anyone decides:
 
 ```python
@@ -639,11 +638,21 @@ lighter (the debt dashboard's VsReserve column). When the reserve holder tighten
 reserve-currency debt gets heavier (the Volcker shock). Debt is owed in the reserve
 currency, so its weight follows a currency's value against the reserve's: the
 reserve holder owes in its own money, a peg that falls with the reserve owes no
-more, and a currency that holds while the reserve prints owes less. Borrowing is capped at a
-quarter of consumption; default costs 1.25 times the debt, so defaulting in a
-calm round is a visible mistake and it pays only after a big devaluation; and
-in `sim.final_round` (set in the Phase 6 upgrade cell) everything still owed
-falls due. The trilemma's own rule (what brings a warning, then a crisis) is
+more, and a currency that holds while the reserve prints owes less. Borrowing, to
+spend and to invest together, is capped at a quarter of consumption. Borrowing to
+spend lifts that round and costs more later, so on its own it never pays (the
+November 2026 class, with only that lever, rightly borrowed nothing). Borrowing to
+invest builds a project instead: it pays 40% of its cost every round from the next
+one to the end of the game, in the country's own money (`PROJECT_RETURN`), and keeps
+paying whatever happens to the debt. In the test worlds an early project beats
+never borrowing by about 2% carried to the end and 3% repaid the next round, while
+investing late, investing every round, or investing just before a 40% fall against
+the reserve loses. The project earns in the country's own money and the debt is in
+the reserve's, so a reserve-currency country can invest with no currency risk and
+everyone else bets on their currency: original sin, made playable. Default costs
+1.25 times the debt, so defaulting in a calm round is a visible mistake and it pays
+only after a big devaluation; and in `sim.final_round` (set in the Phase 6 upgrade
+cell) everything still owed falls due. The trilemma's own rule (what brings a warning, then a crisis) is
 left off the form and off everything projected on purpose: students find it by
 playing.
 
@@ -772,6 +781,13 @@ whoever it is, which is what makes a challenge worth organizing.
 
 Until November 2026 the bill was 4% of the hegemon's own welfare, which made
 leading cheapest for the smallest economy.
+
+For Phase 7 rounds, hand out `handouts/forms-capstone.pdf` instead of the trade
+form and the finance add-on: one sheet per country, printed double-sided. Every
+decision of the round is on the front; the back gives each rule with its
+numbers, including the WTO dividend, what breaking a binding costs, the
+hegemon's bill and the friction from withholding, how a global crisis is
+softened, and how a challenge is decided.
 
 ## Phase transitions
 

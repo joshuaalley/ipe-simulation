@@ -44,11 +44,16 @@ def _parse_args():
         "--firms", type=int, default=None, metavar="N",
         help="print fewer MNC forms than the default of two per country "
              "(more than that is trimmed back to two per country).")
+    ap.add_argument(
+        "--challenge-rule", choices=engine.CHALLENGE_RULES, default=None,
+        help="how a challenge for the reserve currency (and the hegemony) is "
+             "decided, as the finance and capstone forms state it. Match "
+             f"sim.challenge_rule; default {engine.CHALLENGE_RULE!r}.")
     return ap.parse_args()
 
 
 ARGS = _parse_args() if __name__ == "__main__" else argparse.Namespace(
-    countries=None, firms=None)
+    countries=None, firms=None, challenge_rule=None)
 
 P1_GOODS = engine.PHASE1_GOODS
 P2_GOODS = engine.PHASE2_GOODS
@@ -179,7 +184,7 @@ machinery is capital-intensive, wine is in between.}}
     You will also \emph{{own}} a firm on someone else's soil: its profits are
     yours, not its host's.
   \item \textbf{{Phase 5 (money):}} you run your own currency --- choose a regime and live with the trilemma.
-  \item \textbf{{Phase 6 (debt):}} you may borrow against future consumption --- and you may default.
+  \item \textbf{{Phase 6 (debt):}} you may borrow to spend now or to invest in projects --- and you may default.
   \item \textbf{{Phase 7 (institutions):}} join the WTO, bind your tariffs, and decide whether to back the system.
 \end{{itemize}}
 """
@@ -210,53 +215,68 @@ def tariff_block(name):
     return "\n".join(lines)
 
 
-def trade_block():
+def trade_block(more=r"\textit{(Use the back of the sheet for more offers.)}"):
     offer = (r"  \item We give \blank{1.8cm} units of \blank{2.2cm} "
              r"to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.")
     return (r"{\bfseries Trade offers} (negotiate first, then commit):\par" + "\n"
             r"\begin{itemize}[itemsep=4pt,leftmargin=1.4em]" + "\n"
             + offer + "\n" + offer + "\n" + offer + "\n"
-            r"\end{itemize}" + "\n"
-            r"\textit{(Use the back of the sheet for more offers.)}")
+            r"\end{itemize}" + "\n" + more)
 
 
 current_goods = P1_GOODS  # rebound per builder
 
 
-def politics_block():
-    """Compensation + side payments: the alternatives to closing the border."""
+def politics_choices():
+    """The compensation and side-payment lines, without the note."""
     cap = _pct(engine.COMPENSATION_MAX_SHARE)
-    dead = _pct(engine.COMPENSATION_DEADWEIGHT * 0.10)      # cost of a 10% payment
-    buys = f"{engine.APPROVAL_COMPENSATION * 0.10:.1f}"     # what it buys
     return (
-        r"{\bfseries Compensation} --- buy off the groups trade displaced, "
-        r"instead of taxing imports:\par" "\n"
         r"\begin{itemize}[nosep,leftmargin=1.4em]" "\n"
         rf"  \item This round we compensate: \blank{{1.4cm}}\% of our consumption "
         rf"\quad \textit{{(0--{cap}\%)}}" "\n"
         r"  \item Side payment to another country: \blank{1.6cm} units of "
         r"\blank{2cm} to \blank{2.2cm}." "\n"
-        r"\end{itemize}" "\n"
-        rf"\textit{{Compensating 10\% buys about +{buys} approval a round and costs "
-        rf"{dead}\% of your welfare --- roughly what a 20\% tariff buys, for less, "
-        rf"and your trade stays open. A side payment does the same for whoever "
-        rf"receives it (only the net counts) --- but if you pay each other, it is "
-        rf"a trade, tariffs and all.}}"
+        r"\end{itemize}"
     )
+
+
+def compensation_note():
+    dead = _pct(engine.COMPENSATION_DEADWEIGHT * 0.10)      # cost of a 10% payment
+    buys = f"{engine.APPROVAL_COMPENSATION * 0.10:.1f}"     # what it buys
+    return (rf"Compensating 10\% buys about +{buys} approval a round and costs "
+            rf"{dead}\% of your welfare --- roughly what a 20\% tariff buys, for less, "
+            rf"and your trade stays open. A side payment does the same for whoever "
+            rf"receives it (only the net counts) --- but if you pay each other, it is "
+            rf"a trade, tariffs and all.")
+
+
+def politics_block():
+    """Compensation + side payments: the alternatives to closing the border."""
+    return (
+        r"{\bfseries Compensation} --- buy off the groups trade displaced, "
+        r"instead of taxing imports:\par" "\n"
+        + politics_choices() + "\n"
+        + r"\textit{" + compensation_note() + "}"
+    )
+
+
+def mnc_tax_choice(name):
+    top = _pct(engine.MNC_TAX_MAX)
+    low = _pct(engine.MNC_TAX_MIN)
+    return (rf"{{\bfseries MNC tax}} (Phase 3+) --- on foreign-owned firms in "
+            rf"{esc(name)}: \blank{{1.4cm}}\% of their revenue "
+            rf"\quad \textit{{({low}--{top}\%)}}\par")
+
+
+def mnc_tax_note():
+    return (r"Blank keeps last round's rate. What you collect adds to your "
+            r"welfare. Set it too high and the owners can move their firm out, "
+            r"taking its output with it.")
 
 
 def mnc_tax_block(name):
     """The MNC tax: one rate on foreign-owned firms' revenue (Phase 3+)."""
-    top = _pct(engine.MNC_TAX_MAX)
-    low = _pct(engine.MNC_TAX_MIN)
-    return (
-        rf"{{\bfseries MNC tax}} (Phase 3+) --- on foreign-owned firms in "
-        rf"{esc(name)}: \blank{{1.4cm}}\% of their revenue "
-        rf"\quad \textit{{({low}--{top}\%)}}\par" "\n"
-        r"\textit{Blank keeps last round's rate. What you collect adds to your "
-        r"welfare. Set it too high and the owners can move their firm out, "
-        r"taking its output with it.}"
-    )
+    return mnc_tax_choice(name) + "\n" + r"\textit{" + mnc_tax_note() + "}"
 
 
 # ── Phase 1 decision form ─────────────────────────────────────────────
@@ -486,16 +506,49 @@ def build_firm_forms():
     return write_tex("forms-firms.tex", "\n\\newpage\n".join(pages))
 
 
-# ── Finance add-on form (monetary / debt / institutions) ──────────────
+# ── Finance add-on (Phases 5-6) and the capstone form (Phase 7) ───────
+#
+# The money, debt and institutions parts are written once and used twice. The
+# finance add-on staples to the trade form in Phases 5 and 6. The capstone form
+# puts every decision of a Phase 7 round on the front of one sheet and the rules,
+# with their numbers, on the back. Every number comes from engine.py.
 
 def _pct(x):
     """0.15 -> '15' (a rule's number, straight from the engine)."""
     return f"{x * 100:.0f}"
 
 
-def finance_form_page(name):
+def _rules(items, size=r"\small"):
+    """A small description list of rules: [(label, text), ...]."""
+    body = "\n".join(rf"  \item[{label}] {text}" for label, text in items)
+    return ("{" + size + "\n"
+            r"\begin{description}[nosep,style=sameline,leftmargin=5.6em,"
+            r"font=\normalfont\bfseries]" "\n" + body + "\n"
+            r"\end{description}}")
+
+
+def money_choices():
     pct = " \\quad ".join(rf"\boxx\ {'$-$' if g < 0 else ''}{abs(g) * 100:.0f}\%"
                           for g in MONEY_CHOICES)
+    return (r"\begin{itemize}[nosep,leftmargin=1.4em]" "\n"
+            r"  \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float" "\n"
+            r"  \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls" "\n"
+            rf"  \item Money growth: \quad {pct}\newline \textit{{(0\% = follow the anchor)}}" "\n"
+            r"  \item Reserve currency: \quad \boxx\ No challenge \quad \boxx\ We challenge"
+            r" \quad \boxx\ We back \blank{2.2cm}" "\n"
+            r"\end{itemize}")
+
+
+def _challenge_rule():
+    n = len(NAMES)
+    if (getattr(ARGS, "challenge_rule", None) or engine.CHALLENGE_RULE) == "welfare":
+        return ("the challenger and the countries backing it have more cumulative "
+                "welfare than everyone else")
+    return (f"the challenger and the countries backing it are a majority: "
+            f"{n // 2 + 1} of the {n} countries")
+
+
+def money_rules(size=r"\small"):
     fric, cut = _pct(engine.BASE_FX_FRICTION), _pct(engine.CONTROLS_FIRM_CUT)
     stim = f"{engine.STIMULUS_PER_POINT:g}"
     steps = [f"$-${_pct(-g)}" for g in sorted(MONEY_CHOICES, reverse=True) if g < 0]
@@ -506,71 +559,126 @@ def finance_form_page(name):
     drag = f"{engine.WEAK_FX_WELFARE_DRAG * 10:g}"          # % per 10 points
     xg = f"{engine.WEAK_FX_EXPORT_GAIN * 10:g}"            # % per 10 points, all output exported
     xeg = f"{engine.WEAK_FX_EXPORT_GAIN * 0.10 * 0.5 * 100:g}"   # FX 0.90, half exported
+    return _rules([
+        ("Peg", rf"No currency friction on trades with other pegged currencies; other "
+                rf"cross-currency trades lose {fric}\%. Trades with the reserve country carry "
+                rf"no currency friction. An open peg is what speculators attack. A peg is tied "
+                rf"to the reserve currency and moves with it: when the reserve country prints, "
+                rf"tightens, or its currency crashes, yours moves the same way."),
+        ("Controls", rf"Foreign firms in your country produce {cut}\% less, and (Phase 6) "
+                     rf"you cannot borrow abroad. Speculators cannot run on a closed account."),
+        ("Printing", rf"+{stim}\% welfare this round for each point printed, times your FX "
+                     rf"index. Your FX index falls by the same \% for good. A weak currency "
+                     rf"shrinks every import you receive by {half} the drop, and costs {drag}\% "
+                     rf"of welfare every round for each 10 points below 1.00 (FX 0.90 $\to$ "
+                     rf"imports $-${eg}\%, welfare $-${drag}\%). But it makes your exports cheap "
+                     rf"abroad: welfare rises {xg}\% a round for each 10 points below 1.00, times "
+                     rf"the share of your own output you export outside your union (FX 0.90, "
+                     rf"half exported $\to$ +{xeg}\%)."),
+        ("Tightening", rf"{tight}\%: your FX index rises by that \% for good (it can pass "
+                       rf"1.00), and welfare falls {stim}\% this round for each point."),
+        ("Challenge", rf"A challenge for the reserve currency wins if {_challenge_rule()}. "
+                      rf"It is settled after the round, and the winner holds the reserve "
+                      rf"currency from the next one (from Phase 7, the hegemony too)."),
+    ], size)
+
+
+def debt_choices():
+    return (r"\begin{itemize}[nosep,leftmargin=1.4em]" "\n"
+            r"  \item Borrow to spend: \blank{2.2cm} \quad Borrow to invest: \blank{2.2cm}"
+            r" \quad Repay: \blank{2.2cm}" "\n"
+            r"  \item Default on the debt? \quad \boxx\ Yes \quad \boxx\ No" "\n"
+            r"\end{itemize}")
+
+
+def debt_rules(size=r"\small"):
     dcost = f"{engine.DEBT_DEFAULT_COST:g}"
     cap, base = _pct(engine.BORROW_CAP_SHARE), _pct(engine.DEBT_BASE_RATE)
     prem, ban = _pct(engine.DEBT_RISK_PREMIUM), engine.DEBT_DEFAULT_BAN_ROUNDS
     dfric = _pct(engine.DEBT_DEFAULT_FRICTION)
+    ret = _pct(engine.PROJECT_RETURN)
+    ret10 = f"{engine.PROJECT_RETURN * 10:g}"               # what a project costing 10 pays
+    relief = {0.5: "half your debt"}.get(engine.IMF_DEBT_RELIEF,
+                                         rf"{_pct(engine.IMF_DEBT_RELIEF)}\% of your debt")
+    when = ("this round and the next" if engine.IMF_AUSTERITY_ROUNDS == 2
+            else f"for {engine.IMF_AUSTERITY_ROUNDS} rounds")
+    return _rules([
+        ("Borrow", rf"Up to {cap}\% of your consumption a round, spending and investing "
+                   rf"together. Not under capital controls."),
+        ("Spend", r"Welfare rises by the same share of consumption this round."),
+        ("Invest", rf"Builds a project instead: nothing now, then {ret}\% of its cost every "
+                   rf"round from the next one to the end of the game, in your own money (a "
+                   rf"project costing 10 pays {ret10} a round)."),
+        ("Interest", rf"{base}\% + {prem}\% $\times$ (debt $\div$ consumption), every round. "
+                     rf"Debt is owed in the reserve currency, so what counts is your currency "
+                     rf"against it: payments are divided by (your FX index $\div$ the "
+                     rf"reserve's). Yours at 0.70 while the reserve's holds at 1.00 $\to$ 43\% "
+                     rf"heavier. A peg falls with the reserve, so its debt gets no heavier; if "
+                     rf"the reserve falls and yours holds, your debt gets lighter."),
+        ("Default", rf"The debt disappears, but welfare falls by {dcost} $\times$ (debt "
+                    rf"$\div$ consumption) that round --- more than repaying would cost at par; "
+                    rf"no borrowing for {ban} rounds and +{dfric}\% friction on your trades "
+                    rf"meanwhile. It only pays after a big fall in your currency against the "
+                    rf"reserve's."),
+        ("IMF", rf"Ask the instructor before the forms are in: {relief} is refinanced away "
+                rf"now, and your welfare is {_pct(engine.IMF_AUSTERITY)}\% lower {when}."),
+        ("Last round", r"Everything still owed is repaid."),
+    ], size)
+
+
+def institutions_choices():
+    binds = r" \quad ".join(rf"{esc(g)} \blank{{1.3cm}}\%" for g in P2_GOODS)
+    return (r"\begin{itemize}[nosep,leftmargin=1.4em]" "\n"
+            r"  \item WTO: \quad \boxx\ Join / stay in \quad \boxx\ Stay out / leave" "\n"
+            r"  \item Bindings, the most we promise to charge anyone (blank = no promise):"
+            r"\newline " + binds + "\n"
+            r"  \item \textit{Hegemon only:} \quad \boxx\ Provide the public good"
+            r" \quad \boxx\ Withhold it" "\n"
+            r"\end{itemize}")
+
+
+def institutions_rules(size=r"\small"):
+    base, div = engine.BASE_FX_FRICTION, engine.WTO_DIVIDEND
+    w, cost = engine.HEGEMON_WITHHOLD_PENALTY, engine.HEGEMON_PROVISION_COST
+    # _global_crisis_factor: provision halves the cut; WTO breadth cuts up to half again
+    worst, best = 20, 20 * 0.5 * (1 - 0.5 * 1.0)
+    return _rules([
+        ("WTO", rf"Trades between two members lose {_pct(div)}\% less of their goods to "
+                rf"friction, as long as neither breaks a binding that round (half that during "
+                rf"a default ban): an ordinary cross-currency trade loses "
+                rf"{_pct(max(0.0, base - div))}\% instead of {_pct(base)}\%, or "
+                rf"{_pct(base + w - div)}\% instead of {_pct(base + w)}\% while the hegemon "
+                rf"withholds. Leaving costs nothing but the dividend."),
+        ("Bindings", r"A binding is a promise not to charge more than that tariff on a good, "
+                     r"to anyone. Charge more --- a populist tariff floor counts --- and you "
+                     r"defect: no WTO dividend on any of your trades that round, and the board "
+                     r"names you. No other penalty. Blank means no promise."),
+        ("Provide", rf"The hegemon pays {_pct(cost)}\% of the average country's welfare that "
+                    rf"round (average 50 $\to$ {cost * 50:g}), and friction stays as it is."),
+        ("Withhold", rf"No bill, but every trade in the world, the hegemon's own included, "
+                     rf"loses {_pct(w)}\% more of its goods ({_pct(base)}\% $\to$ "
+                     rf"{_pct(base + w)}\%; with the reserve country, 0\% $\to$ {_pct(w)}\%)."),
+        ("Crisis", rf"A global crisis cuts every country's welfare. The cut is halved if the "
+                   rf"hegemon provides, and shrinks by up to half again with the share of "
+                   rf"countries in the WTO: a {worst}\% crisis costs {worst}\% with neither, "
+                   rf"{best:g}\% with the hegemon providing and every country in."),
+    ], size)
+
+
+def finance_form_page(name):
     return rf"""
-{{\large\bfseries ROUND \blank{{1cm}} --- {esc(name)}}} \hfill (Finance \& institutions add-on)\par
-\textit{{Attach this to your trade form once the relevant phase opens.}}
+{{\large\bfseries ROUND \blank{{1cm}} --- {esc(name)}}} \hfill (Finance add-on: money \& debt)\par
+\textit{{Phases 5 and 6: attach this to your trade form. In Phase 7, use the capstone form.}}
 \hr
 
 {{\bfseries Money}} (Phase 5+) \hfill \textit{{one box in each row}}\par
-\begin{{itemize}}[nosep,leftmargin=1.4em]
-  \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
-  \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
-  \item Money growth: \quad {pct}\newline \textit{{(0\% = follow the anchor)}}
-\end{{itemize}}
-{{\small
-\begin{{description}}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
-  \item[Peg] No currency friction on trades with other pegged currencies; other
-    cross-currency trades lose {fric}\%. Trades with the reserve country are always
-    friction-free. An open peg is what speculators attack. A peg is tied to the
-    reserve currency and moves with it: when the reserve country prints, tightens,
-    or its currency crashes, yours moves the same way.
-  \item[Controls] Foreign firms in your country produce {cut}\% less, and (Phase 6)
-    you cannot borrow abroad. Speculators cannot run on a closed account.
-  \item[Printing] +{stim}\% welfare this round for each point printed, times your FX
-    index. Your FX index falls by the same \% for good. A weak currency shrinks every
-    import you receive by {half} the drop, and costs {drag}\% of welfare every round
-    for each 10 points below 1.00 (FX 0.90 $\to$ imports $-${eg}\%, welfare $-${drag}\%).
-    But it makes your exports cheap abroad: welfare rises {xg}\% a round for each
-    10 points below 1.00, times the share of your own output you export outside
-    your union (FX 0.90, half exported $\to$ +{xeg}\%).
-  \item[Tightening] {tight}\%: your FX index rises by that \% for good (it can
-    pass 1.00), and welfare falls {stim}\% this round for each point.
-\end{{description}}}}
+{money_choices()}
+{money_rules()}
 
 \vspace{{4pt}}
 {{\bfseries Sovereign debt}} (Phase 6+)\par
-\begin{{itemize}}[nosep,leftmargin=1.4em]
-  \item Borrow this round: \blank{{2.5cm}} \quad Repay this round: \blank{{2.5cm}}
-  \item Default on the debt? \quad \boxx\ Yes \quad \boxx\ No
-\end{{itemize}}
-{{\small
-\begin{{description}}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
-  \item[Borrow] Up to {cap}\% of your consumption a round; welfare rises by the same
-    share this round. Not under capital controls.
-  \item[Interest] {base}\% + {prem}\% $\times$ (debt $\div$ consumption), every round.
-    Debt is owed in the reserve currency, so what counts is your currency against
-    it: payments are divided by (your FX index $\div$ the reserve's). Yours at 0.70
-    while the reserve's holds at 1.00 $\to$ 43\% heavier. A peg falls with the
-    reserve, so its debt gets no heavier; if the reserve falls and yours holds,
-    your debt gets lighter.
-  \item[Default] The debt disappears, but welfare falls by {dcost} $\times$
-    (debt $\div$ consumption) that round --- more than repaying would cost at par;
-    no borrowing for {ban} rounds and +{dfric}\% friction on your trades meanwhile.
-    It only pays after a big fall in your currency against the reserve's.
-  \item[Last round] Everything still owed is repaid.
-\end{{description}}}}
-
-\vspace{{4pt}}
-{{\bfseries Institutions \& power}} (Phase 7+)\par
-\begin{{itemize}}[nosep,leftmargin=1.4em]
-  \item Join / remain in the WTO? \quad \boxx\ Yes \quad \boxx\ No
-  \item Bound tariff commitments (good: ceiling): \blank{{6cm}}
-  \item \textit{{Hegemon only:}} provide the public good this round? \quad \boxx\ Yes \quad \boxx\ No
-\end{{itemize}}
+{debt_choices()}
+{debt_rules()}
 """
 
 
@@ -581,6 +689,75 @@ def build_finance_forms():
         if i != len(NAMES) - 1:
             pages.append(r"\newpage")
     return write_tex("forms-finance.tex", "\n".join(pages))
+
+
+def capstone_form_page(name):
+    """Front: every decision of a Phase 7 round. Back: the rules, with numbers."""
+    p2 = P2[name]
+    L, K = p2["labor"], p2["capital"]
+    rows = "\n".join(rf"{esc(g).capitalize()} & \blank{{2.4cm}} & \blank{{2.4cm}} \\"
+                     for g in P2_GOODS)
+    trades = trade_block(more=r"\textit{(More offers? Attach a sheet.)}")
+    back = r"\footnotesize"            # the rules page has to fit on one side
+    politics = _rules([("Compensate", compensation_note()), ("MNC tax", mnc_tax_note())],
+                      back)
+    money, debt, inst = money_rules(back), debt_rules(back), institutions_rules(back)
+    return rf"""
+{{\large\bfseries ROUND \blank{{1cm}} --- {esc(name)}}} \hfill (Capstone form: every decision)\par
+Labor: \textbf{{{L}}} \quad|\quad Capital: \textbf{{{K}}} \hfill \textit{{The rules, with their numbers, are on the back.}}
+\hr
+
+{{\bfseries Production}} --- workers must sum to \textbf{{{L}}}, capital to \textbf{{{K}}}; a good needs both.\par
+\begin{{tabular}}{{lll}}
+ & Workers & Capital \\
+{rows}
+\end{{tabular}}
+
+{tariff_block(name)}
+
+{{\bfseries Compensation and side payments}}\par
+{politics_choices()}
+
+{mnc_tax_choice(name)}
+
+{trades}
+
+{{\bfseries Money}} \hfill \textit{{one box in each row}}\par
+{money_choices()}
+
+{{\bfseries Debt}}\par
+{debt_choices()}
+
+{{\bfseries Institutions \& power}}\par
+{institutions_choices()}
+
+\newpage
+{{\large\bfseries How the choices work --- {esc(name)}}} \hfill (Capstone form, back)\par
+\hr
+
+{{\bfseries Trade politics}}\par
+{politics}
+
+{{\bfseries Money}}\par
+{money}
+
+{{\bfseries Debt}}\par
+{debt}
+
+{{\bfseries Institutions \& power}}\par
+{inst}
+"""
+
+
+def build_capstone_forms():
+    global current_goods
+    current_goods = P2_GOODS
+    pages = []
+    for i, name in enumerate(NAMES):
+        pages.append(capstone_form_page(name))
+        if i != len(NAMES) - 1:
+            pages.append(r"\newpage")
+    return write_tex("forms-capstone.tex", "\n".join(pages))
 
 
 # ── Submitting from a laptop (one page) ───────────────────────────────
@@ -632,6 +809,7 @@ if __name__ == "__main__":
         build_phase2_forms(),
         build_firm_forms(),
         build_finance_forms(),
+        build_capstone_forms(),
         build_submit_howto(),
     ]
     for p in out:

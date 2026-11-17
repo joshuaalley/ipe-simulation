@@ -584,7 +584,8 @@ UNION_EXIT_APPROVAL_COST = 5.0
 #  PHASE 6 SOVEREIGN DEBT PARAMETERS
 # ═══════════════════════════════════════════════════════════════════
 # Rolling debt stock denominated in the reserve currency (numeraire).
-# Borrowing lifts consumption now; servicing/repaying lowers it later.
+# Borrowing to spend lifts consumption now; borrowing to invest builds a
+# project that pays from the next round on; servicing/repaying lowers it later.
 # Foreign-currency debt + a weak currency = "original sin": the real burden
 # of servicing rises as your currency falls AGAINST THE RESERVE CURRENCY the
 # debt is owed in (_fx_vs_reserve). A peg that falls with the reserve owes no
@@ -606,6 +607,17 @@ DEBT_DIVIDEND_PENALTY = 0.5    # WTO dividend halved (not zeroed) during the ban
 IMF_DEBT_RELIEF = 0.5          # IMF bailout refinances away half the debt stock
 IMF_AUSTERITY = 0.08           # ...in exchange for an 8% welfare cut
 IMF_AUSTERITY_ROUNDS = 2       # ...for this many rounds
+PROJECT_RETURN = 0.40          # borrowing to invest: a project pays 40% of its
+                               # cost every round, from the next round to the
+                               # end of the game, in the country's own money.
+# Borrowing to spend only pulls consumption forward, at interest, so on its own
+# it never pays -- the November 2026 class rightly borrowed nothing. A project
+# is the other reason countries borrow. At 40% it pays for itself in two and a
+# half rounds: an early project carried to the end beats never borrowing by
+# about 2%, repaid the next round by about 3%. Investing late, investing every
+# round (the premium spiral and the final settlement) or investing just before
+# the currency falls 40% all lose, and defaulting on a project's debt still
+# loses to repaying it (stress_test_money_balance.py).
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1767,6 +1779,8 @@ class IPESimulation:
                 continue
             if dd.get("borrow", 0) < 0:
                 errors.append(f"{c}: borrow must be >= 0")
+            if dd.get("invest", 0) < 0:
+                errors.append(f"{c}: invest must be >= 0")
             if dd.get("repay", 0) < 0:
                 errors.append(f"{c}: repay must be >= 0")
         return errors
@@ -1801,21 +1815,26 @@ class IPESimulation:
         Resolve one country's debt this round and return an info dict
         (also mutates the country's debt state). Welfare in -> welfare out.
 
-        Borrowing of B lifts welfare by (1 + B/C); servicing interest+repay
-        lowers it by (1 - service_real/C), where C is consumption capacity at
-        world prices and service_real = service / (the country's FX index
-        against the reserve currency, _fx_vs_reserve): a currency that has
-        fallen against the reserve makes the debt more painful. Borrowing is
-        capped at BORROW_CAP_SHARE of C, and closed to countries with capital
-        controls. Default wipes the stock at a welfare cost equal to its face
-        value (DEBT_DEFAULT_COST x stock/C), plus the ban + friction
-        penalties -- so it pays only when a weak currency has inflated the
-        real cost of repaying. In self.final_round everything falls due: no
-        new borrowing, and the whole stock is repaid (or defaulted on).
-        IMF austerity (if active) applies a flat welfare cut.
+        Borrowing of B to spend lifts welfare by (1 + B/C); servicing
+        interest+repay lowers it by (1 - service_real/C), where C is
+        consumption capacity at world prices and service_real = service /
+        (the country's FX index against the reserve currency, _fx_vs_reserve):
+        a currency that has fallen against the reserve makes the debt more
+        painful. Borrowing I to invest adds to the debt the same way but lifts
+        nothing now: it builds a project, and the country's projects pay
+        PROJECT_RETURN of their cost every round from the next one on, in its
+        own money (1 + return/C), whatever happens to the debt. Borrowing of
+        both kinds is capped together at BORROW_CAP_SHARE of C, and closed to
+        countries with capital controls. Default wipes the stock at a welfare
+        cost equal to its face value (DEBT_DEFAULT_COST x stock/C), plus the
+        ban + friction penalties -- so it pays only when a weak currency has
+        inflated the real cost of repaying. In self.final_round everything
+        falls due: no new borrowing, and the whole stock is repaid (or
+        defaulted on). IMF austerity (if active) applies a flat welfare cut.
         """
         cfg = self.countries[name]
         stock = cfg.get("debt_stock", 0.0)
+        projects = cfg.get("projects", 0.0)
         dep = self._mon(name).get("depreciation_factor", 1.0)
         fx = self._fx_vs_reserve(name)
         C = max(sum(consumption.get(g, 0.0) * self.world_prices[g]
@@ -1828,10 +1847,13 @@ class IPESimulation:
                  and self.round_num >= self.final_round)
         austerity_active = self.round_num <= cfg.get("imf_austerity_until", 0)
 
-        borrow = repay = service = default_cost = 0.0
+        borrow = invest = repay = service = default_cost = 0.0
         defaulted = False
         wiped = 0.0
-        w = welfare
+        # Projects built in earlier rounds pay in the country's own money,
+        # whatever it does about the debt that built them.
+        project_return = PROJECT_RETURN * projects
+        w = welfare * (1 + project_return / C)
 
         if dd.get("default") and stock > 1e-9:
             defaulted = True
@@ -1843,18 +1865,22 @@ class IPESimulation:
             cfg["defaults"] = cfg.get("defaults", 0) + 1
         else:
             borrow = max(0.0, dd.get("borrow", 0.0))
+            invest = max(0.0, dd.get("invest", 0.0))
             if banned or controls or final:
-                borrow = 0.0                      # ban / closed account / term over
-            borrow = min(borrow, BORROW_CAP_SHARE * C)
+                borrow = invest = 0.0             # ban / closed account / term over
+            room = BORROW_CAP_SHARE * C           # one cap for both kinds
+            borrow = min(borrow, room)
+            invest = min(invest, room - borrow)
             repay = max(0.0, dd.get("repay", 0.0))
             if final:
                 repay = stock                     # the bill comes due
-            repay = min(repay, stock + borrow)
+            repay = min(repay, stock + borrow + invest)
             service = interest + repay
             w = w * (1 + borrow / C)
             service_real = service / fx if fx > 0 else service
             w *= max(0.0, 1 - service_real / C)
-            cfg["debt_stock"] = max(0.0, stock + borrow - repay)
+            cfg["debt_stock"] = max(0.0, stock + borrow + invest - repay)
+            cfg["projects"] = projects + invest
 
         austerity_cut = 0.0
         if austerity_active:
@@ -1868,6 +1894,9 @@ class IPESimulation:
             "rate": rate,
             "interest": interest,
             "borrow": borrow,
+            "invest": invest,
+            "projects": cfg.get("projects", 0.0),
+            "project_return": project_return,
             "repay": repay,
             "service": service,
             "defaulted": defaulted,
@@ -2658,6 +2687,7 @@ class IPESimulation:
             )
         for c in self.countries:
             self.countries[c]["debt_stock"] = 0.0
+            self.countries[c]["projects"] = 0.0
             self.countries[c]["borrow_ban_until"] = 0
             self.countries[c]["defaults"] = 0
             self.countries[c]["imf_austerity_until"] = 0
@@ -2669,8 +2699,12 @@ class IPESimulation:
               f"({self._currency_of(self.reserve_currency_holder)}).")
         print(f"  Rate = {DEBT_BASE_RATE:.0%} + {DEBT_RISK_PREMIUM:.0%} x "
               f"(debt / consumption capacity).")
-        print(f"  Borrow to consume now; service + repay later. A currency that")
-        print(f"  falls against the reserve makes the debt more painful (original sin).")
+        print(f"  Borrow to spend now, or borrow to invest: a project pays "
+              f"{PROJECT_RETURN:.0%} of its cost")
+        print(f"  every round from the next one, in your own money. Service + "
+              f"repay later.")
+        print(f"  A currency that falls against the reserve makes the debt more "
+              f"painful (original sin).")
         print(f"  Default wipes the stock but bans borrowing for "
               f"{DEBT_DEFAULT_BAN_ROUNDS} rounds + adds trade friction.\n")
 
@@ -4232,10 +4266,10 @@ class IPESimulation:
         if phase >= 6 and any("debt" in res[n] for n in names):
             print(f"\n  SOVEREIGN DEBT")
             print(
-                f"  {'':12s}{'Stock':>9s}{'Rate':>7s}{'Borrow':>8s}"
-                f"{'Service':>9s}{'Status':>10s}"
+                f"  {'':12s}{'Stock':>8s}{'Rate':>6s}{'Borrow':>8s}{'Invest':>8s}"
+                f"{'Return':>8s}{'Service':>9s}{'Status':>10s}"
             )
-            print(f"  {'-'*55}")
+            print(f"  {'-'*69}")
             for name in names:
                 d = res[name].get("debt")
                 if not d:
@@ -4248,8 +4282,10 @@ class IPESimulation:
                 elif d.get("austerity_active"):
                     status = "austerity"
                 print(
-                    f"  {name:12s}{d['debt_stock']:9.1f}{d['rate']:7.0%}"
-                    f"{d['borrow']:8.1f}{d['service']:9.1f}{status:>10s}"
+                    f"  {name:12s}{d['debt_stock']:8.1f}{d['rate']:6.0%}"
+                    f"{d['borrow']:8.1f}{d.get('invest', 0.0):8.1f}"
+                    f"{d.get('project_return', 0.0):8.1f}{d['service']:9.1f}"
+                    f"{status:>10s}"
                 )
             for name in names:
                 d = res[name].get("debt")
@@ -4283,19 +4319,20 @@ class IPESimulation:
         print(f"\n{'':=<65}\n")
 
     def print_debt_dashboard(self):
-        """Projectable Phase 6+ snapshot: each country's debt stock, current
-        interest rate, default count, and ban/austerity status."""
+        """Projectable Phase 6+ snapshot: each country's debt stock, its
+        projects, current interest rate, default count, and ban/austerity
+        status."""
         if self.phase < 6:
             print("Debt dashboard available in Phase 6+.")
             return
-        print(f"\n{'':=<66}")
+        print(f"\n{'':=<76}")
         print(f"  SOVEREIGN DEBT DASHBOARD")
-        print(f"{'':=<66}")
+        print(f"{'':=<76}")
         print(f"  Debt denominated in {self._currency_of(self.reserve_currency_holder)} "
               f"(reserve currency).\n")
-        print(f"  {'Country':12s}{'DebtStock':>11s}{'Rate':>7s}{'VsReserve':>11s}"
-              f"{'Defaults':>10s}{'Status':>12s}")
-        print(f"  {'-'*63}")
+        print(f"  {'Country':12s}{'DebtStock':>11s}{'Projects':>10s}{'Rate':>7s}"
+              f"{'VsReserve':>11s}{'Defaults':>10s}{'Status':>12s}")
+        print(f"  {'-'*73}")
         for c in self.countries:
             cfg = self.countries[c]
             stock = cfg.get("debt_stock", 0.0)
@@ -4312,14 +4349,17 @@ class IPESimulation:
             elif self.round_num <= cfg.get("imf_austerity_until", 0):
                 status = "austerity"
             print(
-                f"  {c:12s}{stock:11.1f}{rate:7.0%}{self._fx_vs_reserve(c):11.2f}"
+                f"  {c:12s}{stock:11.1f}{cfg.get('projects', 0.0):10.1f}{rate:7.0%}"
+                f"{self._fx_vs_reserve(c):11.2f}"
                 f"{cfg.get('defaults', 0):>10d}{status:>12s}"
             )
         print(f"\n  (Rate rises with debt/capacity each round. VsReserve is your "
               f"FX index over the\n   reserve's: payments are divided by it, so "
-              f"above 1.00 your debt weighs less. Default\n   wipes the stock but "
-              f"bans borrowing {DEBT_DEFAULT_BAN_ROUNDS} rounds; "
-              f"IMF refinances {IMF_DEBT_RELIEF:.0%} for austerity.)\n")
+              f"above 1.00 your debt weighs less. Projects\n   pay "
+              f"{PROJECT_RETURN:.0%} of their cost every round, in your own money. "
+              f"Default wipes the stock\n   but bans borrowing "
+              f"{DEBT_DEFAULT_BAN_ROUNDS} rounds; IMF refinances "
+              f"{IMF_DEBT_RELIEF:.0%} for austerity.)\n")
 
     def print_institutions_dashboard(self):
         """Projectable Phase 7 snapshot: hegemon, WTO membership, bindings,
@@ -4502,11 +4542,37 @@ class IPESimulation:
                 zorder=5,
             )
 
+    def _trade_flows(self, trades, pos):
+        """{(from, to, good): quantity received} for one round's trades.
+        Trades that move the same good the same way are one flow; a ring
+        payment, with nothing sent back, has only its outbound leg."""
+        flows = {}
+        for t in trades:
+            legs = [(t["exporter"], t["importer"], t["good_out"],
+                     t["qty_out_received"])]
+            if t["qty_in_sent"] > 0:
+                legs.append((t["importer"], t["exporter"], t["good_in"],
+                             t["qty_in_received"]))
+            for src, dst, good, qty in legs:
+                if src in pos and dst in pos and qty > 0:
+                    flows[src, dst, good] = flows.get((src, dst, good), 0.0) + qty
+        return flows
+
+    def _flow_lane(self, flows, src, dst, good):
+        """A flow's lane among the goods going from src to dst: 0 for the
+        first in the game's order of goods, 1 for the next, and so on."""
+        rank = {g: i for i, g in enumerate(self.goods)}
+        key = (rank.get(good, len(rank)), good)
+        return sum(1 for (s, d, g) in flows
+                   if (s, d) == (src, dst) and (rank.get(g, len(rank)), g) < key)
+
     def plot_trade_network(self, round_num: int = None, figsize=(10, 8)):
         """
         Network diagram of trade flows for one round.
         - Countries laid out evenly on a circle (text labels, no dots).
-        - Each successful trade draws TWO curved arrows (one per direction).
+        - One curved arrow per good per direction: trades that move the same
+          good the same way add up. When one country sends another several
+          goods, their arrows run side by side, so none hides another.
         - Arrow color = good (colorblind-safe Wong palette); arrow width
           is proportional to the received quantity (post-tariff).
         Projectable for classroom debrief — students see hubs vs. periphery,
@@ -4540,35 +4606,34 @@ class IPESimulation:
             plt.show()
             return
 
+        flows = self._trade_flows(trades, pos)
         # Width normalization (received quantity, post-tariff)
-        all_qtys = [t["qty_out_received"] for t in trades] + \
-                   [t["qty_in_received"]  for t in trades]
-        max_qty = max(all_qtys) if all_qtys else 1.0
+        max_qty = max(flows.values(), default=1.0) or 1.0
 
-        def draw_arrow(src, dst, color, qty, rad=0.18):
-            width = max(0.8, 5.5 * qty / max_qty)
+        LANE = 0.09   # gap between side-by-side arrows (the circle's radius is 1)
+        for (src, dst, good), qty in flows.items():
+            # An arc bulges to the right of its direction of travel, so the
+            # two directions between a pair curve apart. A second or third
+            # good going the same way is the same arc moved further out to
+            # that side: parallel to the first, never on top of it.
+            (x0, y0), (x1, y1) = pos[src], pos[dst]
+            dx, dy = x1 - x0, y1 - y0
+            length = float(np.hypot(dx, dy)) or 1e-9
+            off = LANE * self._flow_lane(flows, src, dst, good)
+            ox, oy = off * dy / length, -off * dx / length
             ax.annotate(
-                "", xy=pos[dst], xytext=pos[src],
+                "", xy=(x1 + ox, y1 + oy), xytext=(x0 + ox, y0 + oy),
                 arrowprops=dict(
                     arrowstyle="-|>",
-                    color=color,
-                    lw=width,
+                    color=good_colors.get(good, "gray"),
+                    lw=max(0.8, 5.5 * qty / max_qty),
                     mutation_scale=22,            # arrowhead size
-                    connectionstyle=f"arc3,rad={rad}",
+                    connectionstyle="arc3,rad=0.18",
                     shrinkA=32, shrinkB=32,       # buffer around text bbox
                     alpha=0.92,
                 ),
                 zorder=2,
             )
-
-        for t in trades:
-            draw_arrow(t["exporter"], t["importer"],
-                       good_colors.get(t["good_out"], "gray"),
-                       t["qty_out_received"], rad=0.18)
-            if t["qty_in_sent"] > 0:    # a ring payment has nothing coming back
-                draw_arrow(t["importer"], t["exporter"],
-                           good_colors.get(t["good_in"], "gray"),
-                           t["qty_in_received"], rad=0.18)
 
         # Legend
         from matplotlib.lines import Line2D

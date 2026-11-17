@@ -247,12 +247,25 @@ def test_round_form_safeguards():
           "paid in world prices" in html)
 
 
+def test_borrow_to_invest_field():
+    print("\n[11] the debt section: borrow to spend, borrow to invest")
+    import engine
+    html, data, _ = page(export(p2_sim(), "invest"))
+    check("  two kinds of borrowing, and the investment goes out in the file",
+          '"Borrow to spend"' in html and '"Borrow to invest"' in html
+          and "invest: iv" in html, "")
+    check("  the project's return comes from the engine, not a number typed into the page",
+          data["rules"]["project_return"] == engine.PROJECT_RETURN * 100
+          and "fmt(rules.project_return)" in html)
+
+
 def main():
     for t in [test_one_button_per_country, test_numbers_match_live_sim,
               test_reexport_follows_shocks, test_check_values_are_engine_output,
               test_phase1_export, test_data_cannot_break_the_page,
               test_guards_and_defaults, test_best_mix_not_given_away,
-              test_reserve_challenge_choice, test_round_form_safeguards]:
+              test_reserve_challenge_choice, test_round_form_safeguards,
+              test_borrow_to_invest_field]:
         try:
             t()
         except Exception:

@@ -302,7 +302,7 @@ def test_money_debt_institutions_fields():
         if c == "Bosque":
             extra = {"money": {"fx_regime": "peg", "capital_controls": True,
                                "money_supply_growth": 5},
-                     "debt": {"borrow": 3, "repay": 0, "default": False},
+                     "debt": {"borrow": 3, "invest": 2, "repay": 0, "default": False},
                      "institutions": {"join_wto": True}}
         elif c == "Sabine":
             extra = {"money": {"fx_regime": "float", "capital_controls": False,
@@ -328,6 +328,9 @@ def test_money_debt_institutions_fields():
     check("  borrowing and WTO membership arrive",
           kw["debt_decisions"]["Bosque"]["borrow"] == 3
           and kw["institutional_decisions"]["Bosque"]["join_wto"] is True)
+    check("  borrowing to invest arrives; a file without it invests nothing",
+          kw["debt_decisions"]["Bosque"]["invest"] == 2
+          and kw["debt_decisions"]["Sabine"]["invest"] == 0.0, str(kw["debt_decisions"]))
 
 
 def test_report_writes_nothing():

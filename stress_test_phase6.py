@@ -10,6 +10,8 @@ Stress test Phase 6 sovereign debt:
 - IMF bailout halves the stock + applies austerity
 - a banking bust (inject_bank_bailout) hands each open economy its banks'
   foreign debts; capital controls spare a country
+- borrowing to invest builds a project that pays from the next round on,
+  shares the borrowing cap, and keeps paying after a default
 - save/restore; dashboard renders
 """
 import sys, json, traceback
@@ -459,6 +461,72 @@ def test_bank_bailout():
         check("  shares outside (0, 1] and Phase 5 are refused", True)
 
 
+def test_borrow_to_invest():
+    print("\n[19] borrowing to invest: nothing now, the project pays from next round")
+    import contextlib, io
+    from engine import PROJECT_RETURN
+    s = fresh_phase6()
+    run6(s)
+    who = next(c for c in s.countries if c != s.reserve_currency_holder)
+    twin = copy.deepcopy(s)
+    r = run6(s, debt={who: {"invest": 1e9}})
+    r0 = run6(twin)
+    d = r["results"][who]["debt"]
+    cap = BORROW_CAP_SHARE * capacity(r, who)
+    check("  investing lifts nothing this round",
+          abs(r["results"][who]["welfare"] - r0["results"][who]["welfare"]) < 1e-9)
+    check("  ...the project costs what was borrowed, capped like any borrowing",
+          abs(d["invest"] - cap) < 1e-6 and abs(d["projects"] - cap) < 1e-6
+          and abs(d["debt_stock"] - cap) < 1e-6, str(d))
+    r2, r20 = run6(s), run6(twin)
+    d2 = r2["results"][who]["debt"]
+    check(f"  next round the project pays {PROJECT_RETURN:.0%} of its cost, in its own money",
+          abs(d2["project_return"] - PROJECT_RETURN * cap) < 1e-6
+          and r2["results"][who]["welfare"] > r20["results"][who]["welfare"], str(d2))
+    s3 = copy.deepcopy(s)
+    r3 = run6(s3, debt={who: {"default": True}})
+    check("  a default wipes the debt but not the project, which keeps paying",
+          r3["results"][who]["debt"]["defaulted"] and s3.countries[who]["projects"] > 0
+          and abs(r3["results"][who]["debt"]["project_return"] - PROJECT_RETURN * cap) < 1e-6)
+    s4 = fresh_phase6()
+    r4 = run6(s4)
+    r4 = run6(s4, debt={who: {"borrow": 1e9, "invest": 1e9}})
+    d4 = r4["results"][who]["debt"]
+    check("  spending and investing share one cap; spending is served first",
+          abs(d4["borrow"] - BORROW_CAP_SHARE * capacity(r4, who)) < 1e-6
+          and d4["invest"] == 0.0, str(d4))
+    mon = md()
+    mon[who]["capital_controls"] = True
+    s5 = fresh_phase6()
+    run6(s5, mon=mon)
+    r5 = run6(s5, debt={who: {"invest": 10}}, mon=mon)
+    s6 = copy.deepcopy(s3)                                  # inside its default ban
+    r6 = run6(s6, debt={who: {"invest": 10}})
+    s7 = copy.deepcopy(s)
+    s7.final_round = s7.round_num + 1
+    r7 = run6(s7, debt={who: {"invest": 10}})
+    check("  closed by capital controls, a default ban, and the final round",
+          r5["results"][who]["debt"]["invest"] == 0.0
+          and r6["results"][who]["debt"]["invest"] == 0.0
+          and r7["results"][who]["debt"]["invest"] == 0.0)
+    try:
+        run6(fresh_phase6(), debt={who: {"invest": -5}})
+        check("  a negative investment is refused", False, "no error")
+    except ValueError:
+        check("  a negative investment is refused", True)
+    back = IPESimulation.from_state(json.loads(json.dumps(s.get_state())))
+    check("  projects survive save and restore",
+          abs(back.countries[who]["projects"] - s.countries[who]["projects"]) < 1e-9
+          and s.countries[who]["projects"] > 0)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        s.print_debt_dashboard()
+        s.print_results()
+    check("  the dashboard and the results show projects, investment and return",
+          "Projects" in out.getvalue() and "Invest" in out.getvalue()
+          and "Return" in out.getvalue())
+
+
 def main():
     for t in [test_upgrade, test_borrow_grows_welfare_and_stock, test_interest_and_rate,
               test_service_lowers_welfare_and_stock, test_original_sin, test_default,
@@ -467,7 +535,8 @@ def main():
               test_validation_ordering, test_default_costs_face_value,
               test_controls_block_borrowing, test_final_round_settlement,
               test_debt_measured_against_the_reserve,
-              test_dashboard_rate_and_empty_bailout, test_bank_bailout]:
+              test_dashboard_rate_and_empty_bailout, test_bank_bailout,
+              test_borrow_to_invest]:
         try:
             t()
         except Exception:

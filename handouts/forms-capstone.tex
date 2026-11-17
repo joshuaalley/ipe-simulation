@@ -1,0 +1,417 @@
+\documentclass[11pt]{article}
+\usepackage[letterpaper,margin=0.85in]{geometry}
+\usepackage{booktabs}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{xcolor}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\newcommand{\blank}[1]{\underline{\hspace{#1}}}
+\newcommand{\boxx}{$\square$}
+\newcommand{\hr}{\par\vspace{2pt}\noindent\rule{\linewidth}{0.4pt}\par\vspace{2pt}}
+\pagestyle{empty}
+\begin{document}
+
+{\large\bfseries ROUND \blank{1cm} --- Sabine} \hfill (Capstone form: every decision)\par
+Labor: \textbf{100} \quad|\quad Capital: \textbf{35} \hfill \textit{The rules, with their numbers, are on the back.}
+\hr
+
+{\bfseries Production} --- workers must sum to \textbf{100}, capital to \textbf{35}; a good needs both.\par
+\begin{tabular}{lll}
+ & Workers & Capital \\
+Cloth & \blank{2.4cm} & \blank{2.4cm} \\
+Wine & \blank{2.4cm} & \blank{2.4cm} \\
+Machinery & \blank{2.4cm} & \blank{2.4cm} \\
+\end{tabular}
+
+{\bfseries Tariffs} (0--100\%, on imports, per partner per good):\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item from \textbf{Bosque}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+  \item from \textbf{Llano}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+  \item from \textbf{Trinity}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+\end{itemize}
+
+{\bfseries Compensation and side payments}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item This round we compensate: \blank{1.4cm}\% of our consumption \quad \textit{(0--25\%)}
+  \item Side payment to another country: \blank{1.6cm} units of \blank{2cm} to \blank{2.2cm}.
+\end{itemize}
+
+{\bfseries MNC tax} (Phase 3+) --- on foreign-owned firms in Sabine: \blank{1.4cm}\% of their revenue \quad \textit{(0--50\%)}\par
+
+{\bfseries Trade offers} (negotiate first, then commit):\par
+\begin{itemize}[itemsep=4pt,leftmargin=1.4em]
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+\end{itemize}
+\textit{(More offers? Attach a sheet.)}
+
+{\bfseries Money} \hfill \textit{one box in each row}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
+  \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
+  \item Money growth: \quad \boxx\ $-$10\% \quad \boxx\ $-$5\% \quad \boxx\ $-$2\% \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\%\newline \textit{(0\% = follow the anchor)}
+  \item Reserve currency: \quad \boxx\ No challenge \quad \boxx\ We challenge \quad \boxx\ We back \blank{2.2cm}
+\end{itemize}
+
+{\bfseries Debt}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item Borrow to spend: \blank{2.2cm} \quad Borrow to invest: \blank{2.2cm} \quad Repay: \blank{2.2cm}
+  \item Default on the debt? \quad \boxx\ Yes \quad \boxx\ No
+\end{itemize}
+
+{\bfseries Institutions \& power}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item WTO: \quad \boxx\ Join / stay in \quad \boxx\ Stay out / leave
+  \item Bindings, the most we promise to charge anyone (blank = no promise):\newline cloth \blank{1.3cm}\% \quad wine \blank{1.3cm}\% \quad machinery \blank{1.3cm}\%
+  \item \textit{Hegemon only:} \quad \boxx\ Provide the public good \quad \boxx\ Withhold it
+\end{itemize}
+
+\newpage
+{\large\bfseries How the choices work --- Sabine} \hfill (Capstone form, back)\par
+\hr
+
+{\bfseries Trade politics}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Compensate] Compensating 10\% buys about +2.5 approval a round and costs 2\% of your welfare --- roughly what a 20\% tariff buys, for less, and your trade stays open. A side payment does the same for whoever receives it (only the net counts) --- but if you pay each other, it is a trade, tariffs and all.
+  \item[MNC tax] Blank keeps last round's rate. What you collect adds to your welfare. Set it too high and the owners can move their firm out, taking its output with it.
+\end{description}}
+
+{\bfseries Money}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Peg] No currency friction on trades with other pegged currencies; other cross-currency trades lose 2\%. Trades with the reserve country carry no currency friction. An open peg is what speculators attack. A peg is tied to the reserve currency and moves with it: when the reserve country prints, tightens, or its currency crashes, yours moves the same way.
+  \item[Controls] Foreign firms in your country produce 15\% less, and (Phase 6) you cannot borrow abroad. Speculators cannot run on a closed account.
+  \item[Printing] +1\% welfare this round for each point printed, times your FX index. Your FX index falls by the same \% for good. A weak currency shrinks every import you receive by half the drop, and costs 1\% of welfare every round for each 10 points below 1.00 (FX 0.90 $\to$ imports $-$5\%, welfare $-$1\%). But it makes your exports cheap abroad: welfare rises 2\% a round for each 10 points below 1.00, times the share of your own output you export outside your union (FX 0.90, half exported $\to$ +1\%).
+  \item[Tightening] $-$2, $-$5 or $-$10\%: your FX index rises by that \% for good (it can pass 1.00), and welfare falls 1\% this round for each point.
+  \item[Challenge] A challenge for the reserve currency wins if the challenger and the countries backing it are a majority: 3 of the 4 countries. It is settled after the round, and the winner holds the reserve currency from the next one (from Phase 7, the hegemony too).
+\end{description}}
+
+{\bfseries Debt}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Borrow] Up to 25\% of your consumption a round, spending and investing together. Not under capital controls.
+  \item[Spend] Welfare rises by the same share of consumption this round.
+  \item[Invest] Builds a project instead: nothing now, then 40\% of its cost every round from the next one to the end of the game, in your own money (a project costing 10 pays 4 a round).
+  \item[Interest] 5\% + 15\% $\times$ (debt $\div$ consumption), every round. Debt is owed in the reserve currency, so what counts is your currency against it: payments are divided by (your FX index $\div$ the reserve's). Yours at 0.70 while the reserve's holds at 1.00 $\to$ 43\% heavier. A peg falls with the reserve, so its debt gets no heavier; if the reserve falls and yours holds, your debt gets lighter.
+  \item[Default] The debt disappears, but welfare falls by 1.25 $\times$ (debt $\div$ consumption) that round --- more than repaying would cost at par; no borrowing for 2 rounds and +5\% friction on your trades meanwhile. It only pays after a big fall in your currency against the reserve's.
+  \item[IMF] Ask the instructor before the forms are in: half your debt is refinanced away now, and your welfare is 8\% lower this round and the next.
+  \item[Last round] Everything still owed is repaid.
+\end{description}}
+
+{\bfseries Institutions \& power}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[WTO] Trades between two members lose 2\% less of their goods to friction, as long as neither breaks a binding that round (half that during a default ban): an ordinary cross-currency trade loses 0\% instead of 2\%, or 7\% instead of 9\% while the hegemon withholds. Leaving costs nothing but the dividend.
+  \item[Bindings] A binding is a promise not to charge more than that tariff on a good, to anyone. Charge more --- a populist tariff floor counts --- and you defect: no WTO dividend on any of your trades that round, and the board names you. No other penalty. Blank means no promise.
+  \item[Provide] The hegemon pays 4\% of the average country's welfare that round (average 50 $\to$ 2), and friction stays as it is.
+  \item[Withhold] No bill, but every trade in the world, the hegemon's own included, loses 7\% more of its goods (2\% $\to$ 9\%; with the reserve country, 0\% $\to$ 7\%).
+  \item[Crisis] A global crisis cuts every country's welfare. The cut is halved if the hegemon provides, and shrinks by up to half again with the share of countries in the WTO: a 20\% crisis costs 20\% with neither, 5\% with the hegemon providing and every country in.
+\end{description}}
+
+\newpage
+
+{\large\bfseries ROUND \blank{1cm} --- Bosque} \hfill (Capstone form: every decision)\par
+Labor: \textbf{60} \quad|\quad Capital: \textbf{25} \hfill \textit{The rules, with their numbers, are on the back.}
+\hr
+
+{\bfseries Production} --- workers must sum to \textbf{60}, capital to \textbf{25}; a good needs both.\par
+\begin{tabular}{lll}
+ & Workers & Capital \\
+Cloth & \blank{2.4cm} & \blank{2.4cm} \\
+Wine & \blank{2.4cm} & \blank{2.4cm} \\
+Machinery & \blank{2.4cm} & \blank{2.4cm} \\
+\end{tabular}
+
+{\bfseries Tariffs} (0--100\%, on imports, per partner per good):\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item from \textbf{Sabine}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+  \item from \textbf{Llano}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+  \item from \textbf{Trinity}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+\end{itemize}
+
+{\bfseries Compensation and side payments}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item This round we compensate: \blank{1.4cm}\% of our consumption \quad \textit{(0--25\%)}
+  \item Side payment to another country: \blank{1.6cm} units of \blank{2cm} to \blank{2.2cm}.
+\end{itemize}
+
+{\bfseries MNC tax} (Phase 3+) --- on foreign-owned firms in Bosque: \blank{1.4cm}\% of their revenue \quad \textit{(0--50\%)}\par
+
+{\bfseries Trade offers} (negotiate first, then commit):\par
+\begin{itemize}[itemsep=4pt,leftmargin=1.4em]
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+\end{itemize}
+\textit{(More offers? Attach a sheet.)}
+
+{\bfseries Money} \hfill \textit{one box in each row}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
+  \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
+  \item Money growth: \quad \boxx\ $-$10\% \quad \boxx\ $-$5\% \quad \boxx\ $-$2\% \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\%\newline \textit{(0\% = follow the anchor)}
+  \item Reserve currency: \quad \boxx\ No challenge \quad \boxx\ We challenge \quad \boxx\ We back \blank{2.2cm}
+\end{itemize}
+
+{\bfseries Debt}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item Borrow to spend: \blank{2.2cm} \quad Borrow to invest: \blank{2.2cm} \quad Repay: \blank{2.2cm}
+  \item Default on the debt? \quad \boxx\ Yes \quad \boxx\ No
+\end{itemize}
+
+{\bfseries Institutions \& power}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item WTO: \quad \boxx\ Join / stay in \quad \boxx\ Stay out / leave
+  \item Bindings, the most we promise to charge anyone (blank = no promise):\newline cloth \blank{1.3cm}\% \quad wine \blank{1.3cm}\% \quad machinery \blank{1.3cm}\%
+  \item \textit{Hegemon only:} \quad \boxx\ Provide the public good \quad \boxx\ Withhold it
+\end{itemize}
+
+\newpage
+{\large\bfseries How the choices work --- Bosque} \hfill (Capstone form, back)\par
+\hr
+
+{\bfseries Trade politics}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Compensate] Compensating 10\% buys about +2.5 approval a round and costs 2\% of your welfare --- roughly what a 20\% tariff buys, for less, and your trade stays open. A side payment does the same for whoever receives it (only the net counts) --- but if you pay each other, it is a trade, tariffs and all.
+  \item[MNC tax] Blank keeps last round's rate. What you collect adds to your welfare. Set it too high and the owners can move their firm out, taking its output with it.
+\end{description}}
+
+{\bfseries Money}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Peg] No currency friction on trades with other pegged currencies; other cross-currency trades lose 2\%. Trades with the reserve country carry no currency friction. An open peg is what speculators attack. A peg is tied to the reserve currency and moves with it: when the reserve country prints, tightens, or its currency crashes, yours moves the same way.
+  \item[Controls] Foreign firms in your country produce 15\% less, and (Phase 6) you cannot borrow abroad. Speculators cannot run on a closed account.
+  \item[Printing] +1\% welfare this round for each point printed, times your FX index. Your FX index falls by the same \% for good. A weak currency shrinks every import you receive by half the drop, and costs 1\% of welfare every round for each 10 points below 1.00 (FX 0.90 $\to$ imports $-$5\%, welfare $-$1\%). But it makes your exports cheap abroad: welfare rises 2\% a round for each 10 points below 1.00, times the share of your own output you export outside your union (FX 0.90, half exported $\to$ +1\%).
+  \item[Tightening] $-$2, $-$5 or $-$10\%: your FX index rises by that \% for good (it can pass 1.00), and welfare falls 1\% this round for each point.
+  \item[Challenge] A challenge for the reserve currency wins if the challenger and the countries backing it are a majority: 3 of the 4 countries. It is settled after the round, and the winner holds the reserve currency from the next one (from Phase 7, the hegemony too).
+\end{description}}
+
+{\bfseries Debt}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Borrow] Up to 25\% of your consumption a round, spending and investing together. Not under capital controls.
+  \item[Spend] Welfare rises by the same share of consumption this round.
+  \item[Invest] Builds a project instead: nothing now, then 40\% of its cost every round from the next one to the end of the game, in your own money (a project costing 10 pays 4 a round).
+  \item[Interest] 5\% + 15\% $\times$ (debt $\div$ consumption), every round. Debt is owed in the reserve currency, so what counts is your currency against it: payments are divided by (your FX index $\div$ the reserve's). Yours at 0.70 while the reserve's holds at 1.00 $\to$ 43\% heavier. A peg falls with the reserve, so its debt gets no heavier; if the reserve falls and yours holds, your debt gets lighter.
+  \item[Default] The debt disappears, but welfare falls by 1.25 $\times$ (debt $\div$ consumption) that round --- more than repaying would cost at par; no borrowing for 2 rounds and +5\% friction on your trades meanwhile. It only pays after a big fall in your currency against the reserve's.
+  \item[IMF] Ask the instructor before the forms are in: half your debt is refinanced away now, and your welfare is 8\% lower this round and the next.
+  \item[Last round] Everything still owed is repaid.
+\end{description}}
+
+{\bfseries Institutions \& power}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[WTO] Trades between two members lose 2\% less of their goods to friction, as long as neither breaks a binding that round (half that during a default ban): an ordinary cross-currency trade loses 0\% instead of 2\%, or 7\% instead of 9\% while the hegemon withholds. Leaving costs nothing but the dividend.
+  \item[Bindings] A binding is a promise not to charge more than that tariff on a good, to anyone. Charge more --- a populist tariff floor counts --- and you defect: no WTO dividend on any of your trades that round, and the board names you. No other penalty. Blank means no promise.
+  \item[Provide] The hegemon pays 4\% of the average country's welfare that round (average 50 $\to$ 2), and friction stays as it is.
+  \item[Withhold] No bill, but every trade in the world, the hegemon's own included, loses 7\% more of its goods (2\% $\to$ 9\%; with the reserve country, 0\% $\to$ 7\%).
+  \item[Crisis] A global crisis cuts every country's welfare. The cut is halved if the hegemon provides, and shrinks by up to half again with the share of countries in the WTO: a 20\% crisis costs 20\% with neither, 5\% with the hegemon providing and every country in.
+\end{description}}
+
+\newpage
+
+{\large\bfseries ROUND \blank{1cm} --- Llano} \hfill (Capstone form: every decision)\par
+Labor: \textbf{100} \quad|\quad Capital: \textbf{80} \hfill \textit{The rules, with their numbers, are on the back.}
+\hr
+
+{\bfseries Production} --- workers must sum to \textbf{100}, capital to \textbf{80}; a good needs both.\par
+\begin{tabular}{lll}
+ & Workers & Capital \\
+Cloth & \blank{2.4cm} & \blank{2.4cm} \\
+Wine & \blank{2.4cm} & \blank{2.4cm} \\
+Machinery & \blank{2.4cm} & \blank{2.4cm} \\
+\end{tabular}
+
+{\bfseries Tariffs} (0--100\%, on imports, per partner per good):\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item from \textbf{Sabine}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+  \item from \textbf{Bosque}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+  \item from \textbf{Trinity}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+\end{itemize}
+
+{\bfseries Compensation and side payments}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item This round we compensate: \blank{1.4cm}\% of our consumption \quad \textit{(0--25\%)}
+  \item Side payment to another country: \blank{1.6cm} units of \blank{2cm} to \blank{2.2cm}.
+\end{itemize}
+
+{\bfseries MNC tax} (Phase 3+) --- on foreign-owned firms in Llano: \blank{1.4cm}\% of their revenue \quad \textit{(0--50\%)}\par
+
+{\bfseries Trade offers} (negotiate first, then commit):\par
+\begin{itemize}[itemsep=4pt,leftmargin=1.4em]
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+\end{itemize}
+\textit{(More offers? Attach a sheet.)}
+
+{\bfseries Money} \hfill \textit{one box in each row}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
+  \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
+  \item Money growth: \quad \boxx\ $-$10\% \quad \boxx\ $-$5\% \quad \boxx\ $-$2\% \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\%\newline \textit{(0\% = follow the anchor)}
+  \item Reserve currency: \quad \boxx\ No challenge \quad \boxx\ We challenge \quad \boxx\ We back \blank{2.2cm}
+\end{itemize}
+
+{\bfseries Debt}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item Borrow to spend: \blank{2.2cm} \quad Borrow to invest: \blank{2.2cm} \quad Repay: \blank{2.2cm}
+  \item Default on the debt? \quad \boxx\ Yes \quad \boxx\ No
+\end{itemize}
+
+{\bfseries Institutions \& power}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item WTO: \quad \boxx\ Join / stay in \quad \boxx\ Stay out / leave
+  \item Bindings, the most we promise to charge anyone (blank = no promise):\newline cloth \blank{1.3cm}\% \quad wine \blank{1.3cm}\% \quad machinery \blank{1.3cm}\%
+  \item \textit{Hegemon only:} \quad \boxx\ Provide the public good \quad \boxx\ Withhold it
+\end{itemize}
+
+\newpage
+{\large\bfseries How the choices work --- Llano} \hfill (Capstone form, back)\par
+\hr
+
+{\bfseries Trade politics}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Compensate] Compensating 10\% buys about +2.5 approval a round and costs 2\% of your welfare --- roughly what a 20\% tariff buys, for less, and your trade stays open. A side payment does the same for whoever receives it (only the net counts) --- but if you pay each other, it is a trade, tariffs and all.
+  \item[MNC tax] Blank keeps last round's rate. What you collect adds to your welfare. Set it too high and the owners can move their firm out, taking its output with it.
+\end{description}}
+
+{\bfseries Money}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Peg] No currency friction on trades with other pegged currencies; other cross-currency trades lose 2\%. Trades with the reserve country carry no currency friction. An open peg is what speculators attack. A peg is tied to the reserve currency and moves with it: when the reserve country prints, tightens, or its currency crashes, yours moves the same way.
+  \item[Controls] Foreign firms in your country produce 15\% less, and (Phase 6) you cannot borrow abroad. Speculators cannot run on a closed account.
+  \item[Printing] +1\% welfare this round for each point printed, times your FX index. Your FX index falls by the same \% for good. A weak currency shrinks every import you receive by half the drop, and costs 1\% of welfare every round for each 10 points below 1.00 (FX 0.90 $\to$ imports $-$5\%, welfare $-$1\%). But it makes your exports cheap abroad: welfare rises 2\% a round for each 10 points below 1.00, times the share of your own output you export outside your union (FX 0.90, half exported $\to$ +1\%).
+  \item[Tightening] $-$2, $-$5 or $-$10\%: your FX index rises by that \% for good (it can pass 1.00), and welfare falls 1\% this round for each point.
+  \item[Challenge] A challenge for the reserve currency wins if the challenger and the countries backing it are a majority: 3 of the 4 countries. It is settled after the round, and the winner holds the reserve currency from the next one (from Phase 7, the hegemony too).
+\end{description}}
+
+{\bfseries Debt}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Borrow] Up to 25\% of your consumption a round, spending and investing together. Not under capital controls.
+  \item[Spend] Welfare rises by the same share of consumption this round.
+  \item[Invest] Builds a project instead: nothing now, then 40\% of its cost every round from the next one to the end of the game, in your own money (a project costing 10 pays 4 a round).
+  \item[Interest] 5\% + 15\% $\times$ (debt $\div$ consumption), every round. Debt is owed in the reserve currency, so what counts is your currency against it: payments are divided by (your FX index $\div$ the reserve's). Yours at 0.70 while the reserve's holds at 1.00 $\to$ 43\% heavier. A peg falls with the reserve, so its debt gets no heavier; if the reserve falls and yours holds, your debt gets lighter.
+  \item[Default] The debt disappears, but welfare falls by 1.25 $\times$ (debt $\div$ consumption) that round --- more than repaying would cost at par; no borrowing for 2 rounds and +5\% friction on your trades meanwhile. It only pays after a big fall in your currency against the reserve's.
+  \item[IMF] Ask the instructor before the forms are in: half your debt is refinanced away now, and your welfare is 8\% lower this round and the next.
+  \item[Last round] Everything still owed is repaid.
+\end{description}}
+
+{\bfseries Institutions \& power}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[WTO] Trades between two members lose 2\% less of their goods to friction, as long as neither breaks a binding that round (half that during a default ban): an ordinary cross-currency trade loses 0\% instead of 2\%, or 7\% instead of 9\% while the hegemon withholds. Leaving costs nothing but the dividend.
+  \item[Bindings] A binding is a promise not to charge more than that tariff on a good, to anyone. Charge more --- a populist tariff floor counts --- and you defect: no WTO dividend on any of your trades that round, and the board names you. No other penalty. Blank means no promise.
+  \item[Provide] The hegemon pays 4\% of the average country's welfare that round (average 50 $\to$ 2), and friction stays as it is.
+  \item[Withhold] No bill, but every trade in the world, the hegemon's own included, loses 7\% more of its goods (2\% $\to$ 9\%; with the reserve country, 0\% $\to$ 7\%).
+  \item[Crisis] A global crisis cuts every country's welfare. The cut is halved if the hegemon provides, and shrinks by up to half again with the share of countries in the WTO: a 20\% crisis costs 20\% with neither, 5\% with the hegemon providing and every country in.
+\end{description}}
+
+\newpage
+
+{\large\bfseries ROUND \blank{1cm} --- Trinity} \hfill (Capstone form: every decision)\par
+Labor: \textbf{120} \quad|\quad Capital: \textbf{200} \hfill \textit{The rules, with their numbers, are on the back.}
+\hr
+
+{\bfseries Production} --- workers must sum to \textbf{120}, capital to \textbf{200}; a good needs both.\par
+\begin{tabular}{lll}
+ & Workers & Capital \\
+Cloth & \blank{2.4cm} & \blank{2.4cm} \\
+Wine & \blank{2.4cm} & \blank{2.4cm} \\
+Machinery & \blank{2.4cm} & \blank{2.4cm} \\
+\end{tabular}
+
+{\bfseries Tariffs} (0--100\%, on imports, per partner per good):\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item from \textbf{Sabine}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+  \item from \textbf{Bosque}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+  \item from \textbf{Llano}: \quad cloth: \blank{1.4cm}\% \quad wine: \blank{1.4cm}\% \quad machinery: \blank{1.4cm}\%
+\end{itemize}
+
+{\bfseries Compensation and side payments}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item This round we compensate: \blank{1.4cm}\% of our consumption \quad \textit{(0--25\%)}
+  \item Side payment to another country: \blank{1.6cm} units of \blank{2cm} to \blank{2.2cm}.
+\end{itemize}
+
+{\bfseries MNC tax} (Phase 3+) --- on foreign-owned firms in Trinity: \blank{1.4cm}\% of their revenue \quad \textit{(0--50\%)}\par
+
+{\bfseries Trade offers} (negotiate first, then commit):\par
+\begin{itemize}[itemsep=4pt,leftmargin=1.4em]
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+  \item We give \blank{1.8cm} units of \blank{2.2cm} to \blank{2.2cm};\\[2pt] in return: \blank{1.8cm} units of \blank{2.2cm}.
+\end{itemize}
+\textit{(More offers? Attach a sheet.)}
+
+{\bfseries Money} \hfill \textit{one box in each row}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float
+  \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls
+  \item Money growth: \quad \boxx\ $-$10\% \quad \boxx\ $-$5\% \quad \boxx\ $-$2\% \quad \boxx\ 0\% \quad \boxx\ 2\% \quad \boxx\ 5\% \quad \boxx\ 10\%\newline \textit{(0\% = follow the anchor)}
+  \item Reserve currency: \quad \boxx\ No challenge \quad \boxx\ We challenge \quad \boxx\ We back \blank{2.2cm}
+\end{itemize}
+
+{\bfseries Debt}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item Borrow to spend: \blank{2.2cm} \quad Borrow to invest: \blank{2.2cm} \quad Repay: \blank{2.2cm}
+  \item Default on the debt? \quad \boxx\ Yes \quad \boxx\ No
+\end{itemize}
+
+{\bfseries Institutions \& power}\par
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item WTO: \quad \boxx\ Join / stay in \quad \boxx\ Stay out / leave
+  \item Bindings, the most we promise to charge anyone (blank = no promise):\newline cloth \blank{1.3cm}\% \quad wine \blank{1.3cm}\% \quad machinery \blank{1.3cm}\%
+  \item \textit{Hegemon only:} \quad \boxx\ Provide the public good \quad \boxx\ Withhold it
+\end{itemize}
+
+\newpage
+{\large\bfseries How the choices work --- Trinity} \hfill (Capstone form, back)\par
+\hr
+
+{\bfseries Trade politics}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Compensate] Compensating 10\% buys about +2.5 approval a round and costs 2\% of your welfare --- roughly what a 20\% tariff buys, for less, and your trade stays open. A side payment does the same for whoever receives it (only the net counts) --- but if you pay each other, it is a trade, tariffs and all.
+  \item[MNC tax] Blank keeps last round's rate. What you collect adds to your welfare. Set it too high and the owners can move their firm out, taking its output with it.
+\end{description}}
+
+{\bfseries Money}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Peg] No currency friction on trades with other pegged currencies; other cross-currency trades lose 2\%. Trades with the reserve country carry no currency friction. An open peg is what speculators attack. A peg is tied to the reserve currency and moves with it: when the reserve country prints, tightens, or its currency crashes, yours moves the same way.
+  \item[Controls] Foreign firms in your country produce 15\% less, and (Phase 6) you cannot borrow abroad. Speculators cannot run on a closed account.
+  \item[Printing] +1\% welfare this round for each point printed, times your FX index. Your FX index falls by the same \% for good. A weak currency shrinks every import you receive by half the drop, and costs 1\% of welfare every round for each 10 points below 1.00 (FX 0.90 $\to$ imports $-$5\%, welfare $-$1\%). But it makes your exports cheap abroad: welfare rises 2\% a round for each 10 points below 1.00, times the share of your own output you export outside your union (FX 0.90, half exported $\to$ +1\%).
+  \item[Tightening] $-$2, $-$5 or $-$10\%: your FX index rises by that \% for good (it can pass 1.00), and welfare falls 1\% this round for each point.
+  \item[Challenge] A challenge for the reserve currency wins if the challenger and the countries backing it are a majority: 3 of the 4 countries. It is settled after the round, and the winner holds the reserve currency from the next one (from Phase 7, the hegemony too).
+\end{description}}
+
+{\bfseries Debt}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[Borrow] Up to 25\% of your consumption a round, spending and investing together. Not under capital controls.
+  \item[Spend] Welfare rises by the same share of consumption this round.
+  \item[Invest] Builds a project instead: nothing now, then 40\% of its cost every round from the next one to the end of the game, in your own money (a project costing 10 pays 4 a round).
+  \item[Interest] 5\% + 15\% $\times$ (debt $\div$ consumption), every round. Debt is owed in the reserve currency, so what counts is your currency against it: payments are divided by (your FX index $\div$ the reserve's). Yours at 0.70 while the reserve's holds at 1.00 $\to$ 43\% heavier. A peg falls with the reserve, so its debt gets no heavier; if the reserve falls and yours holds, your debt gets lighter.
+  \item[Default] The debt disappears, but welfare falls by 1.25 $\times$ (debt $\div$ consumption) that round --- more than repaying would cost at par; no borrowing for 2 rounds and +5\% friction on your trades meanwhile. It only pays after a big fall in your currency against the reserve's.
+  \item[IMF] Ask the instructor before the forms are in: half your debt is refinanced away now, and your welfare is 8\% lower this round and the next.
+  \item[Last round] Everything still owed is repaid.
+\end{description}}
+
+{\bfseries Institutions \& power}\par
+{\footnotesize
+\begin{description}[nosep,style=sameline,leftmargin=5.6em,font=\normalfont\bfseries]
+  \item[WTO] Trades between two members lose 2\% less of their goods to friction, as long as neither breaks a binding that round (half that during a default ban): an ordinary cross-currency trade loses 0\% instead of 2\%, or 7\% instead of 9\% while the hegemon withholds. Leaving costs nothing but the dividend.
+  \item[Bindings] A binding is a promise not to charge more than that tariff on a good, to anyone. Charge more --- a populist tariff floor counts --- and you defect: no WTO dividend on any of your trades that round, and the board names you. No other penalty. Blank means no promise.
+  \item[Provide] The hegemon pays 4\% of the average country's welfare that round (average 50 $\to$ 2), and friction stays as it is.
+  \item[Withhold] No bill, but every trade in the world, the hegemon's own included, loses 7\% more of its goods (2\% $\to$ 9\%; with the reserve country, 0\% $\to$ 7\%).
+  \item[Crisis] A global crisis cuts every country's welfare. The cut is halved if the hegemon provides, and shrinks by up to half again with the share of countries in the WTO: a 20\% crisis costs 20\% with neither, 5\% with the hegemon providing and every country in.
+\end{description}}
+\end{document}

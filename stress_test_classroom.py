@@ -240,6 +240,10 @@ def test_phase7_round_trip():
     path = os.path.join(TMP, "p7.xlsx")
     sim.write_round_template(path)
     book = pd.read_excel(path, sheet_name=None)
+    cols = list(book["finance"].columns)
+    check("  the finance sheet asks for borrowing to spend and to invest",
+          "borrow" in cols and "invest" in cols
+          and cols.index("borrow") < cols.index("invest") < cols.index("repay"), str(cols))
     book["production"] = pd.DataFrame([{
         "country": n,
         **{f"labor_{g}": c["labor"] / 3 for g in PHASE2_GOODS},
@@ -265,6 +269,9 @@ def test_phase7_round_trip():
           f"{len(kw['firm_decisions'])} of {len(sim.firm_config)}")
     check("  'yes' parses as a bool",
           kw["firm_decisions"][list(kw["firm_decisions"])[0]]["export"] is True)
+    check("  a finance sheet from before the invest column still loads, investing nothing",
+          all(d["invest"] == 0.0 and d["borrow"] == 3 for d in kw["debt_decisions"].values()),
+          str(kw["debt_decisions"]))
     sim.run_round(**kw)
     check("  Phase 7 round runs", sim.round_num == 5)
 
@@ -746,6 +753,43 @@ def test_notebook_is_safe_to_run_all():
           not unguarded, str(unguarded))
 
 
+def test_capstone_and_finance_forms():
+    print("\n[H] handouts: the capstone form holds every decision, with the engine's numbers")
+    import importlib
+    import engine
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "handouts")
+    sys.path.insert(0, here)
+    try:
+        mh = importlib.import_module("make_handouts")
+    finally:
+        sys.path.remove(here)
+    saved = mh.NAMES, mh.HERE
+    try:
+        mh.NAMES, mh.HERE = list(KEEP), TMP           # scratch only, never handouts/
+        fin = open(mh.build_finance_forms(), encoding="utf-8").read()
+        cap = open(mh.build_capstone_forms(), encoding="utf-8").read()
+    finally:
+        mh.NAMES, mh.HERE = saved
+    check("  the finance add-on is money and debt now, with the reserve challenge on paper",
+          "WTO" not in fin and "Hegemon" not in fin and "Reserve currency" in fin
+          and "Borrow to invest" in fin)
+    front = cap.split(r"\newpage")[0]
+    check("  the capstone front has every decision of a round",
+          all(k in front for k in ("Production", "Tariffs", "Compensation", "MNC tax",
+                                   "Trade offers", "Money growth", "Reserve currency",
+                                   "Borrow to invest", "Default", "WTO", "Bindings",
+                                   "Hegemon only")))
+    pct = lambda x: f"{x * 100:.0f}\\%"
+    check("  the back states the WTO and hegemon rules in the engine's numbers",
+          all(s in cap for s in (f"lose {pct(engine.WTO_DIVIDEND)} less",
+                                 f"pays {pct(engine.HEGEMON_PROVISION_COST)} of the average",
+                                 f"loses {pct(engine.HEGEMON_WITHHOLD_PENALTY)} more",
+                                 f"{len(KEEP) // 2 + 1} of the {len(KEEP)} countries")))
+    check("  a front and a back for each country",
+          cap.count(r"\newpage") == 2 * len(KEEP) - 1
+          and cap.count("How the choices work") == len(KEEP))
+
+
 def main():
     for t in [test_round_trip, test_valid_trade_parses, test_typed_amounts,
               test_empty_and_blank_trades_tolerated,
@@ -761,7 +805,8 @@ def main():
               test_play_round, test_phase_mismatch_diagnosed,
               test_country_metadata_does_not_block_valid_rows,
               test_mnc_tax_in_the_workbook, test_upgrade_cells_safe_to_rerun,
-              test_run_all_from_any_round, test_notebook_is_safe_to_run_all]:
+              test_run_all_from_any_round, test_notebook_is_safe_to_run_all,
+              test_capstone_and_finance_forms]:
         try:
             t()
         except Exception:

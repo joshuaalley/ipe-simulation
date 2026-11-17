@@ -492,7 +492,8 @@ def _template_sheets(sim, rnd):
         # name is a challenge, blank is none. Settled after the round.
         fin["reserve_challenge"] = ""
         if phase >= 6:
-            fin["borrow"] = 0
+            fin["borrow"] = 0           # to spend now
+            fin["invest"] = 0           # to build a project that pays from next round
             fin["repay"] = 0
             fin["default"] = "no"
             fin["debt_now"] = [
@@ -1085,6 +1086,8 @@ def load_round(sim, path):
                 if phase >= 6:
                     debt[country] = {
                         "borrow": _as_num(row.get("borrow"), 0.0, where),
+                        # optional: a workbook made before the column has none
+                        "invest": _as_num(row.get("invest"), 0.0, where),
                         "repay": _as_num(row.get("repay"), 0.0, where),
                         "default": _as_bool(row.get("default"), False, where),
                     }
@@ -1443,6 +1446,7 @@ def _read_country_file(sim, n, d, has_mnc, has_fin):
     if phase >= 6:
         debt = d.get("debt") or {}
         fin_row["borrow"] = _number(debt.get("borrow"), "borrowing", problems, lo=0)
+        fin_row["invest"] = _number(debt.get("invest"), "investment", problems, lo=0)
         fin_row["repay"] = _number(debt.get("repay"), "repayment", problems, lo=0)
         fin_row["default"] = "yes" if debt.get("default") is True else "no"
     if phase >= 7:

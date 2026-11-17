@@ -856,6 +856,48 @@ def test_indexed_welfare_plot():
         plt.close("all")
 
 
+def test_trade_network_lanes():
+    print("\n[NET] trade network: several goods one way run side by side")
+    import matplotlib.pyplot as plt
+    from matplotlib.text import Annotation
+    shown = []
+    real_show = plt.show
+    plt.show = lambda *a, **k: shown.append(plt.gcf())
+    try:
+        sim = fresh_phase2()
+        dec = {c: {"production": {
+            "labor": {g: cfg["labor"] / 3 for g in PHASE2_GOODS},
+            "capital": {g: cfg["capital"] / 3 for g in PHASE2_GOODS}}}
+            for c, cfg in PHASE2_COUNTRIES.items()}
+        r = sim.run_round(dec, [("Llano", "Trinity", "cloth", 5, "machinery", 4),
+                                ("Llano", "Trinity", "wine", 6, "machinery", 5)])
+        pos = sim._country_layout()
+        flows = sim._trade_flows(r["trades_executed"], pos)
+        check("  one flow per good per direction; the same good twice adds up",
+              set(flows) == {("Llano", "Trinity", "cloth"), ("Llano", "Trinity", "wine"),
+                             ("Trinity", "Llano", "machinery")}
+              and abs(flows["Trinity", "Llano", "machinery"] - 9) < 1e-9, str(flows))
+        check("  two goods the same way take lanes 0 and 1",
+              [sim._flow_lane(flows, "Llano", "Trinity", g) for g in ("cloth", "wine")] == [0, 1]
+              and sim._flow_lane(flows, "Trinity", "Llano", "machinery") == 0)
+        sim.plot_trade_network()
+        arrows = [a for a in shown[-1].axes[0].texts
+                  if isinstance(a, Annotation) and a.arrow_patch is not None]
+        ends = {(tuple(a.xyann), tuple(a.xy)) for a in arrows}
+        check("  one arrow per flow, no two on the same path",
+              len(arrows) == 3 and len(ends) == 3, str(ends))
+        out = sorted((a for a in arrows if a.get_zorder() == 2
+                      and abs(a.xy[0] - pos["Trinity"][0]) < 0.2
+                      and abs(a.xy[1] - pos["Trinity"][1]) < 0.2),
+                     key=lambda a: a.xyann[0])
+        gap = (math.dist(out[0].xyann, out[1].xyann) if len(out) == 2 else 0.0)
+        check("  ...the second runs parallel to the first, a lane apart",
+              len(out) == 2 and 0.05 < gap < 0.2, f"{len(out)} arrows, gap {gap:.3f}")
+    finally:
+        plt.show = real_show
+        plt.close("all")
+
+
 def main():
     tests = [
         test_phase1_balanced_autarky,
@@ -883,6 +925,7 @@ def main():
         test_stolper_samuelson,
         test_factor_prices_fully_exported_good,
         test_indexed_welfare_plot,
+        test_trade_network_lanes,
     ]
     for t in tests:
         try:

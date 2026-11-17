@@ -83,6 +83,7 @@ productivity tiers & HIGH 1.3, MED 1.0, LOW 0.7 & firm productivity (Ph.\ 4) \\
 \code{DEBT\_DIVIDEND\_PENALTY} & 0.5 & WTO dividend halved in ban \\
 \code{IMF\_DEBT\_RELIEF} & 0.5 & bailout refinances half the stock \\
 \code{IMF\_AUSTERITY} & 0.08 & austerity welfare cut \\
+\code{PROJECT\_RETURN} & 0.40 & a project's yield a round, on its cost \\
 \code{IMF\_AUSTERITY\_ROUNDS} & 2 & austerity duration \\
 \code{WTO\_DIVIDEND} & 0.02 & member-member friction cut \\
 \code{HEGEMON\_PROVISION\_COST} & 0.04 & bill to lead, share of average welfare \\
@@ -492,15 +493,20 @@ $C = \sum_g c_g\, p_g$ (goods at world prices). Then:
 \begin{align*}
 \text{rate} &= \underbrace{0.05}_{\text{base}} + \underbrace{0.15}_{\text{premium}}\cdot \frac{D}{C}, \qquad
 \text{interest} = D\cdot\text{rate} \\
-\text{borrow } B:&\quad U \mathrel{\times}= \Big(1 + \tfrac{B}{C}\Big), \quad
-  B \le 0.25\,C, \quad B = 0 \text{ under capital controls} \\
+\text{borrow to spend } B:&\quad U \mathrel{\times}= \Big(1 + \tfrac{B}{C}\Big), \quad
+  B + I \le 0.25\,C, \quad B = I = 0 \text{ under controls} \\
+\text{borrow to invest } I:&\quad P \leftarrow P + I, \qquad
+  \text{from the next round on: } U \mathrel{\times}= \Big(1 + \tfrac{0.40\,P}{C}\Big) \\
 \text{service } (\text{interest}+\text{repay}):&\quad
 U \mathrel{\times}= \max\!\Big(0,\ 1 - \tfrac{\text{service}/\hat d}{C}\Big), \qquad
-\hat d = d / d^{R}, \qquad
-D \leftarrow D + B - \text{repay} \\
+\hat d = d / d^{R} \\
+\text{the stock}:&\quad D \leftarrow D + B + I - \text{repay} \\
 \text{default}:&\quad U \mathrel{\times}= 1 - \min\!\Big(1, 1.25\,\tfrac{D}{C}\Big),
   \qquad D \to 0
 \end{align*}
+Here $P$ is the cost of the country's projects, which pay in its own money ---
+not divided by $\hat d$ --- to the end of the game, whatever happens to the debt
+that built them (a default wipes $D$, not $P$).
 The division of service by $\hat d$ \emph{is} original sin. The debt is owed in
 the reserve currency $R$, so what counts is a currency's value against it,
 $\hat d = d/d^{R}$ (\code{\_fx\_vs\_reserve}): a currency that falls against the
@@ -527,7 +533,15 @@ never borrowing by a third, and borrowing in the final round was free. With the
 trading test worlds serial default loses 1.5--3\% to never borrowing, repaying beats
 defaulting at par by about 1\% of the six-round total, and after a 40\%
 devaluation default beats repaying in full --- the lesson of the Phase 6 crisis round
-(\code{stress\_test\_money\_balance.py}).
+(\code{stress\_test\_money\_balance.py}). Borrowing to spend still never pays on
+its own: it is consumption pulled forward at interest, and the November 2026 class,
+with only that lever, borrowed nothing. Projects (added that month) are the other
+reason to borrow. At 0.40 a project pays for itself in two and a half rounds: in
+the same worlds an early one beats never borrowing by about 2\% carried to the end
+and 3\% repaid the next round, while investing late, investing every round (the
+premium spiral and the final settlement) or investing just before a 40\% fall
+against the reserve loses, and defaulting on a project's debt still loses to
+repaying it.
 
 \textbf{Divergence.} No inter-temporal optimization (no Euler equation, no
 forward-looking default decision); the borrow/service welfare scaling is a

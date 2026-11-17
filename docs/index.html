@@ -1199,10 +1199,11 @@
    5.0,
    10.0
   ],
-  "challenge": "majority"
+  "challenge": "majority",
+  "project_return": 40.0
  },
  "inbox_url": "https://www.dropbox.com/request/1r08vksl83w15kf8ilba",
- "updated": "October 30, 2026"
+ "updated": "November 12, 2026"
 }</script>
 <script>
 (function () {
@@ -1291,6 +1292,7 @@
                 [5, "Money"], [6, "Debt"], [7, "Rules"]];
   var rules = data.rules || { tariff_max: 100, compensation_max: 25, mnc_tax_min: 0,
                               mnc_tax_max: 50, money_growth: [-10, -5, -2, 0, 2, 5, 10] };
+  if (rules.project_return == null) rules.project_return = 40;
   var firms = data.firms || [];
   var firmById = {};
   firms.forEach(function (f) { firmById[f.id] = f; });
@@ -1691,8 +1693,13 @@
     }
     if (phase >= 6) {
       box.appendChild(el("h3", { text: "Debt" }));
-      box.appendChild(el("div", { cls: "field" }, [el("span", { text: "Borrow" }),
-        numInput(f.borrow, "Borrow", function (v) { f.borrow = v; save(); })]));
+      box.appendChild(el("div", { cls: "field" }, [el("span", { text: "Borrow to spend" }),
+        numInput(f.borrow, "Borrow to spend", function (v) { f.borrow = v; save(); })]));
+      box.appendChild(el("div", { cls: "field" }, [el("span", { text: "Borrow to invest" }),
+        numInput(f.invest, "Borrow to invest", function (v) { f.invest = v; save(); })]));
+      box.appendChild(el("p", { cls: "hint", text: "Spending lifts this round. A project pays " +
+        fmt(rules.project_return) + "% of its cost every round from the next one, in your own " +
+        "money. Both are owed in the reserve currency." }));
       box.appendChild(el("div", { cls: "field" }, [el("span", { text: "Repay" }),
         numInput(f.repay, "Repay", function (v) { f.repay = v; save(); })]));
       var dcb = el("input", { type: "checkbox" });
@@ -1797,9 +1804,10 @@
       if (f.rc && countryNames.indexOf(f.rc) >= 0) out.reserve_challenge = f.rc;
     }
     if (phase >= 6) {
-      var b = read(f.borrow), r = read(f.repay);
-      if (isNaN(b) || b < 0 || isNaN(r) || r < 0) errs.push("Debt: borrowing and repayment must be 0 or more.");
-      out.debt = { borrow: b, repay: r, "default": !!f.dflt };
+      var b = read(f.borrow), iv = read(f.invest), r = read(f.repay);
+      if ([b, iv, r].some(function (x) { return isNaN(x) || x < 0; }))
+        errs.push("Debt: borrowing, investing and repayment must be 0 or more.");
+      out.debt = { borrow: b, invest: iv, repay: r, "default": !!f.dflt };
     }
     if (phase >= 7) {
       out.institutions = {};

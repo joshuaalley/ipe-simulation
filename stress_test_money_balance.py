@@ -282,9 +282,38 @@ def test_default_pays_only_after_a_devaluation():
                   after > 0, f"margin {after * 100:.2f}%")
 
 
+def test_investing_pays_only_when_it_should():
+    print("\n[4] borrowing to invest: a reason to borrow, not a money machine")
+    for name in TRADING:
+        w = world(name)
+        for who in debtors(w):
+            run = lambda pol, shock=None: w.debt_run(who, pol, shock_before=shock)[0]
+            never, never_fall = run(lambda k, s: {}), run(lambda k, s: {}, 1)
+            carry = run(lambda k, s: {"invest": BIG} if k == 0 else {})
+            quick = run(lambda k, s: {"invest": BIG} if k == 0
+                        else ({"repay": BIG} if k == 1 else {}))
+            walk = run(lambda k, s: {"invest": BIG} if k == 0
+                       else ({"default": True} if k == 1 else {}))
+            every = run(lambda k, s: {"invest": BIG})
+            late = run(lambda k, s: {"invest": BIG} if k == 3 else {})
+            fall = run(lambda k, s: {"invest": BIG} if k == 0 else {}, 1)
+            check(f"  {name}, {who}: an early project beats never borrowing, "
+                  "carried or repaid",
+                  carry > never and quick > never,
+                  f"carry {carry / never - 1:+.1%}, repaid {quick / never - 1:+.1%}")
+            check(f"  {name}, {who}: investing every round, or late, loses",
+                  every < never and late < never,
+                  f"every {every / never - 1:+.1%}, late {late / never - 1:+.1%}")
+            check(f"  {name}, {who}: a 40% fall after investing turns it into a loss",
+                  fall < never_fall, f"{fall / never_fall - 1:+.1%}")
+            check(f"  {name}, {who}: walking away from a project's debt loses to repaying it",
+                  walk < quick, f"default {walk / never - 1:+.1%}, repay {quick / never - 1:+.1%}")
+
+
 def main():
     for t in [test_no_monetary_strategy_always_wins, test_debt_has_no_free_lunch,
-              test_default_pays_only_after_a_devaluation]:
+              test_default_pays_only_after_a_devaluation,
+              test_investing_pays_only_when_it_should]:
         try:
             t()
         except Exception:
