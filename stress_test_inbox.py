@@ -333,6 +333,33 @@ def test_money_debt_institutions_fields():
           and kw["debt_decisions"]["Sabine"]["invest"] == 0.0, str(kw["debt_decisions"]))
 
 
+def test_default_is_flagged_before_play():
+    print("\n[8b] a default is called out in the report before the round is played")
+    sim, folder = game("default")
+    for up in (sim.award_reserve_currency, sim.upgrade_to_phase5, sim.upgrade_to_phase6):
+        quiet(up)
+    sim.countries["Bosque"]["debt_stock"] = 6.0
+    sim.countries["Sabine"]["debt_stock"] = 4.0
+    for c in KEEP:
+        extra = {}
+        if c == "Bosque":            # the slip: repaying, with the default box ticked
+            extra = {"debt": {"borrow": 0, "invest": 0, "repay": 2.3, "default": True}}
+        elif c == "Sabine":
+            extra = {"debt": {"borrow": 0, "repay": 0, "default": True}}
+        elif c == "Llano":
+            extra = {"debt": {"borrow": 0, "repay": 0, "default": True}}
+        drop(folder, f"{c}.json", country_file(c, phase=6, **extra))
+    _, out = quiet(sim.inbox_report, folder)
+    check("  a default that also asks to repay is called out, with what it owes",
+          "DEFAULT Bosque defaults on all 6.0 it owes -- but its file also asks to repay 2.3"
+          in out, out[-600:])
+    check("  a plain default is still called out",
+          "DEFAULT Sabine defaults on all 4.0 it owes. Make sure the team means it." in out)
+    check("  a default with nothing owed is noted as having no effect",
+          "Llano ticked default but owes nothing" in out)
+    check("  ...and nobody else is mentioned", "Trinity defaults" not in out)
+
+
 def test_report_writes_nothing():
     print("\n[9] sim.inbox_report() shows who's in and writes nothing")
     sim, folder = game("report")
@@ -741,7 +768,8 @@ def main():
               test_trades_need_both_sides, test_build_and_play,
               test_absent_teams_repeat_last_round,
               test_unusable_files_are_never_half_applied, test_paper_rounds_unchanged,
-              test_money_debt_institutions_fields, test_report_writes_nothing,
+              test_money_debt_institutions_fields, test_default_is_flagged_before_play,
+              test_report_writes_nothing,
               test_real_round8_through_the_inbox, test_page_data,
               test_pass_through_listed_first, test_file_times_survive_excel,
               test_reserve_challenge_through_the_inbox,

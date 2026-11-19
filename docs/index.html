@@ -1203,7 +1203,7 @@
   "project_return": 40.0
  },
  "inbox_url": "https://www.dropbox.com/request/1r08vksl83w15kf8ilba",
- "updated": "November 12, 2026"
+ "updated": "November 17, 2026"
 }</script>
 <script>
 (function () {
@@ -1680,7 +1680,8 @@
       box.appendChild(choices("mg", [keep].concat(rules.money_growth.map(function (g) {
         return [String(g), (g < 0 ? "\u2212" + fmt(-g) : fmt(g)) + "%"]; })), f.growth,
         function (v) { f.growth = v; save(); }));
-      box.appendChild(el("h3", { text: "Reserve currency" }));
+      // From Phase 7 the hegemon is the reserve-currency holder: one prize.
+      box.appendChild(el("h3", { text: phase >= 7 ? "Reserve currency and hegemony" : "Reserve currency" }));
       box.appendChild(choices("rc", [["", "No challenge"], [me, "We challenge for it"]].concat(
         partners.map(function (n) { return [n, "Back " + n + "\u2019s challenge"]; })), f.rc,
         function (v) { f.rc = v; save(); }));
@@ -1689,7 +1690,8 @@
           ? "have more cumulative welfare than everyone else"
           : "are a majority: " + (Math.floor(countryNames.length / 2) + 1) + " of the " +
             countryNames.length + " countries") +
-        ". It is settled after the round; the winner holds the reserve currency from the next one." }));
+        ". It is settled after the round; the winner holds the reserve currency" +
+        (phase >= 7 ? ", and with it the hegemony," : "") + " from the next one." }));
     }
     if (phase >= 6) {
       box.appendChild(el("h3", { text: "Debt" }));
@@ -1705,7 +1707,7 @@
       var dcb = el("input", { type: "checkbox" });
       dcb.checked = !!f.dflt;
       dcb.addEventListener("change", function () { f.dflt = dcb.checked; save(); });
-      box.appendChild(el("label", { cls: "field" }, [dcb, "Default on everything we owe"]));
+      box.appendChild(el("label", { cls: "field" }, [dcb, "Default: stop paying everything we owe"]));
     }
     if (phase >= 7) {
       box.appendChild(el("h3", { text: "Institutions" }));
@@ -1807,6 +1809,9 @@
       var b = read(f.borrow), iv = read(f.invest), r = read(f.repay);
       if ([b, iv, r].some(function (x) { return isNaN(x) || x < 0; }))
         errs.push("Debt: borrowing, investing and repayment must be 0 or more.");
+      else if (f.dflt && (b > 0 || iv > 0 || r > 0))
+        errs.push("Debt: defaulting wipes everything you owe, so you can't also borrow, " +
+                  "invest or repay this round. Untick Default, or clear those amounts.");
       out.debt = { borrow: b, invest: iv, repay: r, "default": !!f.dflt };
     }
     if (phase >= 7) {

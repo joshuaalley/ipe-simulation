@@ -527,14 +527,16 @@ def _rules(items, size=r"\small"):
             r"\end{description}}")
 
 
-def money_choices():
+def money_choices(phase7=False):
     pct = " \\quad ".join(rf"\boxx\ {'$-$' if g < 0 else ''}{abs(g) * 100:.0f}\%"
                           for g in MONEY_CHOICES)
+    # From Phase 7 the hegemon is the reserve-currency holder: one prize.
+    prize = "Reserve currency and hegemony" if phase7 else "Reserve currency"
     return (r"\begin{itemize}[nosep,leftmargin=1.4em]" "\n"
             r"  \item Exchange rate: \quad \boxx\ Peg \quad \boxx\ Float" "\n"
             r"  \item Capital account: \quad \boxx\ Open \quad \boxx\ Controls" "\n"
             rf"  \item Money growth: \quad {pct}\newline \textit{{(0\% = follow the anchor)}}" "\n"
-            r"  \item Reserve currency: \quad \boxx\ No challenge \quad \boxx\ We challenge"
+            rf"  \item {prize}: \quad \boxx\ No challenge \quad \boxx\ We challenge"
             r" \quad \boxx\ We back \blank{2.2cm}" "\n"
             r"\end{itemize}")
 
@@ -548,7 +550,7 @@ def _challenge_rule():
             f"{n // 2 + 1} of the {n} countries")
 
 
-def money_rules(size=r"\small"):
+def money_rules(size=r"\small", phase7=False):
     fric, cut = _pct(engine.BASE_FX_FRICTION), _pct(engine.CONTROLS_FIRM_CUT)
     stim = f"{engine.STIMULUS_PER_POINT:g}"
     steps = [f"$-${_pct(-g)}" for g in sorted(MONEY_CHOICES, reverse=True) if g < 0]
@@ -577,9 +579,13 @@ def money_rules(size=r"\small"):
                      rf"half exported $\to$ +{xeg}\%)."),
         ("Tightening", rf"{tight}\%: your FX index rises by that \% for good (it can pass "
                        rf"1.00), and welfare falls {stim}\% this round for each point."),
-        ("Challenge", rf"A challenge for the reserve currency wins if {_challenge_rule()}. "
-                      rf"It is settled after the round, and the winner holds the reserve "
-                      rf"currency from the next one (from Phase 7, the hegemony too)."),
+        ("Challenge", (rf"The hegemon is whoever holds the reserve currency, so one "
+                       rf"challenge decides both. It wins if {_challenge_rule()}, is settled "
+                       rf"after the round, and the winner holds the reserve currency and the "
+                       rf"hegemony from the next one." if phase7 else
+                       rf"A challenge for the reserve currency wins if {_challenge_rule()}. "
+                       rf"It is settled after the round, and the winner holds the reserve "
+                       rf"currency from the next one (from Phase 7, the hegemony too).")),
     ], size)
 
 
@@ -701,7 +707,9 @@ def capstone_form_page(name):
     back = r"\footnotesize"            # the rules page has to fit on one side
     politics = _rules([("Compensate", compensation_note()), ("MNC tax", mnc_tax_note())],
                       back)
-    money, debt, inst = money_rules(back), debt_rules(back), institutions_rules(back)
+    money = money_rules(back, phase7=True)
+    debt, inst = debt_rules(back), institutions_rules(back)
+    money_front = money_choices(phase7=True)
     return rf"""
 {{\large\bfseries ROUND \blank{{1cm}} --- {esc(name)}}} \hfill (Capstone form: every decision)\par
 Labor: \textbf{{{L}}} \quad|\quad Capital: \textbf{{{K}}} \hfill \textit{{The rules, with their numbers, are on the back.}}
@@ -723,7 +731,7 @@ Labor: \textbf{{{L}}} \quad|\quad Capital: \textbf{{{K}}} \hfill \textit{{The ru
 {trades}
 
 {{\bfseries Money}} \hfill \textit{{one box in each row}}\par
-{money_choices()}
+{money_front}
 
 {{\bfseries Debt}}\par
 {debt_choices()}

@@ -1655,6 +1655,32 @@ def _plan_from_inbox(sim, workbook, inbox):
             if growth and n not in chose_growth:
                 lines.append(f"  Money  {n} sent no new rate, so last round's "
                              f"{growth:+.0%} repeats")
+    if fin is not None and "default" in fin.columns:
+        # A default can't be taken back once the round is played, and one box
+        # on the page sets it: say so loudly while there's time to check.
+        for n in names:
+            try:
+                defaults = _as_bool(fin.loc[n, "default"], False, n)
+            except ValueError:
+                continue
+            if not defaults:
+                continue
+            owed = sim.countries[n].get("debt_stock", 0.0)
+            if owed <= 1e-9:
+                lines.append(f"  Debt   {n} ticked default but owes nothing -- no effect")
+                continue
+            also = []
+            for col in ("repay", "borrow", "invest"):
+                try:
+                    amount = float(fin.loc[n, col]) if col in fin.columns else 0.0
+                except (TypeError, ValueError):
+                    amount = 0.0
+                if amount > 0:
+                    also.append(f"{col} {amount:g}")
+            lines.append(f"  DEFAULT {n} defaults on all {owed:.1f} it owes"
+                         + (f" -- but its file also asks to {', '.join(also)}, which a "
+                            f"default ignores. Check with the team before you play."
+                            if also else ". Make sure the team means it."))
     for name in box["stale"]:
         lines.append(f"  Set aside {name}: reached the inbox before Round {rnd - 1} was played")
     for name, why in box["rejected"]:

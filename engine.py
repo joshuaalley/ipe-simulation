@@ -2841,6 +2841,8 @@ class IPESimulation:
             reverse=True,
         )
         self.reserve_currency_holder = ranking[0]
+        if self.phase >= 7:
+            self.hegemon = ranking[0]       # one prize: they never come apart
         print(f"\n{'':=<65}")
         print(f"  RESERVE CURRENCY AWARDED")
         print(f"{'':=<65}")
@@ -4265,11 +4267,14 @@ class IPESimulation:
         # Sovereign debt (Phase 6+)
         if phase >= 6 and any("debt" in res[n] for n in names):
             print(f"\n  SOVEREIGN DEBT")
+            # Interest is paid every round out of welfare -- it never adds to
+            # the stock -- so it gets its own column rather than hiding in a
+            # total with the repayment.
             print(
-                f"  {'':12s}{'Stock':>8s}{'Rate':>6s}{'Borrow':>8s}{'Invest':>8s}"
-                f"{'Return':>8s}{'Service':>9s}{'Status':>10s}"
+                f"  {'':12s}{'Stock':>7s}{'Rate':>6s}{'Interest':>9s}{'Repaid':>8s}"
+                f"{'Borrow':>7s}{'Invest':>7s}{'Return':>7s}{'Status':>10s}"
             )
-            print(f"  {'-'*69}")
+            print(f"  {'-'*73}")
             for name in names:
                 d = res[name].get("debt")
                 if not d:
@@ -4281,11 +4286,12 @@ class IPESimulation:
                     status = "banned"
                 elif d.get("austerity_active"):
                     status = "austerity"
+                paid = d["service"] - d["repay"]          # nothing on a default
                 print(
-                    f"  {name:12s}{d['debt_stock']:8.1f}{d['rate']:6.0%}"
-                    f"{d['borrow']:8.1f}{d.get('invest', 0.0):8.1f}"
-                    f"{d.get('project_return', 0.0):8.1f}{d['service']:9.1f}"
-                    f"{status:>10s}"
+                    f"  {name:12s}{d['debt_stock']:7.1f}{d['rate']:6.0%}"
+                    f"{paid:9.1f}{d['repay']:8.1f}"
+                    f"{d['borrow']:7.1f}{d.get('invest', 0.0):7.1f}"
+                    f"{d.get('project_return', 0.0):7.1f}{status:>10s}"
                 )
             for name in names:
                 d = res[name].get("debt")

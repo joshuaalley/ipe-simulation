@@ -233,6 +233,8 @@ def test_reserve_challenge_choice():
     check("  the page carries the game's challenge rule, so its hint matches",
           data["rules"]["challenge"] == "majority" and data2["rules"]["challenge"] == "welfare"
           and 'rules.challenge === "welfare"' in html)
+    check("  from Phase 7 the page says the challenge is for the hegemony too",
+          '"Reserve currency and hegemony"' in html and ", and with it the hegemony," in html)
 
 
 def test_round_form_safeguards():
@@ -254,6 +256,10 @@ def test_borrow_to_invest_field():
     check("  two kinds of borrowing, and the investment goes out in the file",
           '"Borrow to spend"' in html and '"Borrow to invest"' in html
           and "invest: iv" in html, "")
+    check("  a default can't go out with a repayment or new borrowing, and says what it does",
+          "else if (f.dflt && (b > 0 || iv > 0 || r > 0))" in html
+          and "so you can't also borrow, " in html
+          and "Default: stop paying everything we owe" in html)
     check("  the project's return comes from the engine, not a number typed into the page",
           data["rules"]["project_return"] == engine.PROJECT_RETURN * 100
           and "fmt(rules.project_return)" in html)

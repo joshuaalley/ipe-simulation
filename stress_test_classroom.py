@@ -780,6 +780,9 @@ def test_capstone_and_finance_forms():
                                    "Borrow to invest", "Default", "WTO", "Bindings",
                                    "Hegemon only")))
     pct = lambda x: f"{x * 100:.0f}\\%"
+    check("  in Phase 7 the challenge says it is for the reserve currency and the hegemony",
+          "Reserve currency and hegemony:" in front and "one challenge decides both" in cap
+          and "Reserve currency and hegemony" not in fin)
     check("  the back states the WTO and hegemon rules in the engine's numbers",
           all(s in cap for s in (f"lose {pct(engine.WTO_DIVIDEND)} less",
                                  f"pays {pct(engine.HEGEMON_PROVISION_COST)} of the average",

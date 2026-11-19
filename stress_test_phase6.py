@@ -525,6 +525,13 @@ def test_borrow_to_invest():
     check("  the dashboard and the results show projects, investment and return",
           "Projects" in out.getvalue() and "Invest" in out.getvalue()
           and "Return" in out.getvalue())
+    text = out.getvalue()
+    row = next(l for l in text[text.index("SOVEREIGN DEBT\n"):].splitlines()
+               if l.strip().startswith(who))
+    d2 = r2["results"][who]["debt"]
+    check("  the results show interest paid on its own, apart from the repayment",
+          "Interest" in text and "Repaid" in text
+          and f"{d2['interest']:9.1f}" in row and d2["interest"] > 0, row)
 
 
 def main():

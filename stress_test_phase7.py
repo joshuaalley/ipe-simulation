@@ -346,6 +346,24 @@ def test_hegemonic_challenge():
               "coinflip" in str(e) and s.hegemon == heg)
 
 
+def test_one_prize():
+    print("\n[6b] the reserve currency and the hegemony are one prize")
+    sim = quiet(fresh_phase7)
+    heg = sim.hegemon
+    others = [c for c in sim.countries if c != heg]
+    ch = others[0]
+    quiet(sim.run_round, BAL_DEC, [], firm_decisions=fd(sim), monetary_decisions=safe_md(),
+          reserve_challenge={c: ch for c in others})
+    check("  a challenge on the round form moves both, after the round",
+          sim.hegemon == ch and sim.reserve_currency_holder == ch,
+          f"hegemon {sim.hegemon}, reserve {sim.reserve_currency_holder}")
+    s2 = quiet(fresh_phase7)
+    s2.hegemon = None                                   # as if they had come apart
+    quiet(s2.award_reserve_currency)
+    check("  awarding the reserve currency in Phase 7 hands over the hegemony too",
+          s2.hegemon == s2.reserve_currency_holder is not None)
+
+
 # ───────────────────────────────────────────────────────────────
 def test_global_crisis():
     print("\n[6.5] global crisis mitigation")
@@ -415,7 +433,7 @@ def main():
     for t in [test_upgrade_guard, test_wto_dividend, test_wto_pays_in_real_trades,
               test_defection_flagged,
               test_hegemon_provision, test_hegemon_bill_by_size, test_side_payments,
-              test_hegemonic_challenge, test_global_crisis,
+              test_hegemonic_challenge, test_one_prize, test_global_crisis,
               test_save_restore, test_display]:
         try:
             t()
